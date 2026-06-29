@@ -40,6 +40,9 @@ cd ui && npm install && npm run dev
 
 # UI build
 cd ui && npm run build
+
+# Stage deploy (Docker)
+cd deploy/stage && docker compose up --build
 ```
 
 ## Architecture
