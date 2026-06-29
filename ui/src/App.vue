@@ -4,7 +4,6 @@
       <router-link to="/" class="brand">SOAR</router-link>
       <router-link to="/">Status</router-link>
       <router-link to="/workflows">Workflows</router-link>
-      <router-link to="/workflow-files">Workflow Files</router-link>
       <router-link to="/jobs">Jobs</router-link>
       <router-link to="/actions">Actions</router-link>
       <router-link to="/files">Files</router-link>

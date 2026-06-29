@@ -7,7 +7,6 @@ const routes = [
   { path: '/workflows', component: () => import('./views/Workflows.vue') },
   { path: '/jobs', component: () => import('./views/Jobs.vue') },
   { path: '/actions', component: () => import('./views/Actions.vue') },
-  { path: '/workflow-files', component: () => import('./views/WorkflowFiles.vue') },
   { path: '/files', component: () => import('./views/Files.vue') },
   { path: '/logs/:id', component: () => import('./views/Logs.vue') },
 ]

@@ -1,40 +1,78 @@
 <template>
   <div>
-    <h2 style="margin-bottom:12px;">Workflows</h2>
-    <div v-if="loading" class="loading">Loading...</div>
-    <div v-else-if="error" class="error">{{ error }}</div>
-    <div v-else class="card">
-      <table>
-        <tr><th>Name</th><th>Type</th><th>Schedule</th><th>Concurrency</th><th>Actions</th></tr>
-        <tr v-for="wf in workflows" :key="wf.name">
-          <td><strong>{{ wf.name }}</strong></td>
-          <td><span class="badge" :class="'badge-'+wf.type">{{ wf.type }}</span></td>
-          <td>{{ wf.schedule || wf.interval || '—' }}</td>
-          <td>{{ wf.concurrency }}</td>
-          <td>
-            <button v-if="wf.enabled" class="btn btn-danger" @click="toggle(wf, false)">Disable</button>
-            <button v-else class="btn btn-success" @click="toggle(wf, true)">Enable</button>
-          </td>
-        </tr>
-      </table>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <h2 style="margin:0;">Workflows</h2>
+      <button class="btn btn-primary" @click="showNew = true">New Workflow</button>
     </div>
 
-    <div class="card" style="margin-top:16px;">
-      <h2>Run Workflow</h2>
-      <div style="display:flex; gap:8px; margin-top:8px;">
-        <select v-model="selected">
-          <option value="">Select workflow...</option>
-          <option v-for="wf in workflows" :key="wf.name" :value="wf.name">{{ wf.name }}</option>
+    <div v-if="showNew" class="card" style="margin-bottom:12px;">
+      <h2>New Workflow</h2>
+      <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+        <input v-model="newName" placeholder="MyWorkflow" style="flex:1; min-width:150px;" />
+        <select v-model="newType">
+          <option value="scheduled">Scheduled</option>
+          <option value="webhook">Webhook</option>
+          <option value="manual">Manual</option>
         </select>
-        <button class="btn btn-primary" :disabled="!selected || running" @click="runJob">
-          {{ running ? 'Running...' : 'Run' }}
+        <button class="btn btn-primary" @click="createWorkflow" :disabled="!newName || creating">
+          {{ creating ? 'Creating...' : 'Create' }}
         </button>
+        <button class="btn" @click="showNew = false">Cancel</button>
       </div>
-      <div v-if="runResult" style="margin-top:8px; font-size:13px;">
+    </div>
+
+    <div v-if="loading" class="loading">Loading...</div>
+    <div v-else-if="error" class="error">{{ error }}</div>
+    <template v-else>
+      <div class="card">
+        <table>
+          <tr><th>Name</th><th>Type</th><th>Status</th><th>Actions</th></tr>
+          <tr v-for="wf in fileWorkflows" :key="wf.name"
+              :style="{background: selected===wf.name ? '#e3f2fd' : ''}">
+            <td style="cursor:pointer; font-family:monospace;" @click="loadWorkflow(wf.name)">
+              {{ wf.name }}.py
+            </td>
+            <td><span class="badge" :class="'badge-'+wf.type">{{ wf.type }}</span></td>
+            <td>
+              <template v-if="metaMap[wf.name]">
+                <span v-if="metaMap[wf.name].enabled" class="badge badge-completed">enabled</span>
+                <span v-else class="badge badge-cancelled">disabled</span>
+              </template>
+              <span v-else class="loading">—</span>
+            </td>
+            <td style="white-space:nowrap;">
+              <template v-if="metaMap[wf.name]">
+                <button v-if="metaMap[wf.name].enabled" class="btn btn-danger" style="font-size:11px;" @click="toggle(wf.name, false)">Disable</button>
+                <button v-else class="btn btn-success" style="font-size:11px;" @click="toggle(wf.name, true)">Enable</button>
+              </template>
+              <button class="btn btn-primary" style="font-size:11px;" @click="runJob(wf.name)" :disabled="running">Run</button>
+              <button class="btn btn-danger" style="font-size:11px;" @click="removeWorkflow(wf.name)">Delete</button>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <div v-if="selected" class="card" style="margin-top:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <h2 style="margin:0;">{{ selected }}.py</h2>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-primary" @click="saveWorkflow" :disabled="saving">
+              {{ saving ? 'Saving...' : 'Save' }}
+            </button>
+          </div>
+        </div>
+        <textarea v-model="content" style="width:100%; min-height:400px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:4;"></textarea>
+        <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
+          <span v-if="saveResult.success" style="color:#2e7d32;">Saved (commit: {{ saveResult.commit }})</span>
+          <span v-else style="color:#c62828;">Error: {{ saveResult.error }}</span>
+        </div>
+      </div>
+
+      <div v-if="runResult" class="card" style="margin-top:12px;">
         <span v-if="runResult.success" style="color:#2e7d32;">Job created: {{ runResult.job_id }}</span>
         <span v-else style="color:#c62828;">Error: {{ runResult.error }}</span>
       </div>
-    </div>
+    </template>
   </div>
 </template>
 
@@ -42,33 +80,97 @@
 import { ref, onMounted } from 'vue'
 import { api } from '../api.js'
 
-const workflows = ref([])
+const fileWorkflows = ref([])
+const metaMap = ref({})
 const loading = ref(true)
 const error = ref(null)
 const selected = ref('')
+const content = ref('')
+const saving = ref(false)
+const saveResult = ref(null)
+const showNew = ref(false)
+const newName = ref('')
+const newType = ref('scheduled')
+const creating = ref(false)
 const running = ref(false)
 const runResult = ref(null)
 
-async function load() {
-  try { workflows.value = await api.getWorkflows() }
-  catch (e) { error.value = e.message }
+async function loadAll() {
+  try {
+    const [files, metas] = await Promise.all([
+      api.getWorkflowFiles(),
+      api.getWorkflows(),
+    ])
+    fileWorkflows.value = files.map(name => ({
+      name,
+      type: metas.find(m => m.name === name)?.type || 'manual',
+    }))
+    const map = {}
+    for (const m of metas) map[m.name] = m
+    metaMap.value = map
+  } catch (e) { error.value = e.message }
   loading.value = false
 }
 
-async function toggle(wf, enable) {
+async function loadWorkflow(name) {
+  selected.value = name
+  saveResult.value = null
+  runResult.value = null
   try {
-    if (enable) await api.enableWorkflow(wf.name)
-    else await api.disableWorkflow(wf.name)
-    wf.enabled = enable
+    const res = await api.getWorkflowFile(name)
+    content.value = res.content
+  } catch (e) { content.value = `Error: ${e.message}` }
+}
+
+async function saveWorkflow() {
+  saving.value = true
+  saveResult.value = null
+  try {
+    const res = await api.saveWorkflowFile(selected.value, content.value)
+    saveResult.value = { success: true, commit: res.commit }
+  } catch (e) {
+    saveResult.value = { success: false, error: e.message }
+  }
+  saving.value = false
+}
+
+async function createWorkflow() {
+  creating.value = true
+  try {
+    const res = await api.getWorkflowTemplate(newName.value, newType.value)
+    await api.saveWorkflowFile(newName.value, res.content)
+    showNew.value = false
+    const created = newName.value
+    newName.value = ''
+    await loadAll()
+    selected.value = created
+    await loadWorkflow(created)
+  } catch (e) { error.value = e.message }
+  creating.value = false
+}
+
+async function removeWorkflow(name) {
+  if (!confirm(`Delete workflow "${name}"?`)) return
+  try {
+    await api.deleteWorkflowFile(name)
+    if (selected.value === name) { selected.value = ''; content.value = '' }
+    await loadAll()
+  } catch (e) { error.value = e.message }
+}
+
+async function toggle(name, enable) {
+  try {
+    if (enable) await api.enableWorkflow(name)
+    else await api.disableWorkflow(name)
+    metaMap.value[name].enabled = enable
   } catch (e) { alert(e.message) }
 }
 
-async function runJob() {
-  if (!selected.value) return
+async function runJob(name) {
   running.value = true
   runResult.value = null
   try {
-    const res = await api.createJob(selected.value)
+    const res = await api.createJob(name)
     runResult.value = { success: true, job_id: res.id }
   } catch (e) {
     runResult.value = { success: false, error: e.message }
@@ -76,5 +178,5 @@ async function runJob() {
   running.value = false
 }
 
-onMounted(load)
+onMounted(loadAll)
 </script>
