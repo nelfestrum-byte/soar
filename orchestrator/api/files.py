@@ -42,19 +42,17 @@ async def save_file(path: str, request: Request):
 @router.post("/upload")
 async def upload_file(request: Request, file: UploadFile = File(...), path: str = ""):
     config = request.app.state.config
-    allowed_bases = [
-        config.soar.workflows_dir,
-        config.soar.connectors_dir,
-        config.soar.actions_dir,
-    ]
-    target = None
-    for base in allowed_bases:
-        candidate = os.path.join(base, path, file.filename)
-        if candidate.startswith(os.path.normpath(base)):
-            target = candidate
-            break
-    if target is None:
-        raise HTTPException(status_code=400, detail="Invalid path")
+    base_map = {
+        "workflows": config.soar.workflows_dir,
+        "connectors": config.soar.connectors_dir,
+        "actions": config.soar.actions_dir,
+    }
+    parts = path.strip("/").split("/", 1) if path.strip() else []
+    if parts and parts[0] in base_map:
+        subdir = parts[1] if len(parts) > 1 else ""
+        target = os.path.join(base_map[parts[0]], subdir, file.filename)
+    else:
+        target = os.path.join(config.soar.workflows_dir, path, file.filename)
 
     os.makedirs(os.path.dirname(target), exist_ok=True)
     content = await file.read()
@@ -104,15 +102,14 @@ async def restore_file(path: str, commit: str, request: Request):
 
 
 def _resolve_path(path: str, config) -> str:
-    allowed_bases = [
-        config.soar.workflows_dir,
-        config.soar.connectors_dir,
-        config.soar.actions_dir,
-    ]
-    for base in allowed_bases:
-        full = os.path.normpath(os.path.join(base, path))
-        if full.startswith(os.path.normpath(base)):
-            return full
+    base_map = {
+        "workflows": config.soar.workflows_dir,
+        "connectors": config.soar.connectors_dir,
+        "actions": config.soar.actions_dir,
+    }
+    parts = path.split("/", 1)
+    if len(parts) == 2 and parts[0] in base_map:
+        return os.path.normpath(os.path.join(base_map[parts[0]], parts[1]))
     full = os.path.normpath(os.path.join(config.git.workflows_repo, path))
     return full
 

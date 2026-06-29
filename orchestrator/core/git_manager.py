@@ -19,9 +19,17 @@ class GitManager:
         self.author_email = author_email
 
     async def _run(self, *args: str) -> str:
+        env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": self.author_name,
+            "GIT_AUTHOR_EMAIL": self.author_email,
+            "GIT_COMMITTER_NAME": self.author_name,
+            "GIT_COMMITTER_EMAIL": self.author_email,
+        }
         proc = await asyncio.create_subprocess_exec(
             "git", *args,
             cwd=self.repo_path,
+            env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
