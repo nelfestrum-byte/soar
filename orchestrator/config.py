@@ -1,0 +1,53 @@
+import yaml
+from pathlib import Path
+from pydantic import BaseModel
+
+
+class WorkersConfig(BaseModel):
+    count: int = 4
+    default_timeout: int = 300
+
+
+class QueueConfig(BaseModel):
+    backend: str = "memory"
+    redis_url: str = "redis://localhost:6379/0"
+
+
+class SoarConfig(BaseModel):
+    workflows_dir: str = "/app/soar/workflows"
+    connectors_dir: str = "/app/soar/connectors"
+    actions_dir: str = "/app/soar/actions"
+
+
+class GitConfig(BaseModel):
+    workflows_repo: str = "/app/soar"
+    author_name: str = "SOAR Orchestrator"
+    author_email: str = "soar@local"
+
+
+class LoggingConfig(BaseModel):
+    level: str = "INFO"
+    file: str = "/var/log/soar/orchestrator.log"
+
+
+class JobsConfig(BaseModel):
+    log_dir: str = "/var/log/soar/jobs"
+    keep_completed: int = 1000
+
+
+class OrchestratorConfig(BaseModel):
+    workers: WorkersConfig = WorkersConfig()
+    queue: QueueConfig = QueueConfig()
+    soar: SoarConfig = SoarConfig()
+    git: GitConfig = GitConfig()
+    logging: LoggingConfig = LoggingConfig()
+    jobs: JobsConfig = JobsConfig()
+
+
+def load_config(path: str = "config.yaml") -> OrchestratorConfig:
+    config_path = Path(path)
+    if config_path.exists():
+        with open(config_path) as f:
+            data = yaml.safe_load(f) or {}
+        return OrchestratorConfig(**data)
+    return OrchestratorConfig()

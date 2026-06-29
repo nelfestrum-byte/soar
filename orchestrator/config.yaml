@@ -1,0 +1,25 @@
+workers:
+  count: 4
+  default_timeout: 300
+
+queue:
+  backend: memory
+  redis_url: redis://localhost:6379/0
+
+soar:
+  workflows_dir: /app/soar/workflows
+  connectors_dir: /app/soar/connectors
+  actions_dir: /app/soar/actions
+
+git:
+  workflows_repo: /app/soar
+  author_name: SOAR Orchestrator
+  author_email: soar@local
+
+logging:
+  level: INFO
+  file: /var/log/soar/orchestrator.log
+
+jobs:
+  log_dir: /var/log/soar/jobs
+  keep_completed: 1000

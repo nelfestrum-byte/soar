@@ -1,0 +1,4 @@
+loguru>=0.7.0
+pyyaml>=6.0
+elasticsearch>=8.0.0
+vt-py>=0.17.0
