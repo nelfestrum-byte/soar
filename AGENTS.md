@@ -2,12 +2,11 @@
 
 ## What is this
 
-SOAR (Security Orchestration, Automation and Response) — система автоматизации инцидентов. Два компонента:
+SOAR (Security Orchestration, Automation and Response) — система автоматизации инцидентов. Три компонента:
 
-1. **`soar/`** — Python-пакет: коннекторы (Elastic, VirusTotal), actions, workflows, реестры
+1. **`soar/`** — Python-пакет: коннекторы (Elastic, VirusTotal, Telegram, SMTP), actions, workflows, реестры
 2. **`orchestrator/`** — FastAPI сервис: очередь задач, воркеры, планировщик, git-версионирование
-
-UI пишется отдельно на Vue.js (не в этом репо).
+3. **`ui/`** — Vue.js SPA: минималистичный UI для тестирования и QA
 
 ## Stack
 
@@ -35,6 +34,12 @@ python -m pytest tests/soar/ -v
 
 # Coverage
 python -m pytest tests/ --cov=soar --cov=orchestrator
+
+# UI dev server (port 3000, proxies to orchestrator:8000)
+cd ui && npm install && npm run dev
+
+# UI build
+cd ui && npm run build
 ```
 
 ## Architecture
