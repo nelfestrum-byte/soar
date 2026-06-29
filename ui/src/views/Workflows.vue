@@ -127,6 +127,7 @@ async function loadAll() {
     fileWorkflows.value = files.map(f => ({
       name: f.name,
       type: metas.find(m => m.name === f.name)?.type || f.type,
+      className: f.class_name || f.name,
     }))
   } catch (e) { error.value = e.message }
   loading.value = false
@@ -187,7 +188,8 @@ async function toggle(name, enable) {
 }
 
 function showRun(name) {
-  runName.value = name
+  const wf = fileWorkflows.value.find(f => f.name === name)
+  runName.value = wf?.className || name
   runMode.value = true
   runResult.value = null
   payload.value = '{\n  \n}'

@@ -77,9 +77,14 @@ async def list_workflows(request: Request):
                     wf_type = "scheduled"
                 elif "WebhookWorkflow" in content:
                     wf_type = "webhook"
-                result.append({"name": name, "type": wf_type})
+                class_name = ""
+                for line in content.split("\n"):
+                    if line.startswith("class ") and "(ScheduledWorkflow)" in line or "(WebhookWorkflow)" in line or "(ManualWorkflow)" in line:
+                        class_name = line.split("class ")[1].split("(")[0].strip()
+                        break
+                result.append({"name": name, "type": wf_type, "class_name": class_name})
             except Exception:
-                result.append({"name": name, "type": "manual"})
+                result.append({"name": name, "type": wf_type, "class_name": ""})
     return sorted(result, key=lambda x: x["name"])
 
 
