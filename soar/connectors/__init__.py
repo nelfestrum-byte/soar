@@ -69,7 +69,8 @@ class ConnectorRegistry:
             if cls is None:
                 _log.warning(f"No connector class for type '{connector_type}'")
                 continue
-            connector = cls(instance_name=instance_name, **cfg["params"])
+            params = cfg.get("params") or {}
+            connector = cls(instance_name=instance_name, **params)
             self._connectors[instance_name] = connector
         _log.info(f"Registered {len(self._connectors)} connectors")
 

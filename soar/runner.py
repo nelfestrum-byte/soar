@@ -3,11 +3,13 @@ import sys
 import json
 from soar.workflows import workflows
 from soar.connectors import connectors
+from soar.actions import actions
 from soar.logger import setup_logging
 
 setup_logging(level="INFO")
 workflows.init()
 connectors.init()
+actions.init()
 
 
 def main():
