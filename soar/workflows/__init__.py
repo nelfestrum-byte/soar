@@ -28,6 +28,7 @@ class WorkflowRegistry:
                     isinstance(obj, type)
                     and issubclass(obj, BaseWorkflow)
                     and obj is not BaseWorkflow
+                    and obj.__module__ == fqn
                 ):
                     self._workflows[attr_name] = obj
 
