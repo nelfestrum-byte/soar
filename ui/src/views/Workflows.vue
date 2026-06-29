@@ -27,11 +27,8 @@
       <div class="card">
         <table>
           <tr><th>Name</th><th>Type</th><th>Status</th><th>Actions</th></tr>
-          <tr v-for="wf in fileWorkflows" :key="wf.name"
-              :style="{background: selected===wf.name ? '#e3f2fd' : ''}">
-            <td style="cursor:pointer; font-family:monospace;" @click="loadWorkflow(wf.name)">
-              {{ wf.name }}.py
-            </td>
+          <tr v-for="wf in fileWorkflows" :key="wf.name">
+            <td style="font-family:monospace;">{{ wf.name }}.py</td>
             <td><span class="badge" :class="'badge-'+wf.type">{{ wf.type }}</span></td>
             <td>
               <template v-if="metaMap[wf.name]">
@@ -45,20 +42,22 @@
                 <button v-if="metaMap[wf.name].enabled" class="btn btn-danger" style="font-size:11px;" @click="toggle(wf.name, false)">Disable</button>
                 <button v-else class="btn btn-success" style="font-size:11px;" @click="toggle(wf.name, true)">Enable</button>
               </template>
-              <button class="btn btn-primary" style="font-size:11px;" @click="runJob(wf.name)" :disabled="running">Run</button>
+              <button class="btn btn-primary" style="font-size:11px;" @click="editWorkflow(wf.name)">Edit</button>
+              <button v-if="wf.type === 'manual'" class="btn btn-success" style="font-size:11px;" @click="showRun(wf.name)">Run</button>
               <button class="btn btn-danger" style="font-size:11px;" @click="removeWorkflow(wf.name)">Delete</button>
             </td>
           </tr>
         </table>
       </div>
 
-      <div v-if="selected" class="card" style="margin-top:12px;">
+      <div v-if="editMode" class="card" style="margin-top:12px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <h2 style="margin:0;">{{ selected }}.py</h2>
+          <h2 style="margin:0;">{{ editName }}.py</h2>
           <div style="display:flex; gap:8px;">
             <button class="btn btn-primary" @click="saveWorkflow" :disabled="saving">
               {{ saving ? 'Saving...' : 'Save' }}
             </button>
+            <button class="btn" @click="editMode = false">Close</button>
           </div>
         </div>
         <textarea v-model="content" style="width:100%; min-height:400px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:4;"></textarea>
@@ -68,9 +67,22 @@
         </div>
       </div>
 
-      <div v-if="runResult" class="card" style="margin-top:12px;">
-        <span v-if="runResult.success" style="color:#2e7d32;">Job created: {{ runResult.job_id }}</span>
-        <span v-else style="color:#c62828;">Error: {{ runResult.error }}</span>
+      <div v-if="runMode" class="card" style="margin-top:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <h2 style="margin:0;">Run: {{ runName }}</h2>
+          <button class="btn" @click="runMode = false">Close</button>
+        </div>
+        <div style="margin-bottom:8px; font-size:13px; color:#666;">Payload (JSON):</div>
+        <textarea v-model="payload" style="width:100%; min-height:150px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:4;"></textarea>
+        <div style="margin-top:8px;">
+          <button class="btn btn-success" @click="runJob" :disabled="running">
+            {{ running ? 'Running...' : 'Run' }}
+          </button>
+        </div>
+        <div v-if="runResult" style="margin-top:8px; font-size:13px;">
+          <span v-if="runResult.success" style="color:#2e7d32;">Job created: {{ runResult.job_id }}</span>
+          <span v-else style="color:#c62828;">Error: {{ runResult.error }}</span>
+        </div>
       </div>
     </template>
   </div>
@@ -84,14 +96,21 @@ const fileWorkflows = ref([])
 const metaMap = ref({})
 const loading = ref(true)
 const error = ref(null)
-const selected = ref('')
+
+const editMode = ref(false)
+const editName = ref('')
 const content = ref('')
 const saving = ref(false)
 const saveResult = ref(null)
+
 const showNew = ref(false)
 const newName = ref('')
 const newType = ref('scheduled')
 const creating = ref(false)
+
+const runMode = ref(false)
+const runName = ref('')
+const payload = ref('{\n  \n}')
 const running = ref(false)
 const runResult = ref(null)
 
@@ -105,22 +124,18 @@ async function loadAll() {
     for (const m of metas) map[m.name] = m
     metaMap.value = map
 
-    fileWorkflows.value = files.map(f => {
-      const meta = metas.find(m => m.name === f.name)
-      return {
-        name: f.name,
-        type: meta?.type || f.type,
-        className: f.name,
-      }
-    })
+    fileWorkflows.value = files.map(f => ({
+      name: f.name,
+      type: metas.find(m => m.name === f.name)?.type || f.type,
+    }))
   } catch (e) { error.value = e.message }
   loading.value = false
 }
 
-async function loadWorkflow(name) {
-  selected.value = name
+async function editWorkflow(name) {
+  editName.value = name
+  editMode.value = true
   saveResult.value = null
-  runResult.value = null
   try {
     const res = await api.getWorkflowFile(name)
     content.value = res.content
@@ -131,8 +146,9 @@ async function saveWorkflow() {
   saving.value = true
   saveResult.value = null
   try {
-    const res = await api.saveWorkflowFile(selected.value, content.value)
+    const res = await api.saveWorkflowFile(editName.value, content.value)
     saveResult.value = { success: true, commit: res.commit }
+    await loadAll()
   } catch (e) {
     saveResult.value = { success: false, error: e.message }
   }
@@ -148,8 +164,7 @@ async function createWorkflow() {
     const created = newName.value
     newName.value = ''
     await loadAll()
-    selected.value = created
-    await loadWorkflow(created)
+    editWorkflow(created)
   } catch (e) { error.value = e.message }
   creating.value = false
 }
@@ -158,7 +173,7 @@ async function removeWorkflow(name) {
   if (!confirm(`Delete workflow "${name}"?`)) return
   try {
     await api.deleteWorkflowFile(name)
-    if (selected.value === name) { selected.value = ''; content.value = '' }
+    if (editName.value === name) editMode.value = false
     await loadAll()
   } catch (e) { error.value = e.message }
 }
@@ -171,12 +186,28 @@ async function toggle(name, enable) {
   } catch (e) { alert(e.message) }
 }
 
-async function runJob(name) {
+function showRun(name) {
+  runName.value = name
+  runMode.value = true
+  runResult.value = null
+  payload.value = '{\n  \n}'
+}
+
+async function runJob() {
   running.value = true
   runResult.value = null
+  let ctx = {}
   try {
-    const res = await api.createJob(name)
+    ctx = JSON.parse(payload.value)
+  } catch (e) {
+    runResult.value = { success: false, error: 'Invalid JSON' }
+    running.value = false
+    return
+  }
+  try {
+    const res = await api.createJob(runName.value, ctx)
     runResult.value = { success: true, job_id: res.id }
+    await loadAll()
   } catch (e) {
     runResult.value = { success: false, error: e.message }
   }
