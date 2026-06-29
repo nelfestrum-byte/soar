@@ -6,6 +6,7 @@
       <router-link to="/workflows">Workflows</router-link>
       <router-link to="/jobs">Jobs</router-link>
       <router-link to="/actions">Actions</router-link>
+      <router-link to="/connectors">Connectors</router-link>
       <router-link to="/files">Files</router-link>
     </nav>
     <main><router-view /></main>

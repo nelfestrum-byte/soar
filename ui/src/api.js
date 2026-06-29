@@ -43,4 +43,14 @@ export const api = {
   deleteWorkflowFile: (name) => request(`/workflow-files/${name}`, { method: 'DELETE' }),
   getWorkflowTemplate: (name, type = 'scheduled') =>
     request(`/workflow-files/template?name=${name}&wf_type=${type}`),
+  getConnectors: () => request('/connectors'),
+  getConnectorCode: (name) => request(`/connectors/${name}/code`),
+  saveConnectorCode: (name, content) =>
+    request(`/connectors/${name}/code`, { method: 'PUT', body: content }),
+  getConnectorConfig: (name) => request(`/connectors/${name}/config`),
+  saveConnectorConfig: (name, content) =>
+    request(`/connectors/${name}/config`, { method: 'PUT', body: content }),
+  createConnector: (name, className = '') =>
+    request(`/connectors/${name}?class_name=${className}`, { method: 'POST' }),
+  deleteConnector: (name) => request(`/connectors/${name}`, { method: 'DELETE' }),
 }
