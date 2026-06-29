@@ -101,13 +101,18 @@ async function loadAll() {
       api.getWorkflowFiles(),
       api.getWorkflows(),
     ])
-    fileWorkflows.value = files.map(name => ({
-      name,
-      type: metas.find(m => m.name === name)?.type || 'manual',
-    }))
     const map = {}
     for (const m of metas) map[m.name] = m
     metaMap.value = map
+
+    fileWorkflows.value = files.map(f => {
+      const meta = metas.find(m => m.name === f.name)
+      return {
+        name: f.name,
+        type: meta?.type || f.type,
+        className: f.name,
+      }
+    })
   } catch (e) { error.value = e.message }
   loading.value = false
 }

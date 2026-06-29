@@ -68,8 +68,19 @@ async def list_workflows(request: Request):
         if entry.name in ("base.py", "__init__.py"):
             continue
         if entry.is_file() and entry.name.endswith(".py"):
-            result.append(entry.name[:-3])
-    return sorted(result)
+            name = entry.name[:-3]
+            try:
+                with open(entry.path) as f:
+                    content = f.read()
+                wf_type = "manual"
+                if "ScheduledWorkflow" in content:
+                    wf_type = "scheduled"
+                elif "WebhookWorkflow" in content:
+                    wf_type = "webhook"
+                result.append({"name": name, "type": wf_type})
+            except Exception:
+                result.append({"name": name, "type": "manual"})
+    return sorted(result, key=lambda x: x["name"])
 
 
 @router.get("/template")
