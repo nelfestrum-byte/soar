@@ -69,8 +69,10 @@ soar/
 ├── logger.py                  # setup_logging(), get_logger()
 ├── connectors/
 │   ├── base.py                # BaseConnector (lazy connect)
-│   ├── elastic/               # ElasticConnector
-│   └── virus_total/           # VirusTotalConnector
+│   ├── elastic/               # ElasticConnector — Elasticsearch query/index/delete
+│   ├── virus_total/           # VirusTotalConnector — lookup IP/domain/file
+│   ├── telegram/              # TelegramConnector — send messages/photos/documents, get updates
+│   └── smtp/                  # SmtpConnector — send email (plain/HTML, CC/BCC, attachments)
 ├── actions/
 │   └── send_tg_soc_team.py    # Пример action
 ├── workflows/
@@ -106,6 +108,8 @@ pool = request.app.state.pool
 |-----------|---------------|
 | Добавить API эндпоинт | `orchestrator/api/*.py` |
 | Новый коннектор | `soar/connectors/`, скопировать `elastic/` как шаблон |
+| Telegram коннектор | `soar/connectors/telegram/` — send_message, send_photo, send_document, get_updates |
+| SMTP коннектор | `soar/connectors/smtp/` — send_email, send_text, send_html (plain/HTML, CC/BCC, вложения) |
 | Новый action | `soar/actions/`, один файл = одна функция |
 | Новый workflow | `soar/workflows/`, наследовать от `ScheduledWorkflow`/`WebhookWorkflow`/`ManualWorkflow` |
 | Изменить модель | `orchestrator/models/` |
