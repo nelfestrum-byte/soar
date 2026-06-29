@@ -122,10 +122,18 @@ def _resolve_path(path: str, config) -> str:
     return full
 
 
+SYSTEM_FILES = {"base.py", "__init__.py", "__pycache__"}
+SYSTEM_PREFIXES = (".", "_")
+
+
 def _scan_dir(dir_path: str) -> dict:
     result = {}
     for entry in os.scandir(dir_path):
-        if entry.name.startswith(".") or entry.name == "__pycache__":
+        if entry.name.startswith(SYSTEM_PREFIXES):
+            continue
+        if entry.name in SYSTEM_FILES:
+            continue
+        if entry.name == "__pycache__":
             continue
         if entry.is_dir():
             result[entry.name] = _scan_dir(entry.path)
