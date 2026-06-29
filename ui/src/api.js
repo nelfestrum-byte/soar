@@ -36,4 +36,11 @@ export const api = {
     request(`/actions/${name}`, { method: 'PUT', body: content }),
   deleteAction: (name) => request(`/actions/${name}`, { method: 'DELETE' }),
   getActionTemplate: (name) => request(`/actions/template?name=${name}`),
+  getWorkflowFiles: () => request('/workflow-files'),
+  getWorkflowFile: (name) => request(`/workflow-files/${name}`),
+  saveWorkflowFile: (name, content) =>
+    request(`/workflow-files/${name}`, { method: 'PUT', body: content }),
+  deleteWorkflowFile: (name) => request(`/workflow-files/${name}`, { method: 'DELETE' }),
+  getWorkflowTemplate: (name, type = 'scheduled') =>
+    request(`/workflow-files/template?name=${name}&wf_type=${type}`),
 }

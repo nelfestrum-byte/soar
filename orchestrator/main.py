@@ -17,6 +17,7 @@ from orchestrator.models.workflow_meta import WorkflowMeta
 from orchestrator.models import ConcurrencyPolicy
 from orchestrator.api import (
     workflows_router,
+    workflow_files_router,
     files_router,
     actions_router,
     jobs_router,
@@ -138,6 +139,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="SOAR Orchestrator", lifespan=lifespan)
 
 app.include_router(workflows_router)
+app.include_router(workflow_files_router)
 app.include_router(files_router)
 app.include_router(actions_router)
 app.include_router(jobs_router)

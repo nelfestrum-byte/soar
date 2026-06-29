@@ -1,4 +1,5 @@
 from orchestrator.api.workflows import router as workflows_router
+from orchestrator.api.workflow_files import router as workflow_files_router
 from orchestrator.api.files import router as files_router
 from orchestrator.api.actions import router as actions_router
 from orchestrator.api.jobs import router as jobs_router
@@ -8,6 +9,7 @@ from orchestrator.api.status import router as status_router
 
 __all__ = [
     "workflows_router",
+    "workflow_files_router",
     "files_router",
     "actions_router",
     "jobs_router",
