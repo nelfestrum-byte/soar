@@ -6,6 +6,7 @@ const routes = [
   { path: '/', component: () => import('./views/Status.vue') },
   { path: '/workflows', component: () => import('./views/Workflows.vue') },
   { path: '/jobs', component: () => import('./views/Jobs.vue') },
+  { path: '/actions', component: () => import('./views/Actions.vue') },
   { path: '/files', component: () => import('./views/Files.vue') },
   { path: '/logs/:id', component: () => import('./views/Logs.vue') },
 ]

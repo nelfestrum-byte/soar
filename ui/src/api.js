@@ -30,4 +30,10 @@ export const api = {
   saveFile: (path, content) =>
     request(`/files/${path}`, { method: 'PUT', body: content }),
   getLogs: (id) => fetch(`${BASE}/logs/${id}`).then(r => r.text()),
+  getActions: () => request('/actions'),
+  getAction: (name) => request(`/actions/${name}`),
+  saveAction: (name, content) =>
+    request(`/actions/${name}`, { method: 'PUT', body: content }),
+  deleteAction: (name) => request(`/actions/${name}`, { method: 'DELETE' }),
+  getActionTemplate: (name) => request(`/actions/template?name=${name}`),
 }

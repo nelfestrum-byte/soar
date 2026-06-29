@@ -18,6 +18,7 @@ from orchestrator.models import ConcurrencyPolicy
 from orchestrator.api import (
     workflows_router,
     files_router,
+    actions_router,
     jobs_router,
     webhooks_router,
     logs_router,
@@ -138,6 +139,7 @@ app = FastAPI(title="SOAR Orchestrator", lifespan=lifespan)
 
 app.include_router(workflows_router)
 app.include_router(files_router)
+app.include_router(actions_router)
 app.include_router(jobs_router)
 app.include_router(webhooks_router)
 app.include_router(logs_router)
