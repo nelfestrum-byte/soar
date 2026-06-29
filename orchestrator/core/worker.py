@@ -55,6 +55,9 @@ class Worker:
                 logger.warning(f"Job {job.id} timed out after {timeout}s")
                 return
 
+            if hasattr(proc, '_log_file') and proc._log_file:
+                proc._log_file.close()
+
             if proc.returncode == 0:
                 job.status = JobStatus.COMPLETED
                 job.result_success = True
