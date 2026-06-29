@@ -21,6 +21,9 @@ async def get_file(path: str, request: Request):
     full_path = _resolve_path(path, request.app.state.config)
     if not os.path.exists(full_path):
         raise HTTPException(status_code=404, detail="File not found")
+    if os.path.isdir(full_path):
+        tree = _scan_dir(full_path)
+        return tree
     with open(full_path) as f:
         content = f.read()
     return PlainTextResponse(content)
@@ -29,13 +32,18 @@ async def get_file(path: str, request: Request):
 @router.put("/{path:path}")
 async def save_file(path: str, request: Request):
     full_path = _resolve_path(path, request.app.state.config)
+    if os.path.isdir(full_path):
+        raise HTTPException(status_code=400, detail="Cannot save to directory")
     os.makedirs(os.path.dirname(full_path), exist_ok=True)
     body = await request.body()
     with open(full_path, "wb") as f:
         f.write(body)
 
     git = request.app.state.git
-    commit_hash = await git.commit(path, f"Update {path}")
+    try:
+        commit_hash = await git.commit(path, f"Update {path}")
+    except RuntimeError as e:
+        return {"status": "saved", "commit": "", "warning": str(e)}
     return {"status": "saved", "commit": commit_hash}
 
 
