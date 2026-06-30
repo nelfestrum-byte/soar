@@ -1,5 +1,7 @@
 import importlib
+import importlib.util
 import pkgutil
+import sys
 from pathlib import Path
 
 from soar.logger import get_logger
@@ -33,8 +35,41 @@ class WorkflowRegistry:
                 ):
                     self._workflows[attr_name] = obj
 
-    def init(self) -> None:
+    def _discover_external(self, external_dir: str) -> None:
+        ext_path = Path(external_dir)
+        if not ext_path.exists():
+            return
+        for py_file in ext_path.glob("*.py"):
+            if py_file.name.startswith("_") or py_file.name == "base.py":
+                continue
+            module_name = py_file.stem
+            fqn = f"soar.workflows.{module_name}"
+            if fqn in sys.modules:
+                continue
+            try:
+                spec = importlib.util.spec_from_file_location(fqn, py_file)
+                if spec is None or spec.loader is None:
+                    continue
+                mod = importlib.util.module_from_spec(spec)
+                sys.modules[fqn] = mod
+                spec.loader.exec_module(mod)
+            except Exception as e:
+                _log.warning(f"Failed to import external workflow {fqn}: {e}")
+                continue
+            for attr_name in dir(mod):
+                obj = getattr(mod, attr_name)
+                if (
+                    isinstance(obj, type)
+                    and issubclass(obj, BaseWorkflow)
+                    and obj is not BaseWorkflow
+                    and obj.__module__ == fqn
+                ):
+                    self._workflows[attr_name] = obj
+
+    def init(self, external_dir: str | None = None) -> None:
         self._discover()
+        if external_dir:
+            self._discover_external(external_dir)
         _log.info(f"Registered {len(self._workflows)} workflows")
 
     def list(self) -> list[dict]:

@@ -1,4 +1,6 @@
 import importlib
+import importlib.util
+import sys
 from pathlib import Path
 
 from soar.connectors.base import BaseConnector
@@ -60,8 +62,44 @@ class ConnectorRegistry:
                 except Exception as e:
                     _log.warning(f"Failed to load config {yml_file}: {e}")
 
-    def init(self) -> None:
+    def _discover_external(self, external_dir: str) -> None:
+        ext_path = Path(external_dir)
+        if not ext_path.exists():
+            return
+        for connector_dir in ext_path.iterdir():
+            if not connector_dir.is_dir() or connector_dir.name.startswith("_"):
+                continue
+            py_files = list(connector_dir.glob("*.py"))
+            for py_file in py_files:
+                if py_file.name.startswith("_"):
+                    continue
+                module_name = py_file.stem
+                fqn = f"soar.connectors.{connector_dir.name}.{module_name}"
+                if fqn in sys.modules:
+                    continue
+                try:
+                    spec = importlib.util.spec_from_file_location(fqn, py_file)
+                    if spec is None or spec.loader is None:
+                        continue
+                    mod = importlib.util.module_from_spec(spec)
+                    sys.modules[fqn] = mod
+                    spec.loader.exec_module(mod)
+                except Exception as e:
+                    _log.warning(f"Failed to import external connector {fqn}: {e}")
+                    continue
+                for attr_name in dir(mod):
+                    obj = getattr(mod, attr_name)
+                    if (
+                        isinstance(obj, type)
+                        and issubclass(obj, BaseConnector)
+                        and obj is not BaseConnector
+                    ):
+                        self._classes[connector_dir.name] = obj
+
+    def init(self, external_dir: str | None = None) -> None:
         self._discover_classes()
+        if external_dir:
+            self._discover_external(external_dir)
         self._load_configs()
         for instance_name, cfg in self._configs.items():
             connector_type = cfg["type"]
