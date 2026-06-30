@@ -15,13 +15,13 @@ class QueueConfig(BaseModel):
 
 
 class SoarConfig(BaseModel):
-    workflows_dir: str = "/app/soar/workflows"
-    connectors_dir: str = "/app/soar/connectors"
-    actions_dir: str = "/app/soar/actions"
+    workflows_dir: str = "/app/data/workflows"
+    connectors_dir: str = "/app/data/connectors"
+    actions_dir: str = "/app/data/actions"
 
 
 class GitConfig(BaseModel):
-    workflows_repo: str = "/app/soar"
+    workflows_repo: str = "/app/data"
     author_name: str = "SOAR Orchestrator"
     author_email: str = "soar@local"
 

@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -85,7 +86,8 @@ def load_workflow_metas(config) -> list[WorkflowMeta]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    config = load_config("config.yaml")
+    config_path = os.environ.get("SOAR_CONFIG", "config.yaml")
+    config = load_config(config_path)
 
     import sys
     logger.remove()

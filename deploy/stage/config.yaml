@@ -6,12 +6,12 @@ queue:
   backend: memory
 
 soar:
-  workflows_dir: /app/soar/workflows
-  connectors_dir: /app/soar/connectors
-  actions_dir: /app/soar/actions
+  workflows_dir: /app/data/workflows
+  connectors_dir: /app/data/connectors
+  actions_dir: /app/data/actions
 
 git:
-  workflows_repo: /app/soar
+  workflows_repo: /app/data
   author_name: SOAR Orchestrator
   author_email: soar@local
 
