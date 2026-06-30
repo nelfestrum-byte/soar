@@ -38,12 +38,12 @@
               <span v-else class="loading">—</span>
             </td>
             <td style="white-space:nowrap;">
-              <template v-if="metaMap[wf.name]">
-                <button v-if="metaMap[wf.name].enabled" class="btn btn-danger" style="font-size:11px;" @click="toggle(wf.name, false)">Disable</button>
-                <button v-else class="btn btn-success" style="font-size:11px;" @click="toggle(wf.name, true)">Enable</button>
+              <template v-if="wf.meta">
+                <button v-if="wf.meta.enabled" class="btn btn-danger" style="font-size:11px;" @click="toggle(wf.className, false)">Disable</button>
+                <button v-else class="btn btn-success" style="font-size:11px;" @click="toggle(wf.className, true)">Enable</button>
               </template>
               <button class="btn btn-primary" style="font-size:11px;" @click="editWorkflow(wf.name)">Edit</button>
-              <button v-if="wf.type === 'manual'" class="btn btn-success" style="font-size:11px;" @click="showRun(wf.name)">Run</button>
+              <button v-if="wf.type === 'manual'" class="btn btn-success" style="font-size:11px;" @click="showRun(wf.className)">Run</button>
               <button class="btn btn-danger" style="font-size:11px;" @click="removeWorkflow(wf.name)">Delete</button>
             </td>
           </tr>
@@ -121,14 +121,20 @@ async function loadAll() {
       api.getWorkflows(),
     ])
     const map = {}
-    for (const m of metas) map[m.name] = m
+    for (const m of metas) {
+      map[m.name] = m
+    }
     metaMap.value = map
 
-    fileWorkflows.value = files.map(f => ({
-      name: f.name,
-      type: metas.find(m => m.name === f.name)?.type || f.type,
-      className: f.class_name || f.name,
-    }))
+    fileWorkflows.value = files.map(f => {
+      const meta = metas.find(m => m.name === f.class_name)
+      return {
+        name: f.name,
+        type: meta?.type || f.type,
+        className: f.class_name || f.name,
+        meta: meta || null,
+      }
+    })
   } catch (e) { error.value = e.message }
   loading.value = false
 }
