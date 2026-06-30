@@ -61,7 +61,7 @@ def load_workflow_metas(config) -> list[WorkflowMeta]:
                 interval=wf_info.get("interval"),
                 path=wf_info.get("path"),
                 token=wf_info.get("token"),
-                concurrency=ConcurrencyPolicy.FORBID,
+                concurrency=ConcurrencyPolicy.ALLOW if wf_type == "webhook" else ConcurrencyPolicy.FORBID,
             )
             soar_metas.append(meta)
     except ImportError:

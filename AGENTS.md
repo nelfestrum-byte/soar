@@ -1,10 +1,10 @@
-# AGENTS.md — SOAR Project
+# AGENTS.md — SOAR Project v0.1
 
 ## What is this
 
 SOAR (Security Orchestration, Automation and Response) — система автоматизации инцидентов. Три компонента:
 
-1. **`soar/`** — Python-пакет: коннекторы (Elastic, VirusTotal, Telegram, SMTP), actions, workflows, реестры
+1. **`soar/`** — Python-пакет: коннекторы (Elastic, VirusTotal, Telegram, SMTP, File), actions, workflows, реестры
 2. **`orchestrator/`** — FastAPI сервис: очередь задач, воркеры, планировщик, git-версионирование
 3. **`ui/`** — Vue.js SPA: минималистичный UI для тестирования и QA
 
@@ -16,6 +16,8 @@ SOAR (Security Orchestration, Automation and Response) — система авт
 - loguru (логирование)
 - pytest + pytest-asyncio (тесты)
 - Redis (опциональный бэкенд очереди)
+- Vue 3 + Vite (UI)
+- Docker Compose (deploy)
 
 ## Commands
 
@@ -66,29 +68,125 @@ orchestrator/
 ├── store/
 │   └── job_store.py           # JobStore — in-memory хранение jobs
 └── api/
-    ├── workflows.py           # GET/POST enable/disable
+    ├── workflows.py           # GET/POST enable/disable, reload
+    ├── workflow_files.py      # CRUD workflow файлов + templates
     ├── files.py               # CRUD файлов + git history
+    ├── actions.py             # CRUD actions + templates
+    ├── connectors.py          # CRUD connectors + code/config
     ├── jobs.py                # POST запуск, GET статус, cancel
     ├── webhooks.py            # POST webhook с токеном
     ├── logs.py                # GET лог + SSE стрим
     └── status.py              # GET /status — воркеры, очередь, статистика
 
 soar/
+├── __init__.py                # Экспорт connectors, actions, workflows
 ├── logger.py                  # setup_logging(), get_logger()
+├── runner.py                  # Точка входа для subprocess workflows
 ├── connectors/
+│   ├── __init__.py            # ConnectorRegistry — автообнаружение коннекторов
 │   ├── base.py                # BaseConnector (lazy connect)
-│   ├── elastic/               # ElasticConnector — Elasticsearch query/index/delete
+│   ├── elastic/               # ElasticConnector — query/index/delete
 │   ├── virus_total/           # VirusTotalConnector — lookup IP/domain/file
-│   ├── telegram/              # TelegramConnector — send messages/photos/documents, get updates
-│   └── smtp/                  # SmtpConnector — send email (plain/HTML, CC/BCC, attachments)
+│   ├── telegram/              # TelegramConnector — send messages/photos, get updates
+│   ├── smtp/                  # SmtpConnector — send email (plain/HTML, attachments)
+│   └── file/                  # FileConnector — write/read/append/delete файлы
 ├── actions/
-│   └── send_tg_soc_team.py    # Пример action
+│   ├── __init__.py            # ActionsRegistry — автообнаружение actions
+│   ├── send_tg_soc_team.py    # Пример action
+│   └── send_tg_message.py     # Отправка в Telegram канал
 ├── workflows/
+│   ├── __init__.py            # WorkflowRegistry — автообнаружение workflows
 │   ├── base.py                # BaseWorkflow, ScheduledWorkflow, WebhookWorkflow, ManualWorkflow
-│   └── alert_check.py         # Пример scheduled workflow
+│   ├── alert_check.py         # Scheduled workflow (пример)
+│   ├── webhook_to_file.py     # Webhook → запись в файл
+│   ├── webhook_alert.py       # Webhook → Telegram с задержкой
+│   └── send_tg_message.py     # Manual → Telegram
 └── examples/
     └── nadproject_integration.py
+
+ui/src/
+├── main.js                    # Router
+├── App.vue                    # Навигация
+├── api.js                     # API клиент
+└── views/
+    ├── Status.vue             # Dashboard
+    ├── Workflows.vue          # Управление workflows (enable/disable/edit/run)
+    ├── Jobs.vue               # Мониторинг jobs
+    ├── Actions.vue            # Управление actions (edit/create)
+    └── Connectors.vue         # Управление коннекторами (code/config)
+
+deploy/stage/
+├── docker-compose.yml         # orchestrator + UI (nginx)
+├── Dockerfile.orchestrator    # Python 3.11 + git + deps
+├── Dockerfile.ui              # Node build → nginx
+├── nginx.conf                 # proxy /api → orchestrator:8000
+├── config.yaml                # Stage defaults
+├── Makefile                   # make up/down/build/logs
+└── README.md
 ```
+
+## API Endpoints
+
+### Workflows
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /workflows | Список registered workflows |
+| POST | /workflows/reload | Перечитать файлы и обновить job_manager |
+| POST | /workflows/{name}/enable | Включить workflow |
+| POST | /workflows/{name}/disable | Выключить workflow |
+
+### Workflow Files
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /workflow-files | Список файлов workflows |
+| GET | /workflow-files/template | Шаблон (name, wf_type) |
+| GET | /workflow-files/{name} | Получить код |
+| PUT | /workflow-files/{name} | Сохранить код |
+| DELETE | /workflow-files/{name} | Удалить файл |
+
+### Actions
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /actions | Список actions |
+| GET | /actions/template | Шаблон boilerplate |
+| GET | /actions/{name} | Получить код |
+| PUT | /actions/{name} | Сохранить код |
+| DELETE | /actions/{name} | Удалить action |
+
+### Connectors
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /connectors | Список коннекторов |
+| POST | /connectors/{name} | Создать коннектор |
+| DELETE | /connectors/{name} | Удалить коннектор |
+| GET | /connectors/{name}/code | Получить код .py |
+| PUT | /connectors/{name}/code | Сохранить код .py |
+| GET | /connectors/{name}/config | Получить конфиг .yml |
+| PUT | /connectors/{name}/config | Сохранить конфиг .yml |
+
+### Jobs
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /jobs | Запустить workflow |
+| GET | /jobs | Список jobs |
+| GET | /jobs/{id} | Статус job |
+| POST | /jobs/{id}/cancel | Отменить job |
+
+### Webhooks
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /webhooks/{workflow_name} | Отправить webhook |
+
+### Logs
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /logs/{job_id} | Получить лог |
+| GET | /logs/{job_id}/stream | SSE стрим лога |
+
+### Status
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /status | Воркеры, очередь, статистика |
 
 ## Key patterns
 
@@ -110,6 +208,12 @@ pool = request.app.state.pool
 ### Git auto-commit
 Любое изменение файла через API автоматически коммитится в git.
 
+### Subprocess execution
+Workflows запускаются как отдельные процессы через `soar.runner`:
+- stdout перенаправляется в файл лога
+- Контекст передаётся через env vars (SOAR_CONTEXT)
+- Actions и connectors инициализируются в subprocess
+
 ## File map (для быстрого навигации)
 
 | Что нужно | Куда смотреть |
@@ -118,13 +222,18 @@ pool = request.app.state.pool
 | Новый коннектор | `soar/connectors/`, скопировать `elastic/` как шаблон |
 | Telegram коннектор | `soar/connectors/telegram/` — send_message, send_photo, send_document, get_updates |
 | SMTP коннектор | `soar/connectors/smtp/` — send_email, send_text, send_html (plain/HTML, CC/BCC, вложения) |
+| File коннектор | `soar/connectors/file/` — write, write_json, append, read, list_files, delete |
 | Новый action | `soar/actions/`, один файл = одна функция |
 | Новый workflow | `soar/workflows/`, наследовать от `ScheduledWorkflow`/`WebhookWorkflow`/`ManualWorkflow` |
+| Шаблон workflow | `orchestrator/api/workflow_files.py` — TEMPLATES dict |
 | Изменить модель | `orchestrator/models/` |
 | Очередь задач | `orchestrator/core/queue/` |
 | Воркеры | `orchestrator/core/worker.py`, `worker_pool.py` |
 | Планировщик | `orchestrator/core/scheduler.py` |
+| Runner | `soar/runner.py` — точка входа для subprocess |
 | Конфиг | `orchestrator/config.py`, `orchestrator/config.yaml` |
+| UI | `ui/src/views/` — Status, Workflows, Jobs, Actions, Connectors |
+| Deploy | `deploy/stage/` — docker-compose.yml, Dockerfiles |
 | Тесты | `tests/orchestrator/`, `tests/soar/` |
 
 ## Rules
@@ -145,3 +254,7 @@ pool = request.app.state.pool
 5. **Тесты отдельно** — не запускай `tests/` если правишь один файл, запусти конкретный тест
 6. **Grep > Read** — для проверки наличия строки/паттерна используй grep, не read файла целиком
 7. **Actor для поиска** — делегируй исследование кодовой базы в explore actor, если нужно найти >3 файлов
+
+## Version history
+
+- **v0.1** (2026-06-30) — Minimal SOAR: connectors, actions, workflows, orchestrator, UI, Docker deploy
