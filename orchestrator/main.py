@@ -49,7 +49,7 @@ def load_workflow_metas(config) -> list[WorkflowMeta]:
     soar_metas = []
     try:
         from soar.workflows import workflows as wf_registry
-        wf_registry.init()
+        wf_registry.init(external_dir=config.soar.workflows_dir)
         for wf_info in wf_registry.list():
             name = wf_info["name"]
             wf_type = wf_info["type"]
