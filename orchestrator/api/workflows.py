@@ -70,6 +70,20 @@ async def disable_workflow(name: str, request: Request):
     return {"status": "disabled", "name": name}
 
 
+@router.post("/reload")
+async def reload_workflows(request: Request):
+    from orchestrator.main import load_workflow_metas
+    config = request.app.state.config
+    job_manager = request.app.state.job_manager
+    scheduler = request.app.state.scheduler
+
+    workflows = load_workflow_metas(config)
+    job_manager.set_metas(workflows)
+    await scheduler.reload(workflows)
+
+    return {"status": "reloaded", "count": len(workflows)}
+
+
 @router.post("/scheduler/reload")
 async def reload_scheduler(request: Request):
     scheduler = request.app.state.scheduler

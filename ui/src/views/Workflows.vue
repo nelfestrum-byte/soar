@@ -167,6 +167,7 @@ async function createWorkflow() {
   try {
     const res = await api.getWorkflowTemplate(newName.value, newType.value)
     await api.saveWorkflowFile(newName.value, res.content)
+    await api.reloadWorkflows()
     showNew.value = false
     const created = newName.value
     newName.value = ''

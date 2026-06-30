@@ -15,6 +15,7 @@ async function request(path, options = {}) {
 export const api = {
   getStatus: () => request('/status'),
   getWorkflows: () => request('/workflows'),
+  reloadWorkflows: () => request('/workflows/reload', { method: 'POST' }),
   enableWorkflow: (name) => request(`/workflows/${name}/enable`, { method: 'POST' }),
   disableWorkflow: (name) => request(`/workflows/${name}/disable`, { method: 'POST' }),
   getJobs: (params = {}) => {
