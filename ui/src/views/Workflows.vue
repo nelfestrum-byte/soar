@@ -31,8 +31,8 @@
             <td style="font-family:monospace;">{{ wf.name }}.py</td>
             <td><span class="badge" :class="'badge-'+wf.type">{{ wf.type }}</span></td>
             <td>
-              <template v-if="metaMap[wf.name]">
-                <span v-if="metaMap[wf.name].enabled" class="badge badge-completed">enabled</span>
+              <template v-if="wf.meta">
+                <span v-if="wf.meta.enabled" class="badge badge-completed">enabled</span>
                 <span v-else class="badge badge-cancelled">disabled</span>
               </template>
               <span v-else class="loading">—</span>
