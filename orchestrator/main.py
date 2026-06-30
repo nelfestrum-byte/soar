@@ -1,7 +1,8 @@
 import yaml
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from loguru import logger
 
 from orchestrator.config import load_config
@@ -138,6 +139,20 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="SOAR Orchestrator", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def limit_request_body(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > 5 * 1024 * 1024:
+        return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+    if request.method in ("POST", "PUT", "PATCH"):
+        body = await request.body()
+        if len(body) > 5 * 1024 * 1024:
+            return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+    response = await call_next(request)
+    return response
+
 
 app.include_router(workflows_router)
 app.include_router(workflow_files_router)

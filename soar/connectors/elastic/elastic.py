@@ -2,11 +2,12 @@ from soar.connectors.base import BaseConnector
 
 
 class ElasticConnector(BaseConnector):
-    def __init__(self, instance_name: str, host: str, port: int = 9200, api_key: str = ""):
+    def __init__(self, instance_name: str, host: str, port: int = 9200, api_key: str = "", verify_certs: bool = True):
         super().__init__(instance_name)
         self.host = host
         self.port = port
         self.api_key = api_key
+        self.verify_certs = verify_certs
         self._client = None
 
     def _connect_impl(self):
@@ -15,7 +16,7 @@ class ElasticConnector(BaseConnector):
         self._client = Elasticsearch(
             f"https://{self.host}:{self.port}",
             api_key=self.api_key,
-            verify_certs=False,
+            verify_certs=self.verify_certs,
         )
 
     def disconnect(self):

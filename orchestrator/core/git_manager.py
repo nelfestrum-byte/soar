@@ -50,7 +50,8 @@ class GitManager:
             logger.info("Initialized git repository")
 
     async def commit(self, filepath: str, message: str) -> str:
-        await self._run("add", filepath)
+        safe_message = message.replace("\n", " ").replace("\r", "")[:200]
+        await self._run("add", "--", filepath)
         env = {
             **os.environ,
             "GIT_AUTHOR_NAME": self.author_name,

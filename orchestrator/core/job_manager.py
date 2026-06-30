@@ -7,6 +7,7 @@ from orchestrator.models.job import WorkflowJob, JobStatus
 from orchestrator.models.workflow_meta import WorkflowMeta
 from orchestrator.models import ConcurrencyPolicy
 from uuid import uuid4
+import asyncio
 
 
 class JobAlreadyRunningError(Exception):
@@ -32,6 +33,12 @@ class JobManager:
         self.log_dir = log_dir
         self._metas: dict[str, WorkflowMeta] = {}
         self._workflow_registry = workflow_registry
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    def _get_lock(self, name: str) -> asyncio.Lock:
+        if name not in self._locks:
+            self._locks[name] = asyncio.Lock()
+        return self._locks[name]
 
     def set_metas(self, metas: list[WorkflowMeta]) -> None:
         self._metas = {m.name: m for m in metas}
@@ -42,8 +49,9 @@ class JobManager:
         return self._metas[workflow_name]
 
     def _make_log_path(self, workflow_name: str, job_id: str) -> str:
-        import os
-        path = os.path.join(self.log_dir, workflow_name, f"{job_id}.log")
+        import os, re
+        safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", workflow_name)
+        path = os.path.join(self.log_dir, safe_name, f"{job_id}.log")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         return path
 
@@ -58,23 +66,25 @@ class JobManager:
         if not meta.enabled:
             raise WorkflowDisabledError(workflow_name)
 
-        await self._check_concurrency(meta)
+        lock = self._get_lock(workflow_name)
+        async with lock:
+            await self._check_concurrency(meta)
 
-        job_id = str(uuid4())
-        job = WorkflowJob(
-            id=job_id,
-            workflow_name=workflow_name,
-            workflow_type=meta.type,
-            triggered_by=triggered_by,
-            context=context,
-            log_path=self._make_log_path(workflow_name, job_id),
-            timeout=meta.timeout,
-        )
+            job_id = str(uuid4())
+            job = WorkflowJob(
+                id=job_id,
+                workflow_name=workflow_name,
+                workflow_type=meta.type,
+                triggered_by=triggered_by,
+                context=context,
+                log_path=self._make_log_path(workflow_name, job_id),
+                timeout=meta.timeout,
+            )
 
-        await self.job_store.save(job)
-        await self.queue.push(job)
-        logger.info(f"Enqueued job {job.id} for workflow {workflow_name}")
-        return job
+            await self.job_store.save(job)
+            await self.queue.push(job)
+            logger.info(f"Enqueued job {job.id} for workflow {workflow_name}")
+            return job
 
     async def cancel(self, job_id: str) -> WorkflowJob:
         job = await self.job_store.get(job_id)

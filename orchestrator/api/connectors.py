@@ -2,6 +2,7 @@ import os
 import re
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
+from orchestrator.api.validation import validate_name, validate_path_within
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
 
@@ -75,8 +76,10 @@ async def get_template(name: str = "my_connector", class_name: str = "MyConnecto
 
 @router.get("/{name}/code")
 async def get_connector_code(name: str, request: Request):
+    validate_name(name)
     config = request.app.state.config
     filepath = os.path.join(config.soar.connectors_dir, name, f"{name}.py")
+    validate_path_within(config.soar.connectors_dir, filepath)
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Connector not found")
     with open(filepath) as f:
@@ -86,8 +89,10 @@ async def get_connector_code(name: str, request: Request):
 
 @router.put("/{name}/code")
 async def save_connector_code(name: str, request: Request):
+    validate_name(name)
     config = request.app.state.config
     dirpath = os.path.join(config.soar.connectors_dir, name)
+    validate_path_within(config.soar.connectors_dir, dirpath)
     os.makedirs(dirpath, exist_ok=True)
     filepath = os.path.join(dirpath, f"{name}.py")
     body = await request.body()
@@ -103,8 +108,10 @@ async def save_connector_code(name: str, request: Request):
 
 @router.get("/{name}/config")
 async def get_connector_config(name: str, request: Request):
+    validate_name(name)
     config = request.app.state.config
     filepath = os.path.join(config.soar.connectors_dir, name, f"{name}.yml")
+    validate_path_within(config.soar.connectors_dir, filepath)
     if not os.path.exists(filepath):
         return {"name": name, "content": ""}
     with open(filepath) as f:
@@ -114,8 +121,10 @@ async def get_connector_config(name: str, request: Request):
 
 @router.put("/{name}/config")
 async def save_connector_config(name: str, request: Request):
+    validate_name(name)
     config = request.app.state.config
     dirpath = os.path.join(config.soar.connectors_dir, name)
+    validate_path_within(config.soar.connectors_dir, dirpath)
     os.makedirs(dirpath, exist_ok=True)
     filepath = os.path.join(dirpath, f"{name}.yml")
     body = await request.body()
@@ -131,8 +140,10 @@ async def save_connector_config(name: str, request: Request):
 
 @router.post("/{name}")
 async def create_connector(name: str, request: Request, class_name: str = ""):
+    validate_name(name)
     config = request.app.state.config
     dirpath = os.path.join(config.soar.connectors_dir, name)
+    validate_path_within(config.soar.connectors_dir, dirpath)
     if os.path.exists(dirpath):
         raise HTTPException(status_code=409, detail="Connector already exists")
     os.makedirs(dirpath, exist_ok=True)
@@ -164,8 +175,10 @@ async def create_connector(name: str, request: Request, class_name: str = ""):
 
 @router.delete("/{name}")
 async def delete_connector(name: str, request: Request):
+    validate_name(name)
     config = request.app.state.config
     dirpath = os.path.join(config.soar.connectors_dir, name)
+    validate_path_within(config.soar.connectors_dir, dirpath)
     if not os.path.exists(dirpath):
         raise HTTPException(status_code=404, detail="Connector not found")
     import shutil

@@ -30,8 +30,8 @@ async def handle_webhook(workflow_name: str, request: Request):
             context={"payload": body},
             triggered_by="webhook",
         )
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=409, detail=str(e))
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Workflow not found or disabled")
+    except Exception:
+        raise HTTPException(status_code=409, detail="Failed to enqueue job")
     return {"job_id": job.id}

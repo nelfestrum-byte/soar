@@ -1,6 +1,7 @@
 import os
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from fastapi.responses import PlainTextResponse
+from orchestrator.api.validation import validate_path_within, validate_commit
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -59,8 +60,10 @@ async def upload_file(request: Request, file: UploadFile = File(...), path: str 
     if parts and parts[0] in base_map:
         subdir = parts[1] if len(parts) > 1 else ""
         target = os.path.join(base_map[parts[0]], subdir, file.filename)
+        validate_path_within(base_map[parts[0]], target)
     else:
         target = os.path.join(config.soar.workflows_dir, path, file.filename)
+        validate_path_within(config.soar.workflows_dir, target)
 
     os.makedirs(os.path.dirname(target), exist_ok=True)
     content = await file.read()
@@ -94,6 +97,7 @@ async def file_history(path: str, request: Request, limit: int = 20):
 
 @router.get("/{path:path}/history/{commit}")
 async def file_at_commit(path: str, commit: str, request: Request):
+    validate_commit(commit)
     git = request.app.state.git
     try:
         content = await git.get_content(path, commit)
@@ -104,6 +108,7 @@ async def file_at_commit(path: str, commit: str, request: Request):
 
 @router.post("/{path:path}/restore/{commit}")
 async def restore_file(path: str, commit: str, request: Request):
+    validate_commit(commit)
     git = request.app.state.git
     await git.restore(path, commit)
     return {"status": "restored", "commit": commit}
@@ -117,9 +122,10 @@ def _resolve_path(path: str, config) -> str:
     }
     parts = path.split("/", 1)
     if len(parts) == 2 and parts[0] in base_map:
-        return os.path.normpath(os.path.join(base_map[parts[0]], parts[1]))
+        resolved = os.path.normpath(os.path.join(base_map[parts[0]], parts[1]))
+        return validate_path_within(base_map[parts[0]], resolved)
     full = os.path.normpath(os.path.join(config.git.workflows_repo, path))
-    return full
+    return validate_path_within(config.git.workflows_repo, full)
 
 
 SYSTEM_FILES = {"base.py", "__init__.py", "__pycache__"}

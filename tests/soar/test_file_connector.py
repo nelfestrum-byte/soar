@@ -19,7 +19,7 @@ def test_file_connector_init():
     from soar.connectors.file.file import FileConnector
     conn = FileConnector(instance_name="test", base_dir="/tmp/test")
     assert conn.instance_name == "test"
-    assert conn.base_dir == "/tmp/test"
+    assert conn.base_dir == os.path.realpath("/tmp/test")
 
 
 def test_file_connector_write(file_connector):
@@ -84,4 +84,4 @@ def test_webhook_to_file_workflow():
     wf = WebhookToFile()
     assert wf.workflow_type == "webhook"
     assert wf.path == "/webhook/to-file"
-    assert wf.token == "test-token-123"
+    assert isinstance(wf.token, str) and len(wf.token) > 10

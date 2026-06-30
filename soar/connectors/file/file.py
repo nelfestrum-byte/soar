@@ -7,7 +7,7 @@ from soar.connectors.base import BaseConnector
 class FileConnector(BaseConnector):
     def __init__(self, instance_name: str, base_dir: str = "/var/log/soar/files"):
         super().__init__(instance_name)
-        self.base_dir = base_dir
+        self.base_dir = os.path.realpath(base_dir)
         self._connected = False
 
     def _connect_impl(self):
@@ -15,13 +15,19 @@ class FileConnector(BaseConnector):
         self._connected = True
         self._logger.info(f"File connector ready: {self.base_dir}")
 
+    def _safe_path(self, filename: str) -> str:
+        filepath = os.path.realpath(os.path.join(self.base_dir, filename))
+        if not filepath.startswith(self.base_dir + os.sep) and filepath != self.base_dir:
+            raise ValueError(f"Path traversal not allowed: {filename}")
+        return filepath
+
     def disconnect(self):
         self._connected = False
         self._logger.info(f"Disconnected from {self.instance_name}")
 
     def write(self, filename: str, content: str) -> str:
         self._ensure_connected()
-        filepath = os.path.join(self.base_dir, filename)
+        filepath = self._safe_path(filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "w") as f:
             f.write(content)
@@ -40,7 +46,7 @@ class FileConnector(BaseConnector):
 
     def append(self, filename: str, content: str) -> str:
         self._ensure_connected()
-        filepath = os.path.join(self.base_dir, filename)
+        filepath = self._safe_path(filename)
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         with open(filepath, "a") as f:
             f.write(content)
@@ -49,7 +55,7 @@ class FileConnector(BaseConnector):
 
     def read(self, filename: str) -> str:
         self._ensure_connected()
-        filepath = os.path.join(self.base_dir, filename)
+        filepath = self._safe_path(filename)
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"File not found: {filepath}")
         with open(filepath) as f:
@@ -57,7 +63,9 @@ class FileConnector(BaseConnector):
 
     def list_files(self, subdir: str = "") -> list[str]:
         self._ensure_connected()
-        target = os.path.join(self.base_dir, subdir) if subdir else self.base_dir
+        target = os.path.realpath(os.path.join(self.base_dir, subdir)) if subdir else self.base_dir
+        if not target.startswith(self.base_dir + os.sep) and target != self.base_dir:
+            raise ValueError(f"Path traversal not allowed: {subdir}")
         if not os.path.exists(target):
             return []
         result = []
@@ -70,7 +78,7 @@ class FileConnector(BaseConnector):
 
     def delete(self, filename: str) -> bool:
         self._ensure_connected()
-        filepath = os.path.join(self.base_dir, filename)
+        filepath = self._safe_path(filename)
         if os.path.exists(filepath):
             os.remove(filepath)
             self._logger.info(f"Deleted {filepath}")

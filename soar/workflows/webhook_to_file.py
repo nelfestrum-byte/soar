@@ -1,3 +1,4 @@
+import secrets
 from soar.workflows.base import WebhookWorkflow
 from soar.connectors import connectors
 from soar.logger import get_logger
@@ -7,7 +8,7 @@ _log = get_logger("workflow.WebhookToFile")
 
 class WebhookToFile(WebhookWorkflow):
     path = "/webhook/to-file"
-    token = "test-token-123"
+    token = secrets.token_urlsafe(32)
 
     def run(self, context):
         payload = context.get("payload", {})

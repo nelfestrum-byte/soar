@@ -46,8 +46,6 @@ class WorkflowRegistry:
                 meta["interval"] = cls.interval
             if hasattr(cls, "path"):
                 meta["path"] = cls.path
-            if hasattr(cls, "token"):
-                meta["token"] = cls.token
             result.append(meta)
         return result
 

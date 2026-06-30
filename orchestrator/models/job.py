@@ -39,8 +39,6 @@ class WorkflowJob:
             "triggered_by": self.triggered_by,
             "context": self.context,
             "status": self.status.value,
-            "pid": self.pid,
-            "log_path": self.log_path,
             "timeout": self.timeout,
             "triggered_at": self.triggered_at.isoformat() if self.triggered_at else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,

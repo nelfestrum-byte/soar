@@ -7,13 +7,17 @@ from orchestrator.models.job import WorkflowJob
 
 class SubprocessRunner:
     async def start(self, job: WorkflowJob) -> asyncio.subprocess.Process:
-        env = {
-            **os.environ,
+        safe_env_keys = {
+            "PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "PYTHONPATH",
+            "PYTHONUNBUFFERED", "SOAR_CONFIG",
+        }
+        env = {k: v for k, v in os.environ.items() if k in safe_env_keys}
+        env.update({
             "SOAR_JOB_ID": job.id,
             "SOAR_WORKFLOW_NAME": job.workflow_name,
             "SOAR_CONTEXT": json.dumps(job.context),
             "SOAR_LOG_PATH": job.log_path or "",
-        }
+        })
         stdout_file = None
         if job.log_path:
             os.makedirs(os.path.dirname(job.log_path), exist_ok=True)

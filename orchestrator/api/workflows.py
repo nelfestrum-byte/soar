@@ -17,7 +17,6 @@ async def list_workflows(request: Request):
             "schedule": m.schedule,
             "interval": m.interval,
             "path": m.path,
-            "token": m.token,
             "timeout": m.timeout,
             "concurrency": m.concurrency.value,
         }
@@ -38,7 +37,6 @@ async def get_workflow(name: str, request: Request):
         "schedule": meta.schedule,
         "interval": meta.interval,
         "path": meta.path,
-        "token": meta.token,
         "timeout": meta.timeout,
         "concurrency": meta.concurrency.value,
     }

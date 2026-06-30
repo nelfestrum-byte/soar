@@ -1,6 +1,7 @@
 import os
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
+from orchestrator.api.validation import validate_name, validate_path_within
 
 router = APIRouter(prefix="/workflow-files", tags=["workflow-files"])
 
@@ -19,13 +20,14 @@ class {name}(ScheduledWorkflow):
 WEBHOOK_TEMPLATE = '''from soar.workflows.base import WebhookWorkflow
 from soar.connectors import connectors
 from soar.logger import get_logger
+import secrets
 
 _log = get_logger("workflow.{name}")
 
 
 class {name}(WebhookWorkflow):
     path = "/webhook/{path}"
-    token = "CHANGE_ME"
+    token = secrets.token_urlsafe(32)
 
     def run(self, context):
         payload = context.get("payload", {{}})
@@ -96,8 +98,10 @@ async def get_template(name: str = "MyWorkflow", wf_type: str = "scheduled", pat
 
 @router.get("/{name}")
 async def get_workflow_file(name: str, request: Request):
+    validate_name(name)
     config = request.app.state.config
     filepath = os.path.join(config.soar.workflows_dir, f"{name}.py")
+    validate_path_within(config.soar.workflows_dir, filepath)
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Workflow not found")
     with open(filepath) as f:
@@ -107,8 +111,10 @@ async def get_workflow_file(name: str, request: Request):
 
 @router.put("/{name}")
 async def save_workflow_file(name: str, request: Request):
+    validate_name(name)
     config = request.app.state.config
     filepath = os.path.join(config.soar.workflows_dir, f"{name}.py")
+    validate_path_within(config.soar.workflows_dir, filepath)
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     body = await request.body()
     with open(filepath, "wb") as f:
@@ -123,8 +129,10 @@ async def save_workflow_file(name: str, request: Request):
 
 @router.delete("/{name}")
 async def delete_workflow_file(name: str, request: Request):
+    validate_name(name)
     config = request.app.state.config
     filepath = os.path.join(config.soar.workflows_dir, f"{name}.py")
+    validate_path_within(config.soar.workflows_dir, filepath)
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Workflow not found")
     os.remove(filepath)

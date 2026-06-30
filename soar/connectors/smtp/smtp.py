@@ -12,6 +12,7 @@ class SmtpConnector(BaseConnector):
         use_tls: bool = True,
         from_email: str = "",
         from_name: str = "SOAR",
+        validate_certs: bool = True,
     ):
         super().__init__(instance_name)
         self.host = host
@@ -21,14 +22,18 @@ class SmtpConnector(BaseConnector):
         self.use_tls = use_tls
         self.from_email = from_email
         self.from_name = from_name
+        self.validate_certs = validate_certs
         self._server = None
 
     def _connect_impl(self):
         import smtplib
+        import ssl
+
         self._server = smtplib.SMTP(self.host, self.port, timeout=10)
         self._server.ehlo()
         if self.use_tls:
-            self._server.starttls()
+            context = ssl.create_default_context() if self.validate_certs else ssl._create_unverified_context()
+            self._server.starttls(context=context)
             self._server.ehlo()
         if self.username and self.password:
             self._server.login(self.username, self.password)
