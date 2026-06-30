@@ -40,9 +40,8 @@ class ConnectorRegistry:
                     ):
                         self._classes[connector_dir.name] = obj
 
-    def _load_configs(self) -> None:
-        package_dir = Path(__file__).parent
-        for connector_dir in package_dir.iterdir():
+    def _load_configs_from_dir(self, base_dir: Path) -> None:
+        for connector_dir in base_dir.iterdir():
             if not connector_dir.is_dir() or connector_dir.name.startswith("_"):
                 continue
             for yml_file in connector_dir.glob("*.yml"):
@@ -61,6 +60,13 @@ class ConnectorRegistry:
                             }
                 except Exception as e:
                     _log.warning(f"Failed to load config {yml_file}: {e}")
+
+    def _load_configs(self, external_dir: str | None = None) -> None:
+        self._load_configs_from_dir(Path(__file__).parent)
+        if external_dir:
+            ext_path = Path(external_dir)
+            if ext_path.exists():
+                self._load_configs_from_dir(ext_path)
 
     def _discover_external(self, external_dir: str) -> None:
         ext_path = Path(external_dir)
@@ -100,7 +106,7 @@ class ConnectorRegistry:
         self._discover_classes()
         if external_dir:
             self._discover_external(external_dir)
-        self._load_configs()
+        self._load_configs(external_dir)
         for instance_name, cfg in self._configs.items():
             connector_type = cfg["type"]
             cls = self._classes.get(connector_type)
