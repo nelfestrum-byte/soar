@@ -116,25 +116,19 @@ const runResult = ref(null)
 
 async function loadAll() {
   try {
-    const [files, metas] = await Promise.all([
-      api.getWorkflowFiles(),
-      api.getWorkflows(),
-    ])
+    const workflows = await api.getWorkflows()
     const map = {}
-    for (const m of metas) {
-      map[m.name] = m
+    for (const wf of workflows) {
+      map[wf.name] = wf
     }
     metaMap.value = map
 
-    fileWorkflows.value = files.map(f => {
-      const meta = metas.find(m => m.name === f.class_name)
-      return {
-        name: f.name,
-        type: meta?.type || f.type,
-        className: f.class_name || f.name,
-        meta: meta || null,
-      }
-    })
+    fileWorkflows.value = workflows.map(wf => ({
+      name: wf.name,
+      type: wf.type,
+      className: wf.class_name || wf.name,
+      meta: wf,
+    }))
   } catch (e) { error.value = e.message }
   loading.value = false
 }
@@ -144,7 +138,7 @@ async function editWorkflow(name) {
   editMode.value = true
   saveResult.value = null
   try {
-    const res = await api.getWorkflowFile(name)
+    const res = await api.getWorkflowCode(name)
     content.value = res.content
   } catch (e) { content.value = `Error: ${e.message}` }
 }
@@ -153,7 +147,7 @@ async function saveWorkflow() {
   saving.value = true
   saveResult.value = null
   try {
-    const res = await api.saveWorkflowFile(editName.value, content.value)
+    const res = await api.saveWorkflowCode(editName.value, content.value)
     saveResult.value = { success: true, commit: res.commit }
     await loadAll()
   } catch (e) {
@@ -166,7 +160,7 @@ async function createWorkflow() {
   creating.value = true
   try {
     const res = await api.getWorkflowTemplate(newName.value, newType.value)
-    await api.saveWorkflowFile(newName.value, res.content)
+    await api.saveWorkflowCode(newName.value, res.content)
     await api.reloadWorkflows()
     showNew.value = false
     const created = newName.value
@@ -180,7 +174,7 @@ async function createWorkflow() {
 async function removeWorkflow(name) {
   if (!confirm(`Delete workflow "${name}"?`)) return
   try {
-    await api.deleteWorkflowFile(name)
+    await api.deleteWorkflowCode(name)
     if (editName.value === name) editMode.value = false
     await loadAll()
   } catch (e) { error.value = e.message }

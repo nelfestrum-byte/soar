@@ -103,15 +103,6 @@ async def test_get_job_not_found():
 
 
 @pytest.mark.asyncio
-async def test_list_files():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/files")
-        assert response.status_code == 200
-        assert isinstance(response.json(), dict)
-
-
-@pytest.mark.asyncio
 async def test_webhook_not_found():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

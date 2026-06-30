@@ -10,12 +10,10 @@ from loguru import logger
 from orchestrator.api import (
     actions_router,
     connectors_router,
-    files_router,
     jobs_router,
     logs_router,
     status_router,
     webhooks_router,
-    workflow_files_router,
     workflows_router,
 )
 from orchestrator.config import load_config
@@ -158,8 +156,6 @@ async def limit_request_body(request: Request, call_next):
 
 
 app.include_router(workflows_router)
-app.include_router(workflow_files_router)
-app.include_router(files_router)
 app.include_router(actions_router)
 app.include_router(connectors_router)
 app.include_router(jobs_router)

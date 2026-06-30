@@ -139,19 +139,15 @@ deploy/stage/
 ### Workflows
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /workflows | Список registered workflows |
-| POST | /workflows/reload | Перечитать файлы и обновить job_manager |
+| GET | /workflows | Список registered workflows (runtime meta) |
+| GET | /workflows/{name} | Получить meta workflow |
 | POST | /workflows/{name}/enable | Включить workflow |
 | POST | /workflows/{name}/disable | Выключить workflow |
-
-### Workflow Files
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | /workflow-files | Список файлов workflows |
-| GET | /workflow-files/template | Шаблон (name, wf_type) |
-| GET | /workflow-files/{name} | Получить код |
-| PUT | /workflow-files/{name} | Сохранить код |
-| DELETE | /workflow-files/{name} | Удалить файл |
+| POST | /workflows/reload | Перечитать файлы и обновить job_manager |
+| GET | /workflows/{name}/code | Получить код workflow |
+| PUT | /workflows/{name}/code | Сохранить код workflow |
+| DELETE | /workflows/{name}/code | Удалить файл workflow |
+| GET | /workflows/code/template | Шаблон workflow |
 
 ### Actions
 | Method | Path | Description |
@@ -234,7 +230,7 @@ Workflows запускаются как отдельные процессы че
 | File коннектор | `soar/connectors/file/` — write, write_json, append, read, list_files, delete |
 | Новый action | `soar/actions/`, один файл = одна функция |
 | Новый workflow | `soar/workflows/`, наследовать от `ScheduledWorkflow`/`WebhookWorkflow`/`ManualWorkflow` |
-| Шаблон workflow | `orchestrator/api/workflow_files.py` — TEMPLATES dict |
+| Шаблон workflow | `orchestrator/api/workflows.py` — TEMPLATES dict |
 | Изменить модель | `orchestrator/models/` |
 | Очередь задач | `orchestrator/core/queue/` |
 | Воркеры | `orchestrator/core/worker.py`, `worker_pool.py` |

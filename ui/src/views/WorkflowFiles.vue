@@ -26,11 +26,11 @@
     <template v-else>
       <div class="card">
         <div v-if="workflows.length">
-          <div v-for="name in workflows" :key="name"
+          <div v-for="wf in workflows" :key="wf.name"
                style="display:flex; align-items:center; gap:8px; padding:8px; border-bottom:1px solid #eee;"
-               :style="{background: selected===name ? '#e3f2fd' : ''}">
-            <span style="flex:1; cursor:pointer; font-family:monospace;" @click="loadWorkflow(name)">{{ name }}.py</span>
-            <button class="btn btn-danger" style="font-size:11px;" @click="removeWorkflow(name)">Delete</button>
+               :style="{background: selected===wf.name ? '#e3f2fd' : ''}">
+            <span style="flex:1; cursor:pointer; font-family:monospace;" @click="loadWorkflow(wf.name)">{{ wf.name }}.py</span>
+            <button class="btn btn-danger" style="font-size:11px;" @click="removeWorkflow(wf.name)">Delete</button>
           </div>
         </div>
         <div v-else class="loading">No workflows yet</div>
@@ -72,7 +72,7 @@ const newType = ref('scheduled')
 const creating = ref(false)
 
 async function loadWorkflows() {
-  try { workflows.value = await api.getWorkflowFiles() }
+  try { workflows.value = await api.getWorkflows() }
   catch (e) { error.value = e.message }
   loading.value = false
 }
@@ -81,7 +81,7 @@ async function loadWorkflow(name) {
   selected.value = name
   saveResult.value = null
   try {
-    const res = await api.getWorkflowFile(name)
+    const res = await api.getWorkflowCode(name)
     content.value = res.content
   } catch (e) { content.value = `Error: ${e.message}` }
 }
@@ -90,7 +90,7 @@ async function saveWorkflow() {
   saving.value = true
   saveResult.value = null
   try {
-    const res = await api.saveWorkflowFile(selected.value, content.value)
+    const res = await api.saveWorkflowCode(selected.value, content.value)
     saveResult.value = { success: true, commit: res.commit }
   } catch (e) {
     saveResult.value = { success: false, error: e.message }
@@ -102,7 +102,7 @@ async function createWorkflow() {
   creating.value = true
   try {
     const res = await api.getWorkflowTemplate(newName.value, newType.value)
-    await api.saveWorkflowFile(newName.value, res.content)
+    await api.saveWorkflowCode(newName.value, res.content)
     showNew.value = false
     const created = newName.value
     newName.value = ''
@@ -118,7 +118,7 @@ async function createWorkflow() {
 async function removeWorkflow(name) {
   if (!confirm(`Delete workflow "${name}"?`)) return
   try {
-    await api.deleteWorkflowFile(name)
+    await api.deleteWorkflowCode(name)
     if (selected.value === name) { selected.value = ''; content.value = '' }
     await loadWorkflows()
   } catch (e) { error.value = e.message }
