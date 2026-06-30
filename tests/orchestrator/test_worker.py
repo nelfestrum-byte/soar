@@ -1,9 +1,9 @@
 import pytest
-from orchestrator.core.worker import Worker
+
 from orchestrator.core.queue.memory import InMemoryQueue
 from orchestrator.core.subprocess_runner import SubprocessRunner
+from orchestrator.core.worker import Worker
 from orchestrator.store.job_store import JobStore
-from orchestrator.models.job import WorkflowJob, JobStatus
 
 
 @pytest.mark.asyncio

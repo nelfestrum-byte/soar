@@ -1,7 +1,8 @@
-import sys
-import json
 import asyncio
+import json
 import os
+import sys
+
 from orchestrator.models.job import WorkflowJob
 
 
@@ -29,5 +30,5 @@ class SubprocessRunner:
             stderr=asyncio.subprocess.STDOUT,
         )
         if stdout_file:
-            proc._log_file = stdout_file
+            proc._log_file = stdout_file  # type: ignore[attr-defined]
         return proc

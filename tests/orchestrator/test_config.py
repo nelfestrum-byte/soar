@@ -1,5 +1,4 @@
-import pytest
-from orchestrator.config import load_config, OrchestratorConfig
+from orchestrator.config import OrchestratorConfig, load_config
 
 
 def test_load_config_default():

@@ -1,6 +1,7 @@
 import asyncio
 import os
 from dataclasses import dataclass
+
 from loguru import logger
 
 
@@ -50,7 +51,6 @@ class GitManager:
             logger.info("Initialized git repository")
 
     async def commit(self, filepath: str, message: str) -> str:
-        safe_message = message.replace("\n", " ").replace("\r", "")[:200]
         await self._run("add", "--", filepath)
         env = {
             **os.environ,
@@ -78,7 +78,7 @@ class GitManager:
 
     async def history(self, filepath: str, limit: int = 20) -> list[GitCommit]:
         output = await self._run(
-            "log", "--follow", f"-n", str(limit),
+            "log", "--follow", "-n", str(limit),
             "--format=%H|%s|%an|%ai", "--", filepath,
         )
         commits = []

@@ -1,7 +1,8 @@
-import pytest
-from orchestrator.core.git_manager import GitManager
 import os
-import tempfile
+
+import pytest
+
+from orchestrator.core.git_manager import GitManager
 
 
 @pytest.fixture

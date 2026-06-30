@@ -1,6 +1,6 @@
-import os
 import json
-from datetime import datetime, UTC
+import os
+
 from soar.connectors.base import BaseConnector
 
 

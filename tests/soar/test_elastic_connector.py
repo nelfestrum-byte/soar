@@ -1,6 +1,7 @@
 import sys
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 
 @pytest.fixture(autouse=True)
@@ -32,8 +33,9 @@ def test_elastic_connector_connect_impl():
 
 
 def test_elastic_connector_query():
-    from soar.connectors.elastic.elastic import ElasticConnector
     import elasticsearch
+
+    from soar.connectors.elastic.elastic import ElasticConnector
     mock_client = elasticsearch.Elasticsearch.return_value
     mock_client.search.return_value = {"hits": {"hits": [{"_source": {"alert": "test"}}]}}
 

@@ -21,15 +21,15 @@ class VirusTotalConnector(BaseConnector):
 
     def lookup_ip(self, ip: str) -> dict:
         self._ensure_connected()
-        obj = self._client.get_object(f"/ip_addresses/{ip}")
+        obj = self._client.get_object(f"/ip_addresses/{ip}")  # type: ignore[attr-defined]
         return dict(obj)
 
     def lookup_domain(self, domain: str) -> dict:
         self._ensure_connected()
-        obj = self._client.get_object(f"/domains/{domain}")
+        obj = self._client.get_object(f"/domains/{domain}")  # type: ignore[attr-defined]
         return dict(obj)
 
     def lookup_file(self, file_hash: str) -> dict:
         self._ensure_connected()
-        obj = self._client.get_object(f"/files/{file_hash}")
+        obj = self._client.get_object(f"/files/{file_hash}")  # type: ignore[attr-defined]
         return dict(obj)

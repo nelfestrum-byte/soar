@@ -1,32 +1,33 @@
-import yaml
-from pathlib import Path
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+import yaml
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from loguru import logger
 
-from orchestrator.config import load_config
-from orchestrator.core.queue.memory import InMemoryQueue
-from orchestrator.core.queue.redis_queue import RedisQueue
-from orchestrator.core.worker_pool import WorkerPool
-from orchestrator.core.scheduler import OrchestratorScheduler
-from orchestrator.core.job_manager import JobManager
-from orchestrator.core.subprocess_runner import SubprocessRunner
-from orchestrator.core.git_manager import GitManager
-from orchestrator.store.job_store import JobStore
-from orchestrator.models.workflow_meta import WorkflowMeta
-from orchestrator.models import ConcurrencyPolicy
 from orchestrator.api import (
-    workflows_router,
-    workflow_files_router,
-    files_router,
     actions_router,
     connectors_router,
+    files_router,
     jobs_router,
-    webhooks_router,
     logs_router,
     status_router,
+    webhooks_router,
+    workflow_files_router,
+    workflows_router,
 )
+from orchestrator.config import load_config
+from orchestrator.core.git_manager import GitManager
+from orchestrator.core.job_manager import JobManager
+from orchestrator.core.queue.memory import InMemoryQueue
+from orchestrator.core.queue.redis_queue import RedisQueue
+from orchestrator.core.scheduler import OrchestratorScheduler
+from orchestrator.core.subprocess_runner import SubprocessRunner
+from orchestrator.core.worker_pool import WorkerPool
+from orchestrator.models import ConcurrencyPolicy
+from orchestrator.models.workflow_meta import WorkflowMeta
+from orchestrator.store.job_store import JobStore
 
 
 def create_queue(config):
@@ -37,7 +38,7 @@ def create_queue(config):
 
 def load_workflow_metas(config) -> list[WorkflowMeta]:
     state_path = Path(config.soar.workflows_dir).parent / "orchestrator_state.yaml"
-    state = {}
+    state: dict = {}
     if state_path.exists():
         with open(state_path) as f:
             state = yaml.safe_load(f) or {}

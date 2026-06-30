@@ -1,5 +1,4 @@
-import pytest
-from orchestrator.models import JobStatus, ConcurrencyPolicy
+from orchestrator.models import ConcurrencyPolicy, JobStatus
 
 
 def test_job_status_values():

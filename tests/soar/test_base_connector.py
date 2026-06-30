@@ -1,4 +1,5 @@
 import pytest
+
 from soar.connectors.base import BaseConnector
 
 

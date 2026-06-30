@@ -1,6 +1,4 @@
 from fastapi import APIRouter, HTTPException, Request
-from orchestrator.models.workflow_meta import WorkflowMeta
-from orchestrator.models import ConcurrencyPolicy
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
@@ -91,11 +89,12 @@ async def reload_scheduler(request: Request):
 
 
 def _save_state(config, metas: dict):
-    import yaml
     from pathlib import Path
 
+    import yaml
+
     state_path = Path(config.soar.workflows_dir).parent / "orchestrator_state.yaml"
-    state = {"workflows": {}}
+    state: dict = {"workflows": {}}
     for name, meta in metas.items():
         state["workflows"][name] = "enabled" if meta.enabled else "disabled"
 

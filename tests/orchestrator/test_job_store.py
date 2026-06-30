@@ -1,7 +1,9 @@
+from datetime import UTC, datetime
+
 import pytest
+
+from orchestrator.models.job import JobStatus, WorkflowJob
 from orchestrator.store.job_store import JobStore
-from orchestrator.models.job import WorkflowJob, JobStatus
-from datetime import datetime, UTC
 
 
 @pytest.mark.asyncio
@@ -74,7 +76,6 @@ async def test_job_store_count_by_status():
 
 @pytest.mark.asyncio
 async def test_job_store_stats():
-    from datetime import datetime, UTC
     store = JobStore()
     job1 = WorkflowJob(workflow_name="test", status=JobStatus.RUNNING)
     job2 = WorkflowJob(workflow_name="test", status=JobStatus.COMPLETED)

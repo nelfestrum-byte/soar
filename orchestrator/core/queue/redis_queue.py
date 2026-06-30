@@ -1,6 +1,7 @@
 import json
-import asyncio
+
 from redis import asyncio as aioredis
+
 from orchestrator.core.queue.base import AbstractJobQueue
 from orchestrator.models.job import WorkflowJob
 

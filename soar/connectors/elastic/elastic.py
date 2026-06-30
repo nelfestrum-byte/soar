@@ -27,13 +27,13 @@ class ElasticConnector(BaseConnector):
 
     def query(self, index: str, dsl: dict) -> list[dict]:
         self._ensure_connected()
-        resp = self._client.search(index=index, body=dsl)
+        resp = self._client.search(index=index, body=dsl)  # type: ignore[attr-defined]
         return [hit["_source"] for hit in resp["hits"]["hits"]]
 
     def index(self, index: str, document: dict) -> dict:
         self._ensure_connected()
-        return self._client.index(index=index, body=document)
+        return self._client.index(index=index, body=document)  # type: ignore[attr-defined, no-any-return]
 
     def delete(self, index: str, doc_id: str) -> dict:
         self._ensure_connected()
-        return self._client.delete(index=index, id=doc_id)
+        return self._client.delete(index=index, id=doc_id)  # type: ignore[attr-defined, no-any-return]

@@ -1,6 +1,7 @@
 import sys
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 
 @pytest.fixture(autouse=True)
@@ -22,16 +23,18 @@ def test_vt_connector_init():
 
 
 def test_vt_connector_connect():
-    from soar.connectors.virus_total.virus_total import VirusTotalConnector
     import vt
+
+    from soar.connectors.virus_total.virus_total import VirusTotalConnector
     conn = VirusTotalConnector(instance_name="vt_main", api_key="abc123")
     conn._connect_impl()
     vt.Client.assert_called_once_with("abc123")
 
 
 def test_vt_connector_lookup_ip():
-    from soar.connectors.virus_total.virus_total import VirusTotalConnector
     import vt
+
+    from soar.connectors.virus_total.virus_total import VirusTotalConnector
     mock_client = vt.Client.return_value
     mock_client.get_object.return_value = {"ip": "8.8.8.8", "country": "US"}
 

@@ -1,13 +1,15 @@
-from datetime import datetime, UTC
+import asyncio
+from datetime import UTC, datetime
+from uuid import uuid4
+
 from loguru import logger
-from orchestrator.store.job_store import JobStore
+
 from orchestrator.core.queue.base import AbstractJobQueue
 from orchestrator.core.subprocess_runner import SubprocessRunner
-from orchestrator.models.job import WorkflowJob, JobStatus
-from orchestrator.models.workflow_meta import WorkflowMeta
 from orchestrator.models import ConcurrencyPolicy
-from uuid import uuid4
-import asyncio
+from orchestrator.models.job import JobStatus, WorkflowJob
+from orchestrator.models.workflow_meta import WorkflowMeta
+from orchestrator.store.job_store import JobStore
 
 
 class JobAlreadyRunningError(Exception):
@@ -49,7 +51,8 @@ class JobManager:
         return self._metas[workflow_name]
 
     def _make_log_path(self, workflow_name: str, job_id: str) -> str:
-        import os, re
+        import os
+        import re
         safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", workflow_name)
         path = os.path.join(self.log_dir, safe_name, f"{job_id}.log")
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -91,7 +94,8 @@ class JobManager:
         if not job:
             raise ValueError(f"Job '{job_id}' not found")
 
-        import os, signal
+        import os
+        import signal
         if job.status == JobStatus.RUNNING and job.pid:
             try:
                 os.kill(job.pid, signal.SIGTERM)

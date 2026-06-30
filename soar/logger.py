@@ -1,4 +1,5 @@
 import sys
+
 from loguru import logger as _loguru_logger
 
 _initialized = False

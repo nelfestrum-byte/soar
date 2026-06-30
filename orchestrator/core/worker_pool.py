@@ -1,8 +1,10 @@
 import asyncio
+
 from loguru import logger
-from orchestrator.core.worker import Worker
+
 from orchestrator.core.queue.base import AbstractJobQueue
 from orchestrator.core.subprocess_runner import SubprocessRunner
+from orchestrator.core.worker import Worker
 from orchestrator.store.job_store import JobStore
 
 

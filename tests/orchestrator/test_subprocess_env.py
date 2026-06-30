@@ -1,5 +1,7 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
+
 from orchestrator.core.subprocess_runner import SubprocessRunner
 from orchestrator.models.job import WorkflowJob
 

@@ -1,6 +1,6 @@
 import importlib
-import pkgutil
 from pathlib import Path
+
 from soar.connectors.base import BaseConnector
 from soar.logger import get_logger
 

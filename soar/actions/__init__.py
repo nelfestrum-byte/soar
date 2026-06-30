@@ -1,6 +1,8 @@
 import importlib
 import pkgutil
+from collections.abc import Callable
 from pathlib import Path
+
 from soar.logger import get_logger
 
 _log = get_logger("action.registry")
@@ -8,11 +10,11 @@ _log = get_logger("action.registry")
 
 class ActionsRegistry:
     def __init__(self):
-        self._actions: dict[str, callable] = {}
+        self._actions: dict[str, Callable] = {}
 
     def _discover(self) -> None:
         package_dir = Path(__file__).parent
-        for finder, module_name, is_pkg in pkgutil.iter_modules([str(package_dir)]):
+        for _finder, module_name, is_pkg in pkgutil.iter_modules([str(package_dir)]):
             if is_pkg or module_name.startswith("_"):
                 continue
             fqn = f"soar.actions.{module_name}"

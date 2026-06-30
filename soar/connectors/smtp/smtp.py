@@ -29,14 +29,14 @@ class SmtpConnector(BaseConnector):
         import smtplib
         import ssl
 
-        self._server = smtplib.SMTP(self.host, self.port, timeout=10)
-        self._server.ehlo()
+        self._server = smtplib.SMTP(self.host, self.port, timeout=10)  # type: ignore[assignment]
+        self._server.ehlo()  # type: ignore[attr-defined]
         if self.use_tls:
             context = ssl.create_default_context() if self.validate_certs else ssl._create_unverified_context()
-            self._server.starttls(context=context)
-            self._server.ehlo()
+            self._server.starttls(context=context)  # type: ignore[attr-defined]
+            self._server.ehlo()  # type: ignore[attr-defined]
         if self.username and self.password:
-            self._server.login(self.username, self.password)
+            self._server.login(self.username, self.password)  # type: ignore[attr-defined]
         self._connected = True
 
     def disconnect(self):
@@ -45,7 +45,7 @@ class SmtpConnector(BaseConnector):
                 self._server.quit()
             except Exception:
                 pass
-            self._server = None
+        self._server = None
         self._connected = False
         self._logger.info(f"Disconnected from {self.instance_name}")
 
@@ -60,10 +60,10 @@ class SmtpConnector(BaseConnector):
         attachments: list[dict] | None = None,
     ) -> dict:
         self._ensure_connected()
-        from email.mime.text import MIMEText
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.base import MIMEBase
         from email import encoders
+        from email.mime.base import MIMEBase
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
 
         if isinstance(to, str):
             to = [to]
@@ -94,7 +94,7 @@ class SmtpConnector(BaseConnector):
                 msg.attach(part)
 
         all_recipients = to + (cc or []) + (bcc or [])
-        self._server.sendmail(self.from_email, all_recipients, msg.as_string())
+        self._server.sendmail(self.from_email, all_recipients, msg.as_string())  # type: ignore[attr-defined]  # type: ignore[union-attr]
         self._logger.info(f"Email sent to {', '.join(to)}: {subject}")
         return {"status": "sent", "to": to, "subject": subject}
 

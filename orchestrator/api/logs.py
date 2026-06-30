@@ -1,8 +1,10 @@
 import asyncio
 import os
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from sse_starlette.sse import EventSourceResponse
+
 from orchestrator.models.job import JobStatus
 
 router = APIRouter(prefix="/logs", tags=["logs"])
@@ -31,7 +33,7 @@ async def stream_log(job_id: str, request: Request):
         raise HTTPException(status_code=404, detail="No log path for job")
 
     async def event_generator():
-        with open(job.log_path, "r") as f:
+        with open(job.log_path) as f:
             while True:
                 line = f.readline()
                 if line:

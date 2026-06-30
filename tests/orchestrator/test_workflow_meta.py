@@ -1,6 +1,5 @@
-import pytest
-from orchestrator.models.workflow_meta import WorkflowMeta
 from orchestrator.models import ConcurrencyPolicy
+from orchestrator.models.workflow_meta import WorkflowMeta
 
 
 def test_workflow_meta_init():

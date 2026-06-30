@@ -1,12 +1,11 @@
+
 import pytest
-from unittest.mock import MagicMock
-from soar.workflows.base import (
-    BaseWorkflow, ScheduledWorkflow, WebhookWorkflow, ManualWorkflow, WorkflowResult
-)
+
+from soar.workflows.base import BaseWorkflow, ManualWorkflow, ScheduledWorkflow, WebhookWorkflow, WorkflowResult
 
 
 def test_workflow_result():
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
     now = datetime.now(UTC)
     result = WorkflowResult(
         success=True,

@@ -1,8 +1,9 @@
 import importlib
 import pkgutil
 from pathlib import Path
-from soar.workflows.base import BaseWorkflow, WorkflowResult
+
 from soar.logger import get_logger
+from soar.workflows.base import BaseWorkflow, WorkflowResult
 
 _log = get_logger("workflow.registry")
 
@@ -13,7 +14,7 @@ class WorkflowRegistry:
 
     def _discover(self) -> None:
         package_dir = Path(__file__).parent
-        for finder, module_name, is_pkg in pkgutil.iter_modules([str(package_dir)]):
+        for _finder, module_name, is_pkg in pkgutil.iter_modules([str(package_dir)]):
             if is_pkg or module_name.startswith("_") or module_name == "base":
                 continue
             fqn = f"soar.workflows.{module_name}"

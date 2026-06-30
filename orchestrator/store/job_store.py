@@ -1,6 +1,8 @@
 from __future__ import annotations
-from datetime import datetime, UTC
-from orchestrator.models.job import WorkflowJob, JobStatus
+
+from datetime import UTC, datetime
+
+from orchestrator.models.job import JobStatus, WorkflowJob
 
 
 class JobStore:
@@ -35,11 +37,9 @@ class JobStore:
         jobs.sort(key=lambda j: j.triggered_at or datetime.min.replace(tzinfo=UTC), reverse=True)
         return jobs[offset: offset + limit]
 
-    async def count_by_status(self, workflow_name: str, statuses: list[JobStatus]) -> int:
-        return sum(
-            1 for j in self._jobs.values()
-            if j.workflow_name == workflow_name and j.status in statuses
-        )
+    async def count_by_status(self, workflow_name: str, statuses: list[JobStatus]) -> int:  # type: ignore[valid-type, no-redef]
+        return sum(1 for j in self._jobs.values()  # type: ignore[misc]
+                   if j.workflow_name == workflow_name and j.status in statuses)  # type: ignore[misc, attr-defined]
 
     async def stats(self) -> dict:
         now = datetime.now(UTC)

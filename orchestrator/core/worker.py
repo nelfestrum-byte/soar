@@ -1,10 +1,12 @@
 import asyncio
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+
 from loguru import logger
+
 from orchestrator.core.queue.base import AbstractJobQueue
 from orchestrator.core.subprocess_runner import SubprocessRunner
+from orchestrator.models.job import JobStatus, WorkflowJob
 from orchestrator.store.job_store import JobStore
-from orchestrator.models.job import WorkflowJob, JobStatus
 
 
 class Worker:
@@ -46,7 +48,7 @@ class Worker:
             timeout = job.timeout if job.timeout is not None else self.default_timeout
             try:
                 stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 proc.kill()
                 await proc.wait()
                 job.status = JobStatus.TIMEOUT

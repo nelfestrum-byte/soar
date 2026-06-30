@@ -1,7 +1,8 @@
+
 import pytest
-import asyncio
+
 from orchestrator.core.queue.memory import InMemoryQueue
-from orchestrator.models.job import WorkflowJob, JobStatus
+from orchestrator.models.job import WorkflowJob
 
 
 @pytest.mark.asyncio

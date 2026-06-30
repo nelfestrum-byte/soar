@@ -1,6 +1,6 @@
-import pytest
-from datetime import datetime, UTC
-from orchestrator.models.job import WorkflowJob, JobStatus
+from datetime import UTC, datetime
+
+from orchestrator.models.job import JobStatus, WorkflowJob
 
 
 def test_workflow_job_init():

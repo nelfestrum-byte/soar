@@ -1,6 +1,6 @@
 import secrets
+
 from fastapi import APIRouter, HTTPException, Request
-from orchestrator.models.job import JobStatus
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -31,7 +31,7 @@ async def handle_webhook(workflow_name: str, request: Request):
             triggered_by="webhook",
         )
     except ValueError:
-        raise HTTPException(status_code=404, detail="Workflow not found or disabled")
+        raise HTTPException(status_code=404, detail="Workflow not found or disabled") from None
     except Exception:
-        raise HTTPException(status_code=409, detail="Failed to enqueue job")
+        raise HTTPException(status_code=409, detail="Failed to enqueue job") from None
     return {"job_id": job.id}

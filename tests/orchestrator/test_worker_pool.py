@@ -1,7 +1,8 @@
 import pytest
-from orchestrator.core.worker_pool import WorkerPool
+
 from orchestrator.core.queue.memory import InMemoryQueue
 from orchestrator.core.subprocess_runner import SubprocessRunner
+from orchestrator.core.worker_pool import WorkerPool
 from orchestrator.store.job_store import JobStore
 
 

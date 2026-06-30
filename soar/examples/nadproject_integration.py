@@ -2,7 +2,8 @@
 Примеры интеграции SOAR модуля с надпроектом.
 """
 import atexit
-from soar import setup_logging, connectors, actions, workflows
+
+from soar import actions, connectors, setup_logging, workflows
 
 
 def init():

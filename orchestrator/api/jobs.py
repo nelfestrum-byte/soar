@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
+
 from orchestrator.models.job import JobStatus
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -20,9 +21,9 @@ async def create_job(body: JobRequest, request: Request):
             triggered_by="user",
         )
     except ValueError:
-        raise HTTPException(status_code=404, detail="Workflow not found or disabled")
+        raise HTTPException(status_code=404, detail="Workflow not found or disabled") from None
     except Exception:
-        raise HTTPException(status_code=409, detail="Failed to enqueue job")
+        raise HTTPException(status_code=409, detail="Failed to enqueue job") from None
     return job.to_dict()
 
 
@@ -62,5 +63,5 @@ async def cancel_job(job_id: str, request: Request):
     try:
         job = await job_manager.cancel(job_id)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from None
     return job.to_dict()

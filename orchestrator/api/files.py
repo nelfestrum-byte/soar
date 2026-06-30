@@ -1,7 +1,9 @@
 import os
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File
+
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse
-from orchestrator.api.validation import validate_path_within, validate_commit
+
+from orchestrator.api.validation import validate_commit, validate_path_within
 
 router = APIRouter(prefix="/files", tags=["files"])
 
@@ -57,12 +59,13 @@ async def upload_file(request: Request, file: UploadFile = File(...), path: str 
         "actions": config.soar.actions_dir,
     }
     parts = path.strip("/").split("/", 1) if path.strip() else []
+    filename = file.filename or "unnamed"
     if parts and parts[0] in base_map:
         subdir = parts[1] if len(parts) > 1 else ""
-        target = os.path.join(base_map[parts[0]], subdir, file.filename)
+        target = os.path.join(base_map[parts[0]], subdir, filename)
         validate_path_within(base_map[parts[0]], target)
     else:
-        target = os.path.join(config.soar.workflows_dir, path, file.filename)
+        target = os.path.join(config.soar.workflows_dir, path, filename)
         validate_path_within(config.soar.workflows_dir, target)
 
     os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -102,7 +105,7 @@ async def file_at_commit(path: str, commit: str, request: Request):
     try:
         content = await git.get_content(path, commit)
     except RuntimeError:
-        raise HTTPException(status_code=404, detail="Commit or file not found")
+        raise HTTPException(status_code=404, detail="Commit or file not found") from None
     return PlainTextResponse(content)
 
 
@@ -144,5 +147,5 @@ def _scan_dir(dir_path: str) -> dict:
         if entry.is_dir():
             result[entry.name] = _scan_dir(entry.path)
         else:
-            result[entry.name] = None
+            result[entry.name] = None  # type: ignore[assignment]
     return result

@@ -1,4 +1,5 @@
 import asyncio
+
 from orchestrator.core.queue.base import AbstractJobQueue
 from orchestrator.models.job import WorkflowJob
 
@@ -13,7 +14,7 @@ class InMemoryQueue(AbstractJobQueue):
     async def pop(self, timeout: float = 1.0) -> WorkflowJob | None:
         try:
             return await asyncio.wait_for(self._queue.get(), timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return None
 
     async def size(self) -> int:

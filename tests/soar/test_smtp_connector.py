@@ -1,6 +1,7 @@
 import sys
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch, call
 
 
 @pytest.fixture(autouse=True)

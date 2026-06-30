@@ -33,7 +33,7 @@ class TelegramConnector(BaseConnector):
         data = resp.json()
         if not data.get("ok"):
             raise RuntimeError(f"Send failed: {data.get('description', 'unknown')}")
-        return data["result"]
+        return data["result"]  # type: ignore[no-any-return]
 
     def send_photo(self, chat_id: str, photo: str, caption: str = "") -> dict:
         self._ensure_connected()
@@ -45,7 +45,7 @@ class TelegramConnector(BaseConnector):
         data = resp.json()
         if not data.get("ok"):
             raise RuntimeError(f"Send photo failed: {data.get('description', 'unknown')}")
-        return data["result"]
+        return data["result"]  # type: ignore[no-any-return]
 
     def send_document(self, chat_id: str, document: str, caption: str = "") -> dict:
         self._ensure_connected()
@@ -57,7 +57,7 @@ class TelegramConnector(BaseConnector):
         data = resp.json()
         if not data.get("ok"):
             raise RuntimeError(f"Send document failed: {data.get('description', 'unknown')}")
-        return data["result"]
+        return data["result"]  # type: ignore[no-any-return]
 
     def get_updates(self, offset: int = 0, limit: int = 100) -> list[dict]:
         self._ensure_connected()
@@ -69,7 +69,7 @@ class TelegramConnector(BaseConnector):
         data = resp.json()
         if not data.get("ok"):
             raise RuntimeError(f"Get updates failed: {data.get('description', 'unknown')}")
-        return data["result"]
+        return data["result"]  # type: ignore[no-any-return]
 
     def get_chat(self, chat_id: str) -> dict:
         self._ensure_connected()
@@ -80,4 +80,4 @@ class TelegramConnector(BaseConnector):
         data = resp.json()
         if not data.get("ok"):
             raise RuntimeError(f"Get chat failed: {data.get('description', 'unknown')}")
-        return data["result"]
+        return data["result"]  # type: ignore[no-any-return]

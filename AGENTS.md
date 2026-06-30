@@ -37,6 +37,15 @@ python -m pytest tests/soar/ -v
 # Coverage
 python -m pytest tests/ --cov=soar --cov=orchestrator
 
+# Lint (ruff)
+ruff check .
+
+# Lint auto-fix
+ruff check --fix .
+
+# Type check (mypy)
+mypy orchestrator/ soar/ --ignore-missing-imports
+
 # UI dev server (port 3000, proxies to orchestrator:8000)
 cd ui && npm install && npm run dev
 

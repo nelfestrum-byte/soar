@@ -1,7 +1,9 @@
 import os
+
 import pytest
 from fastapi import HTTPException
-from orchestrator.api.validation import validate_name, validate_path_within, validate_commit
+
+from orchestrator.api.validation import validate_commit, validate_name, validate_path_within
 
 
 def test_validate_name_valid():

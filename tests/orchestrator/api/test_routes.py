@@ -1,14 +1,15 @@
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
-from httpx import AsyncClient, ASGITransport
-from orchestrator.main import app
+from httpx import ASGITransport, AsyncClient
+
 from orchestrator.config import OrchestratorConfig
-from orchestrator.core.queue.memory import InMemoryQueue
-from orchestrator.core.worker_pool import WorkerPool
-from orchestrator.core.scheduler import OrchestratorScheduler
 from orchestrator.core.job_manager import JobManager
+from orchestrator.core.queue.memory import InMemoryQueue
+from orchestrator.core.scheduler import OrchestratorScheduler
 from orchestrator.core.subprocess_runner import SubprocessRunner
-from orchestrator.core.git_manager import GitManager
+from orchestrator.core.worker_pool import WorkerPool
+from orchestrator.main import app
 from orchestrator.store.job_store import JobStore
 
 

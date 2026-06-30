@@ -1,7 +1,8 @@
 import os
 import re
+
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import PlainTextResponse
+
 from orchestrator.api.validation import validate_name, validate_path_within
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])

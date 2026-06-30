@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class JobStatus(str, Enum):
+class JobStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -10,7 +10,7 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class ConcurrencyPolicy(str, Enum):
+class ConcurrencyPolicy(StrEnum):
     FORBID = "forbid"
     QUEUE = "queue"
     ALLOW = "allow"

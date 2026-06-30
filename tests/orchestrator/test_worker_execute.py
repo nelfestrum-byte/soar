@@ -1,10 +1,12 @@
-import pytest
 import asyncio
-from unittest.mock import MagicMock, AsyncMock, patch
-from orchestrator.core.worker import Worker
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
 from orchestrator.core.queue.memory import InMemoryQueue
+from orchestrator.core.worker import Worker
+from orchestrator.models.job import JobStatus, WorkflowJob
 from orchestrator.store.job_store import JobStore
-from orchestrator.models.job import WorkflowJob, JobStatus
 
 
 @pytest.fixture
