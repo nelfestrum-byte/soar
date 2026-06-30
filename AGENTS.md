@@ -77,9 +77,7 @@ orchestrator/
 ├── store/
 │   └── job_store.py           # JobStore — in-memory хранение jobs
 └── api/
-    ├── workflows.py           # GET/POST enable/disable, reload
-    ├── workflow_files.py      # CRUD workflow файлов + templates
-    ├── files.py               # CRUD файлов + git history
+    ├── workflows.py           # GET/POST enable/disable, reload + CRUD кода workflow
     ├── actions.py             # CRUD actions + templates
     ├── connectors.py          # CRUD connectors + code/config
     ├── jobs.py                # POST запуск, GET статус, cancel
@@ -128,7 +126,7 @@ deploy/stage/
 ├── docker-compose.yml         # orchestrator + UI (nginx)
 ├── Dockerfile.orchestrator    # Python 3.11 + git + deps
 ├── Dockerfile.ui              # Node build → nginx
-├── nginx.conf                 # proxy /api → orchestrator:8000
+├── nginx.conf                 # proxy /api, /docs, /openapi.json → orchestrator:8000
 ├── config.yaml                # Stage defaults
 ├── Makefile                   # make up/down/build/logs
 └── README.md
