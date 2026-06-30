@@ -15,9 +15,10 @@ RUN pip install --no-cache-dir \
     requests
 
 RUN mkdir -p /app/data /app/data/workflows /app/data/actions /app/data/connectors /var/log/soar/jobs && \
-    cp -rn /app/soar/workflows/*.py /app/data/workflows/ 2>/dev/null || true && \
-    cp -rn /app/soar/actions/*.py /app/data/actions/ 2>/dev/null || true && \
-    cp -rn /app/soar/connectors/*/ /app/data/connectors/ 2>/dev/null || true && \
+    find /app/soar/workflows -maxdepth 1 -name '*.py' ! -name '__init__.py' ! -name 'base.py' -exec cp -n {} /app/data/workflows/ \; 2>/dev/null || true && \
+    find /app/soar/actions -maxdepth 1 -name '*.py' ! -name '__init__.py' -exec cp -n {} /app/data/actions/ \; 2>/dev/null || true && \
+    find /app/soar/connectors -maxdepth 1 -mindepth 1 -type d ! -name '__pycache__' ! -name '_*' -exec cp -rn {} /app/data/connectors/ \; 2>/dev/null || true && \
+    find /app/data/connectors -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     chown -R soar:soar /app /var/log/soar
 
 COPY deploy/stage/config.yaml /app/data/config.yaml
