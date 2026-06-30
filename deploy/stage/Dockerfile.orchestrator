@@ -21,10 +21,10 @@ RUN mkdir -p /app/data /app/data/workflows /app/data/actions /app/data/connector
     find /app/data/connectors -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     chown -R soar:soar /app /var/log/soar
 
-COPY deploy/stage/config.yaml /app/data/config.yaml
+COPY deploy/stage/config.yaml /app/config.yaml
 
 ENV PYTHONUNBUFFERED=1
-ENV SOAR_CONFIG=/app/data/config.yaml
+ENV SOAR_CONFIG=/app/config.yaml
 
 EXPOSE 8000
 
