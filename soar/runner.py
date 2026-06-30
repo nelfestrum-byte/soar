@@ -2,15 +2,32 @@ import json
 import os
 import sys
 
+import yaml
+
 from soar.actions import actions
 from soar.connectors import connectors
 from soar.logger import setup_logging
 from soar.workflows import workflows
 
 setup_logging(level="INFO")
-workflows.init()
-connectors.init()
-actions.init()
+
+config_path = os.environ.get("SOAR_CONFIG", "config.yaml")
+external_dirs = {}
+try:
+    with open(config_path) as f:
+        config = yaml.safe_load(f) or {}
+    soar_config = config.get("soar", {})
+    external_dirs = {
+        "workflows": soar_config.get("workflows_dir"),
+        "connectors": soar_config.get("connectors_dir"),
+        "actions": soar_config.get("actions_dir"),
+    }
+except Exception:
+    pass
+
+workflows.init(external_dir=external_dirs.get("workflows"))
+connectors.init(external_dir=external_dirs.get("connectors"))
+actions.init(external_dir=external_dirs.get("actions"))
 
 
 def main():
