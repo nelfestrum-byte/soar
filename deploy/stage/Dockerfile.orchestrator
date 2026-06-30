@@ -14,7 +14,11 @@ RUN pip install --no-cache-dir \
     apscheduler sse-starlette redis elasticsearch vt-py \
     requests
 
-RUN mkdir -p /app/data /var/log/soar/jobs && chown -R soar:soar /app /var/log/soar
+RUN mkdir -p /app/data /app/data/workflows /app/data/actions /app/data/connectors /var/log/soar/jobs && \
+    cp -rn /app/soar/workflows/*.py /app/data/workflows/ 2>/dev/null || true && \
+    cp -rn /app/soar/actions/*.py /app/data/actions/ 2>/dev/null || true && \
+    cp -rn /app/soar/connectors/*/ /app/data/connectors/ 2>/dev/null || true && \
+    chown -R soar:soar /app /var/log/soar
 
 COPY deploy/stage/config.yaml /app/data/config.yaml
 
