@@ -1,0 +1,16 @@
+instances:
+  smtp_main:
+    host: smtp.gmail.com
+    port: 587
+    username: your@email.com
+    password: YOUR_APP_PASSWORD
+    use_tls: true
+    from_address: alerts@company.com
+  smtp_internal:
+    host: mail.internal.company.com
+    port: 25
+    username: ""
+    password: ""
+    use_tls: false
+    use_ssl: false
+    from_address: soar@internal.company.com

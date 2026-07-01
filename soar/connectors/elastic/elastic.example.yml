@@ -1,0 +1,12 @@
+instances:
+  elastic_main:
+    host: 10.0.0.1
+    port: 9200
+    api_key: YOUR_API_KEY
+  elastic_basic:
+    host: 10.0.0.2
+    port: 9200
+    username: elastic
+    password: YOUR_PASSWORD
+    verify_certs: true
+    ca_cert: /path/to/ca.crt

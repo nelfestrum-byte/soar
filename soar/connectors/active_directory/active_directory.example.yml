@@ -1,0 +1,16 @@
+instances:
+  corp_ad:
+    host: dc01.company.local
+    port: 636
+    base_dn: DC=company,DC=local
+    bind_dn: CN=svc_soar,OU=Service Accounts,DC=company,DC=local
+    bind_password: YOUR_PASSWORD
+    use_ssl: true
+  lab_ad:
+    host: dc01.lab.local
+    port: 389
+    base_dn: DC=lab,DC=local
+    bind_dn: CN=admin,DC=lab,DC=local
+    bind_password: YOUR_PASSWORD
+    use_ssl: false
+    use_start_tls: true

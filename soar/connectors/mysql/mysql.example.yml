@@ -1,0 +1,8 @@
+instances:
+  mysql_main:
+    host: 10.0.0.30
+    port: 3306
+    database: soar
+    user: soar_user
+    password: YOUR_PASSWORD
+    charset: utf8mb4

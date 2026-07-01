@@ -1,0 +1,15 @@
+instances:
+  pg_main:
+    host: 10.0.0.20
+    port: 5432
+    database: soar
+    user: soar_user
+    password: YOUR_PASSWORD
+    sslmode: require
+  pg_audit:
+    host: 10.0.0.21
+    port: 5432
+    database: audit_logs
+    user: readonly
+    password: YOUR_PASSWORD
+    sslmode: prefer

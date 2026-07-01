@@ -1,0 +1,6 @@
+instances:
+  tg_main:
+    token: "123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+  tg_soc:
+    token: "987654321:ZYXwvuTSRqponMLKjihGFEDCBA"
+    parse_mode: HTML

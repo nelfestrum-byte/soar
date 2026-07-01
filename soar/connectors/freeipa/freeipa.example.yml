@@ -1,0 +1,13 @@
+instances:
+  ipa_main:
+    host: ipa.company.local
+    port: 443
+    username: admin
+    password: YOUR_PASSWORD
+    verify_ssl: true
+  ipa_lab:
+    host: ipa.lab.local
+    port: 443
+    username: admin
+    password: YOUR_PASSWORD
+    verify_ssl: false

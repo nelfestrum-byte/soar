@@ -1,0 +1,7 @@
+instances:
+  logs:
+    base_path: /var/log/soar/files
+  data:
+    base_path: /var/log/soar/data
+  temp:
+    base_path: /tmp/soar

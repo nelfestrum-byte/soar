@@ -1,0 +1,7 @@
+instances:
+  so_main:
+    host: 10.0.0.50
+    port: 443
+    username: admin
+    password: YOUR_PASSWORD
+    verify_ssl: true

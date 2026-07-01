@@ -1,0 +1,15 @@
+instances:
+  mssql_main:
+    host: 10.0.0.40
+    port: 1433
+    database: master
+    user: sa
+    password: YOUR_PASSWORD
+    domain: ""
+  mssql_ad:
+    host: 10.0.0.41
+    port: 1433
+    database: master
+    user: sql_svc
+    password: YOUR_PASSWORD
+    domain: COMPANY

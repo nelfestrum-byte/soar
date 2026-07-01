@@ -1,0 +1,7 @@
+instances:
+  wazuh_main:
+    host: 10.0.0.60
+    port: 55000
+    username: admin
+    password: YOUR_PASSWORD
+    verify_ssl: false
