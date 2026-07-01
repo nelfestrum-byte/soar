@@ -1,5 +1,0 @@
-instances:
-  logs:
-    base_dir: /var/log/soar/files
-  data:
-    base_dir: /var/log/soar/data

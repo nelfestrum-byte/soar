@@ -1,3 +1,3 @@
-from soar.connectors.smtp.smtp import SmtpConnector
+from soar.connectors.smtp.smtp import SMTPConnector
 
-__all__ = ["SmtpConnector"]
+__all__ = ["SMTPConnector"]

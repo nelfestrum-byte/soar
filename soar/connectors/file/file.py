@@ -1,86 +1,57 @@
 import json
-import os
+from pathlib import Path
 
 from soar.connectors.base import BaseConnector
 
 
 class FileConnector(BaseConnector):
-    def __init__(self, instance_name: str, base_dir: str = "/var/log/soar/files"):
+    def __init__(self, instance_name: str, base_path: str = "/tmp"):
         super().__init__(instance_name)
-        self.base_dir = os.path.realpath(base_dir)
-        self._connected = False
+        self.base_path = Path(base_path)
 
     def _connect_impl(self):
-        os.makedirs(self.base_dir, exist_ok=True)
-        self._connected = True
-        self._logger.info(f"File connector ready: {self.base_dir}")
+        self.base_path.mkdir(parents=True, exist_ok=True)
 
-    def _safe_path(self, filename: str) -> str:
-        filepath = os.path.realpath(os.path.join(self.base_dir, filename))
-        if not filepath.startswith(self.base_dir + os.sep) and filepath != self.base_dir:
-            raise ValueError(f"Path traversal not allowed: {filename}")
-        return filepath
+    def _resolve(self, path: str) -> Path:
+        return self.base_path / path
 
-    def disconnect(self):
-        self._connected = False
-        self._logger.info(f"Disconnected from {self.instance_name}")
+    def write(self, path: str, content: str | bytes) -> bool:
+        target = self._resolve(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, bytes):
+            target.write_bytes(content)
+        else:
+            target.write_text(content, encoding="utf-8")
+        return True
 
-    def write(self, filename: str, content: str) -> str:
-        self._ensure_connected()
-        filepath = self._safe_path(filename)
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with open(filepath, "w") as f:
+    def write_json(self, path: str, data: dict) -> bool:
+        return self.write(path, json.dumps(data, indent=2, ensure_ascii=False))
+
+    def read(self, path: str) -> str:
+        return self._resolve(path).read_text(encoding="utf-8")
+
+    def read_json(self, path: str) -> dict:
+        return json.loads(self.read(path))
+
+    def append(self, path: str, content: str) -> bool:
+        target = self._resolve(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "a", encoding="utf-8") as f:
             f.write(content)
-        self._logger.info(f"Written {len(content)} bytes to {filepath}")
-        return filepath
+        return True
 
-    def write_json(self, filename: str, data: dict) -> str:
-        self._ensure_connected()
-        content = json.dumps(data, indent=2, default=str)
-        return self.write(filename, content)
-
-    def write_lines(self, filename: str, lines: list[str]) -> str:
-        self._ensure_connected()
-        content = "\n".join(lines) + "\n"
-        return self.write(filename, content)
-
-    def append(self, filename: str, content: str) -> str:
-        self._ensure_connected()
-        filepath = self._safe_path(filename)
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with open(filepath, "a") as f:
-            f.write(content)
-        self._logger.info(f"Appended {len(content)} bytes to {filepath}")
-        return filepath
-
-    def read(self, filename: str) -> str:
-        self._ensure_connected()
-        filepath = self._safe_path(filename)
-        if not os.path.exists(filepath):
-            raise FileNotFoundError(f"File not found: {filepath}")
-        with open(filepath) as f:
-            return f.read()
-
-    def list_files(self, subdir: str = "") -> list[str]:
-        self._ensure_connected()
-        target = os.path.realpath(os.path.join(self.base_dir, subdir)) if subdir else self.base_dir
-        if not target.startswith(self.base_dir + os.sep) and target != self.base_dir:
-            raise ValueError(f"Path traversal not allowed: {subdir}")
-        if not os.path.exists(target):
+    def list_files(self, directory: str = "", pattern: str = "*") -> list[str]:
+        target = self._resolve(directory)
+        if not target.exists():
             return []
-        result = []
-        for entry in os.scandir(target):
-            if entry.is_file():
-                result.append(entry.name)
-            elif entry.is_dir():
-                result.append(entry.name + "/")
-        return sorted(result)
+        return [str(p.relative_to(self.base_path)) for p in target.glob(pattern)]
 
-    def delete(self, filename: str) -> bool:
-        self._ensure_connected()
-        filepath = self._safe_path(filename)
-        if os.path.exists(filepath):
-            os.remove(filepath)
-            self._logger.info(f"Deleted {filepath}")
+    def delete(self, path: str) -> bool:
+        target = self._resolve(path)
+        if target.exists():
+            target.unlink()
             return True
         return False
+
+    def exists(self, path: str) -> bool:
+        return self._resolve(path).exists()

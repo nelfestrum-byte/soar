@@ -1,18 +1,22 @@
+import smtplib
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
 from soar.connectors.base import BaseConnector
 
 
-class SmtpConnector(BaseConnector):
+class SMTPConnector(BaseConnector):
     def __init__(
         self,
         instance_name: str,
-        host: str,
+        host: str = "localhost",
         port: int = 587,
         username: str = "",
         password: str = "",
         use_tls: bool = True,
-        from_email: str = "",
-        from_name: str = "SOAR",
-        validate_certs: bool = True,
+        use_ssl: bool = False,
+        from_address: str = "",
     ):
         super().__init__(instance_name)
         self.host = host
@@ -20,24 +24,19 @@ class SmtpConnector(BaseConnector):
         self.username = username
         self.password = password
         self.use_tls = use_tls
-        self.from_email = from_email
-        self.from_name = from_name
-        self.validate_certs = validate_certs
-        self._server = None
+        self.use_ssl = use_ssl
+        self.from_address = from_address
+        self._server: smtplib.SMTP | smtplib.SMTP_SSL | None = None
 
     def _connect_impl(self):
-        import smtplib
-        import ssl
-
-        self._server = smtplib.SMTP(self.host, self.port, timeout=10)  # type: ignore[assignment]
-        self._server.ehlo()  # type: ignore[attr-defined]
-        if self.use_tls:
-            context = ssl.create_default_context() if self.validate_certs else ssl._create_unverified_context()
-            self._server.starttls(context=context)  # type: ignore[attr-defined]
-            self._server.ehlo()  # type: ignore[attr-defined]
+        if self.use_ssl:
+            self._server = smtplib.SMTP_SSL(self.host, self.port)
+        else:
+            self._server = smtplib.SMTP(self.host, self.port)
+            if self.use_tls:
+                self._server.starttls()
         if self.username and self.password:
-            self._server.login(self.username, self.password)  # type: ignore[attr-defined]
-        self._connected = True
+            self._server.login(self.username, self.password)
 
     def disconnect(self):
         if self._server:
@@ -45,61 +44,45 @@ class SmtpConnector(BaseConnector):
                 self._server.quit()
             except Exception:
                 pass
-        self._server = None
-        self._connected = False
-        self._logger.info(f"Disconnected from {self.instance_name}")
+            self._server = None
+            self._connected = False
+            self._logger.info(f"Disconnected from {self.instance_name}")
 
-    def send_email(
+    def _build_message(
         self,
         to: str | list[str],
         subject: str,
         body: str,
         html: bool = False,
-        cc: str | list[str] | None = None,
-        bcc: str | list[str] | None = None,
         attachments: list[dict] | None = None,
-    ) -> dict:
-        self._ensure_connected()
-        from email import encoders
-        from email.mime.base import MIMEBase
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.text import MIMEText
-
-        if isinstance(to, str):
-            to = [to]
-        if isinstance(cc, str):
-            cc = [cc]
-        if isinstance(bcc, str):
-            bcc = [bcc]
-
+    ) -> MIMEMultipart:
+        recipients = [to] if isinstance(to, str) else to
         msg = MIMEMultipart()
-        msg["From"] = f"{self.from_name} <{self.from_email}>" if self.from_name else self.from_email
-        msg["To"] = ", ".join(to)
+        msg["From"] = self.from_address
+        msg["To"] = ", ".join(recipients)
         msg["Subject"] = subject
-        if cc:
-            msg["Cc"] = ", ".join(cc)
-
         content_type = "html" if html else "plain"
         msg.attach(MIMEText(body, content_type, "utf-8"))
+        for att in attachments or []:
+            with open(att["path"], "rb") as f:
+                part = MIMEApplication(f.read(), Name=att.get("name", att["path"].split("/")[-1]))
+            part["Content-Disposition"] = f'attachment; filename="{att.get("name", att["path"].split("/")[-1])}"'
+            msg.attach(part)
+        return msg
 
-        if attachments:
-            for att in attachments:
-                part = MIMEBase("application", "octet-stream")
-                part.set_payload(att["content"])
-                encoders.encode_base64(part)
-                part.add_header(
-                    "Content-Disposition",
-                    f'attachment; filename="{att.get("filename", "file")}"',
-                )
-                msg.attach(part)
+    def _send(self, msg: MIMEMultipart) -> dict:
+        self._ensure_connected()
+        assert self._server is not None
+        recipients = msg["To"].split(", ")
+        self._server.sendmail(self.from_address, recipients, msg.as_string())
+        return {"status": "sent", "recipients": recipients}
 
-        all_recipients = to + (cc or []) + (bcc or [])
-        self._server.sendmail(self.from_email, all_recipients, msg.as_string())  # type: ignore[attr-defined]  # type: ignore[union-attr]
-        self._logger.info(f"Email sent to {', '.join(to)}: {subject}")
-        return {"status": "sent", "to": to, "subject": subject}
+    def send_email(self, to: str | list[str], subject: str, body: str, html: bool = False, attachments: list[dict] | None = None) -> dict:
+        msg = self._build_message(to, subject, body, html, attachments)
+        return self._send(msg)
 
     def send_text(self, to: str | list[str], subject: str, body: str) -> dict:
-        return self.send_email(to=to, subject=subject, body=body, html=False)
+        return self.send_email(to, subject, body, html=False)
 
-    def send_html(self, to: str | list[str], subject: str, body: str) -> dict:
-        return self.send_email(to=to, subject=subject, body=body, html=True)
+    def send_html(self, to: str | list[str], subject: str, html: str) -> dict:
+        return self.send_email(to, subject, html, html=True)

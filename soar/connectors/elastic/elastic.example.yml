@@ -1,9 +1,0 @@
-instances:
-  elastic1:
-    host: 10.0.0.1
-    port: 9200
-    api_key: YOUR_KEY
-  elastic_backup:
-    host: 10.0.0.2
-    port: 9200
-    api_key: YOUR_KEY

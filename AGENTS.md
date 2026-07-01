@@ -4,7 +4,7 @@
 
 SOAR (Security Orchestration, Automation and Response) — система автоматизации инцидентов. Три компонента:
 
-1. **`soar/`** — Python-пакет: коннекторы (Elastic, VirusTotal, Telegram, SMTP, File), actions, workflows, реестры
+1. **`soar/`** — Python-пакет: enterprise-коннекторы (SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh, PostgreSQL/MySQL/MSSQL, Telegram, SMTP, VirusTotal, Abuse.ch, File), actions, workflows, реестры
 2. **`orchestrator/`** — FastAPI сервис: очередь задач, воркеры, планировщик, git-версионирование
 3. **`ui/`** — Vue.js SPA: минималистичный UI для тестирования и QA
 
@@ -92,22 +92,25 @@ soar/
 ├── connectors/
 │   ├── __init__.py            # ConnectorRegistry — автообнаружение коннекторов
 │   ├── base.py                # BaseConnector (lazy connect)
-│   ├── elastic/               # ElasticConnector — query/index/delete
-│   ├── virus_total/           # VirusTotalConnector — lookup IP/domain/file
-│   ├── telegram/              # TelegramConnector — send messages/photos, get updates
-│   ├── smtp/                  # SmtpConnector — send email (plain/HTML, attachments)
+│   ├── ssh/                   # SSHConnector — exec_command, put_file, get_file, list_dir
+│   ├── active_directory/      # ActiveDirectoryConnector — search, get_user, authenticate, modify
+│   ├── freeipa/               # FreeIPAConnector — user/group/host CRUD, hbac, certs
+│   ├── elastic/               # ElasticConnector — query, index, bulk, indices, ILM
+│   ├── security_onion/        # SecurityOnionConnector — alerts, events, agents, hunts, pcap
+│   ├── wazuh/                 # WazuhConnector — agents, alerts, sca, vulns, syscheck, rules
+│   ├── postgresql/            # PostgreSQLConnector — execute, tables, columns
+│   ├── mysql/                 # MySQLConnector — execute, tables, columns
+│   ├── mssql/                 # MSSQLConnector — execute, tables, columns
+│   ├── telegram/              # TelegramConnector — send_message/photo/document, get_updates
+│   ├── smtp/                  # SMTPConnector — send_email/text/html with attachments
+│   ├── virus_total/           # VirusTotalConnector — IP/domain/file/URL reports, upload
+│   ├── abusech/               # AbuseChConnector — ThreatFox IOCs, MalwareBazaar, URLhaus
 │   └── file/                  # FileConnector — write/read/append/delete файлы
 ├── actions/
-│   ├── __init__.py            # ActionsRegistry — автообнаружение actions
-│   ├── send_tg_soc_team.py    # Пример action
-│   └── send_tg_message.py     # Отправка в Telegram канал
+│   └── __init__.py            # ActionsRegistry — автообнаружение actions
 ├── workflows/
 │   ├── __init__.py            # WorkflowRegistry — автообнаружение workflows
-│   ├── base.py                # BaseWorkflow, ScheduledWorkflow, WebhookWorkflow, ManualWorkflow
-│   ├── alert_check.py         # Scheduled workflow (пример)
-│   ├── webhook_to_file.py     # Webhook → запись в файл
-│   ├── webhook_alert.py       # Webhook → Telegram с задержкой
-│   └── send_tg_message.py     # Manual → Telegram
+│   └── base.py                # BaseWorkflow, ScheduledWorkflow, WebhookWorkflow, ManualWorkflow
 └── examples/
     └── nadproject_integration.py
 
@@ -251,6 +254,17 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 | Telegram коннектор | `soar/connectors/telegram/` — send_message, send_photo, send_document, get_updates |
 | SMTP коннектор | `soar/connectors/smtp/` — send_email, send_text, send_html (plain/HTML, CC/BCC, вложения) |
 | File коннектор | `soar/connectors/file/` — write, write_json, append, read, list_files, delete |
+| SSH коннектор | `soar/connectors/ssh/` — exec_command, put_file, get_file, list_dir |
+| Active Directory | `soar/connectors/active_directory/` — search, get_user, authenticate, modify |
+| FreeIPA | `soar/connectors/freeipa/` — user/group/host CRUD, hbac, certs |
+| Elastic | `soar/connectors/elastic/` — query, index, bulk, indices, ILM |
+| Security Onion | `soar/connectors/security_onion/` — alerts, events, agents, hunts, pcap |
+| Wazuh | `soar/connectors/wazuh/` — agents, alerts, sca, vulns, syscheck, rules |
+| PostgreSQL | `soar/connectors/postgresql/` — execute, tables, columns |
+| MySQL | `soar/connectors/mysql/` — execute, tables, columns |
+| MSSQL | `soar/connectors/mssql/` — execute, tables, columns |
+| VirusTotal | `soar/connectors/virus_total/` — IP/domain/file/URL reports, upload |
+| Abuse.ch | `soar/connectors/abusech/` — ThreatFox IOCs, MalwareBazaar, URLhaus |
 | Новый action | `soar/actions/`, один файл = одна функция |
 | Новый workflow | `soar/workflows/`, наследовать от `ScheduledWorkflow`/`WebhookWorkflow`/`ManualWorkflow` |
 | Шаблон workflow | `orchestrator/api/workflows.py` — TEMPLATES dict |
@@ -286,3 +300,4 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 ## Version history
 
 - **v0.1** (2026-06-30) — Minimal SOAR: connectors, actions, workflows, orchestrator, UI, Docker deploy
+- **v0.2** (2026-07-01) — Enterprise SOAR connectors: SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh, PostgreSQL/MySQL/MSSQL, Telegram, SMTP, VirusTotal, Abuse.ch, File
