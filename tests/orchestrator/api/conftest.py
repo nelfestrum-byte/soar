@@ -1,7 +1,7 @@
 import os
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from orchestrator.config import OrchestratorConfig
 from orchestrator.core.job_manager import JobManager
@@ -18,7 +18,8 @@ def setup_app_state(tmp_path):
     queue = InMemoryQueue()
     job_store = JobStore()
     runner = SubprocessRunner()
-    git = MagicMock()
+    git = AsyncMock()
+    git.commit.return_value = "abc1234"
     config = OrchestratorConfig()
     config.soar.workflows_dir = str(tmp_path / "workflows")
     config.soar.actions_dir = str(tmp_path / "actions")

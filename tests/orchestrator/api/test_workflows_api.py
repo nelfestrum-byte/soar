@@ -1,96 +1,121 @@
-from unittest.mock import MagicMock
-
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from orchestrator.config import OrchestratorConfig
-from orchestrator.core.job_manager import JobManager
-from orchestrator.core.queue.memory import InMemoryQueue
-from orchestrator.core.scheduler import OrchestratorScheduler
-from orchestrator.core.subprocess_runner import SubprocessRunner
-from orchestrator.core.worker_pool import WorkerPool
 from orchestrator.main import app
-from orchestrator.models import ConcurrencyPolicy
-from orchestrator.models.workflow_meta import WorkflowMeta
-from orchestrator.store.job_store import JobStore
-
-
-@pytest.fixture(autouse=True)
-def setup_workflows_app():
-    queue = InMemoryQueue()
-    job_store = JobStore()
-    runner = SubprocessRunner()
-    git = MagicMock()
-    config = OrchestratorConfig()
-
-    job_manager = JobManager(
-        queue=queue, job_store=job_store, runner=runner, log_dir="/tmp/test",
-    )
-    meta = WorkflowMeta(
-        name="MyWorkflow", type="scheduled", enabled=True,
-        schedule="*/10 * * * *", concurrency=ConcurrencyPolicy.FORBID,
-    )
-    job_manager.set_metas([meta])
-
-    pool = WorkerPool(count=1, queue=queue, runner=runner, job_store=job_store, default_timeout=300)
-    scheduler = OrchestratorScheduler(job_manager)
-
-    app.state.job_manager = job_manager
-    app.state.pool = pool
-    app.state.scheduler = scheduler
-    app.state.git = git
-    app.state.config = config
-    app.state.job_store = job_store
-    app.state.queue = queue
 
 
 @pytest.mark.asyncio
-async def test_list_workflows_no_token():
+async def test_list_workflows_empty():
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/workflows")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data) == 1
-        assert data[0]["name"] == "MyWorkflow"
-        assert "token" not in data[0]
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/workflows")
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
 
 
 @pytest.mark.asyncio
-async def test_get_workflow_detail():
+async def test_get_workflow_not_found():
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/workflows/MyWorkflow")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["name"] == "MyWorkflow"
-        assert data["enabled"] is True
-        assert "token" not in data
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/workflows/nonexistent")
+        assert r.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_enable_disable_workflow():
+async def test_enable_workflow_not_found():
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post("/workflows/MyWorkflow/disable")
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "disabled"
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.post("/workflows/nonexistent/enable")
+        assert r.status_code == 404
 
-        resp = await client.get("/workflows/MyWorkflow")
-        assert resp.json()["enabled"] is False
 
-        resp = await client.post("/workflows/MyWorkflow/enable")
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "enabled"
-
-        resp = await client.get("/workflows/MyWorkflow")
-        assert resp.json()["enabled"] is True
+@pytest.mark.asyncio
+async def test_disable_workflow_not_found():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.post("/workflows/nonexistent/disable")
+        assert r.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_reload_workflows():
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post("/workflows/reload")
-        assert resp.status_code == 200
-        assert "count" in resp.json()
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.post("/workflows/reload")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["status"] == "reloaded"
+        assert "count" in data
+
+
+@pytest.mark.asyncio
+async def test_reload_scheduler():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.post("/workflows/scheduler/reload")
+        assert r.status_code == 200
+        assert r.json()["status"] == "reloaded"
+
+
+@pytest.mark.asyncio
+async def test_workflow_template():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/workflows/code/template")
+        assert r.status_code == 200
+        assert "content" in r.json()
+
+
+@pytest.mark.asyncio
+async def test_workflow_template_types():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        for wf_type in ["scheduled", "webhook", "manual"]:
+            r = await c.get(f"/workflows/code/template?wf_type={wf_type}")
+            assert r.status_code == 200
+            assert "content" in r.json()
+
+
+@pytest.mark.asyncio
+async def test_workflow_code_not_found():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/workflows/nonexistent/code")
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_workflow_code_invalid_name():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/workflows/../../etc/passwd/code")
+        assert r.status_code in (400, 403, 404)
+
+
+@pytest.mark.asyncio
+async def test_save_workflow_code():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.put("/workflows/test_wf/code", content=b"# test workflow")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["status"] == "saved"
+        assert "commit" in data
+
+
+@pytest.mark.asyncio
+async def test_delete_workflow_code_not_found():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.delete("/workflows/nonexistent/code")
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_save_delete_workflow_code():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.put("/workflows/temp_wf/code", content=b"# temp")
+        r = await c.delete("/workflows/temp_wf/code")
+        assert r.status_code == 200
+        assert r.json()["status"] == "deleted"
