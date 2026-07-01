@@ -80,3 +80,28 @@ class OpenAPIGenerator:
                 )
 
         return result
+
+    def _param_signature(self, params: list[dict]) -> str:
+        """Generate Python method signature from OpenAPI params."""
+        if not params:
+            return ""
+
+        type_map = {
+            "string": "str",
+            "integer": "int",
+            "number": "float",
+            "boolean": "bool",
+            "array": "list",
+            "object": "dict",
+        }
+
+        result = []
+        for p in params:
+            schema = p.get("schema", {})
+            py_type = type_map.get(schema.get("type", "string"), "str")
+            required = p.get("required", False)
+            if required:
+                result.append(f"{p['name']}: {py_type}")
+            else:
+                result.append(f"{p['name']}: {py_type} | None = None")
+        return ", ".join(result)

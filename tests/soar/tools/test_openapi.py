@@ -142,3 +142,40 @@ def test_extract_no_security():
     sec = gen._extract_security()
     assert sec["params"] == ""
     assert sec["header_setup"] == ""
+
+
+def test_param_signature_empty():
+    gen = OpenAPIGenerator(MINIMAL_SPEC)
+    result = gen._param_signature([])
+    assert result == ""
+
+
+def test_param_signature_path_params():
+    gen = OpenAPIGenerator(MINIMAL_SPEC)
+    params = [
+        {"name": "user_id", "in": "path", "required": True, "schema": {"type": "integer"}},
+    ]
+    result = gen._param_signature(params)
+    assert "user_id: int" in result
+
+
+def test_param_signature_query_params():
+    gen = OpenAPIGenerator(MINIMAL_SPEC)
+    params = [
+        {"name": "limit", "in": "query", "required": False, "schema": {"type": "integer"}},
+        {"name": "q", "in": "query", "required": False, "schema": {"type": "string"}},
+    ]
+    result = gen._param_signature(params)
+    assert "limit: int | None = None" in result
+    assert "q: str | None = None" in result
+
+
+def test_param_signature_mixed():
+    gen = OpenAPIGenerator(MINIMAL_SPEC)
+    params = [
+        {"name": "org", "in": "path", "required": True, "schema": {"type": "string"}},
+        {"name": "page", "in": "query", "required": False, "schema": {"type": "integer"}},
+    ]
+    result = gen._param_signature(params)
+    assert "org: str" in result
+    assert "page: int | None = None" in result
