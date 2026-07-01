@@ -186,3 +186,31 @@ class {class_name}(BaseConnector):
 
 {methods_str}
 '''
+
+    def _generate_init(self, name: str) -> str:
+        """Generate __init__.py for the connector package."""
+        class_name = "".join(w.capitalize() for w in name.split("_")) + "Connector"
+        return f"""from soar.connectors.{name}.{name} import {class_name}
+
+__all__ = ["{class_name}"]
+"""
+
+    def _generate_config(self, name: str) -> str:
+        """Generate .example.yml from securitySchemes + servers."""
+        lines = ["instances:", f"  {name}:"]
+        lines.append("    # TODO: add instance-specific configuration")
+
+        for scheme_name, scheme in self.security_schemes.items():
+            if scheme.get("type") == "apiKey":
+                lines.append(f"    {scheme.get('name', 'api_key')}: YOUR_{scheme.get('name', 'API_KEY').upper()}")
+            elif scheme.get("type") == "http":
+                if scheme.get("scheme") == "bearer":
+                    lines.append("    token: YOUR_BEARER_TOKEN")
+                elif scheme.get("scheme") == "basic":
+                    lines.append("    username: YOUR_USERNAME")
+                    lines.append("    password: YOUR_PASSWORD")
+
+        if self.servers:
+            lines.append(f"    base_url: {self.servers[0].get('url', 'https://api.example.com')}")
+
+        return "\n".join(lines) + "\n"

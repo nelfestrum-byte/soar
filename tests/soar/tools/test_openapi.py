@@ -235,3 +235,23 @@ def test_generate_class_with_auth():
     code = gen._generate_class("secure_api")
     assert "X-API-Key" in code
     assert "headers[\"X-API-Key\"]" in code
+
+
+def test_generate_init():
+    gen = OpenAPIGenerator(MINIMAL_SPEC)
+    init_code = gen._generate_init("my_api")
+    assert "from soar.connectors.my_api.my_api import MyApiConnector" in init_code
+    assert "__all__" in init_code
+
+
+def test_generate_config():
+    gen = OpenAPIGenerator(MINIMAL_SPEC)
+    config = gen._generate_config("my_api")
+    assert "instances:" in config
+    assert "my_api:" in config
+
+
+def test_generate_config_with_auth():
+    gen = OpenAPIGenerator(SPEC_API_KEY_HEADER)
+    config = gen._generate_config("secure_api")
+    assert "X-API-Key:" in config
