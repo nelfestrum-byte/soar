@@ -1,7 +1,23 @@
+import json
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from orchestrator.main import app
+
+
+SAMPLE_SPEC = {
+    "openapi": "3.0.0",
+    "info": {"title": "Test Generated API", "version": "1.0.0"},
+    "servers": [{"url": "https://api.test.com"}],
+    "paths": {
+        "/items": {
+            "get": {
+                "operationId": "listItems",
+                "responses": {"200": {"description": "OK"}},
+            }
+        }
+    },
+}
 
 
 @pytest.mark.asyncio
@@ -129,3 +145,39 @@ async def test_connectors_list_after_create_delete():
         r = await c.get("/connectors")
         names = [x["name"] for x in r.json()]
         assert "list_test" not in names
+
+
+@pytest.mark.asyncio
+async def test_generate_connector():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.post(
+            "/connectors/generate",
+            json={"spec": json.dumps(SAMPLE_SPEC), "name": "gen_test"},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["name"] == "gen_test"
+        assert len(data["files"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_generate_connector_invalid_spec():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.post(
+            "/connectors/generate",
+            json={"spec": "not valid yaml or json {{{", "name": "bad"},
+        )
+        assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_generate_connector_invalid_name():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.post(
+            "/connectors/generate",
+            json={"spec": json.dumps(SAMPLE_SPEC), "name": "Invalid Name!"},
+        )
+        assert r.status_code == 400

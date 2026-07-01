@@ -1,11 +1,22 @@
+import json
 import os
 import re
+from pathlib import Path
 
+import yaml as pyyaml
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 from orchestrator.api.validation import validate_name, validate_path_within
+from soar.tools.openapi import OpenAPIGenerator
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
+
+
+class GenerateRequest(BaseModel):
+    spec: str
+    name: str
+    overwrite: bool = False
 
 CONNECTOR_TEMPLATE = '''from soar.connectors.base import BaseConnector
 
@@ -75,6 +86,41 @@ async def get_template(name: str = "my_connector", class_name: str = "MyConnecto
     }
 
 
+@router.post("/generate")
+async def generate_connector(request: Request, body: GenerateRequest):
+    config = request.app.state.config
+    connectors_dir = Path(config.soar.connectors_dir)
+
+    # Parse spec (try JSON first, then YAML)
+    try:
+        spec = json.loads(body.spec)
+    except json.JSONDecodeError:
+        try:
+            spec = pyyaml.safe_load(body.spec)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid spec format: not valid JSON or YAML")
+
+    if not isinstance(spec, dict):
+        raise HTTPException(status_code=400, detail="Invalid spec format: must be a mapping")
+
+    # Validate and generate
+    try:
+        generator = OpenAPIGenerator(spec)
+        result = generator.generate(body.name, connectors_dir)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Git auto-commit
+    git = request.app.state.git
+    try:
+        for f in result["files"]:
+            await git.commit(f, f"Generated connector: {body.name}")
+    except RuntimeError:
+        pass
+
+    return {"name": body.name, **result}
+
+
 @router.get("/{name}/code")
 async def get_connector_code(name: str, request: Request):
     validate_name(name)
@@ -114,6 +160,10 @@ async def get_connector_config(name: str, request: Request):
     filepath = os.path.join(config.soar.connectors_dir, name, f"{name}.yml")
     validate_path_within(config.soar.connectors_dir, filepath)
     if not os.path.exists(filepath):
+        builtin_dir = Path(__file__).resolve().parent.parent.parent / "soar" / "connectors"
+        example = builtin_dir / name / f"{name}.example.yml"
+        if example.exists():
+            return {"name": name, "content": example.read_text()}
         return {"name": name, "content": ""}
     with open(filepath) as f:
         content = f.read()
