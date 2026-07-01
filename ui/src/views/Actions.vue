@@ -98,9 +98,11 @@ async function createAction() {
     const res = await api.getActionTemplate(newName.value)
     await api.saveAction(newName.value, res.content)
     showNew.value = false
+    const created = newName.value
     newName.value = ''
     await loadActions()
-    selected.value = newName.value
+    selected.value = created
+    await loadAction(created)
   } catch (e) {
     error.value = e.message
   }

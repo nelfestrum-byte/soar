@@ -38,6 +38,7 @@ export const api = {
     request(`/actions/${name}`, { method: 'PUT', body: content }),
   deleteAction: (name) => request(`/actions/${name}`, { method: 'DELETE' }),
   getActionTemplate: (name) => request(`/actions/template?name=${name}`),
+  getLogs: (id) => request(`/logs/${id}`),
   getConnectors: () => request('/connectors'),
   getConnectorCode: (name) => request(`/connectors/${name}/code`),
   saveConnectorCode: (name, content) =>

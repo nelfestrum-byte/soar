@@ -17,7 +17,8 @@ class BaseConnector:
             self._logger.info(f"Connected to {self.instance_name}")
 
     def disconnect(self) -> None:
-        raise NotImplementedError
+        self._connected = False
+        self._logger.info(f"Disconnected from {self.instance_name}")
 
     @property
     def is_connected(self) -> bool:

@@ -31,10 +31,8 @@ actions.init(external_dir=external_dirs.get("actions"))
 
 
 def main():
-    os.environ.get("SOAR_JOB_ID", "")
     workflow_name = os.environ.get("SOAR_WORKFLOW_NAME", "")
     context_str = os.environ.get("SOAR_CONTEXT", "{}")
-    os.environ.get("SOAR_LOG_PATH", "")
 
     try:
         context = json.loads(context_str)

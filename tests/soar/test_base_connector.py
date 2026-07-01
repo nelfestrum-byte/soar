@@ -20,7 +20,8 @@ def test_base_connector_connect_impl_raises():
         conn._connect_impl()
 
 
-def test_base_connector_disconnect_raises():
+def test_base_connector_disconnect_noop():
     conn = BaseConnector(instance_name="test")
-    with pytest.raises(NotImplementedError):
-        conn.disconnect()
+    conn._connected = True
+    conn.disconnect()
+    assert conn.is_connected is False

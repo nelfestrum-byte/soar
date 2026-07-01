@@ -85,7 +85,15 @@ class JobManager:
             )
 
             await self.job_store.save(job)
-            await self.queue.push(job)
+            try:
+                await self.queue.push(job)
+            except Exception as e:
+                logger.error(f"Failed to enqueue job {job.id}: {e}")
+                job.status = JobStatus.FAILED
+                job.result_error = f"Queue push failed: {e}"
+                job.finished_at = datetime.now(UTC)
+                await self.job_store.save(job)
+                raise
             logger.info(f"Enqueued job {job.id} for workflow {workflow_name}")
             return job
 

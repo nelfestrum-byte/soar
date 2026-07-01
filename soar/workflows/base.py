@@ -18,6 +18,9 @@ class WorkflowResult:
 class BaseWorkflow:
     workflow_type: str = "manual"
 
+    def __init__(self):
+        self._logger = get_logger(f"workflow.{self.__class__.__name__}")
+
     def run(self, context: dict) -> dict | None:
         raise NotImplementedError
 
