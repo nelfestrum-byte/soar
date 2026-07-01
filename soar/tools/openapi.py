@@ -47,3 +47,36 @@ class OpenAPIGenerator:
             else:
                 sanitized.append(p)
         return method.lower() + "_" + "_".join(sanitized)
+
+    def _extract_security(self) -> dict:
+        """Parse securitySchemes into auth config for __init__ and _connect_impl."""
+        result = {"params": "", "fields": "", "header_setup": "", "config_lines": []}
+        if not self.security_schemes:
+            return result
+
+        for name, scheme in self.security_schemes.items():
+            if scheme.get("type") == "apiKey":
+                param_name = scheme.get("name", "api_key")
+                location = scheme.get("in", "header")
+                result["params"] += f"{param_name}: str = \"\",\n        "
+                result["fields"] += f"self.{param_name} = {param_name}\n        "
+                if location == "header":
+                    result["header_setup"] += f'headers["{param_name}"] = self.{param_name}\n        '
+                # Query apiKey added per-request, not in headers
+
+            elif scheme.get("type") == "http":
+                if scheme.get("scheme") == "bearer":
+                    result["params"] += "token: str = \"\",\n        "
+                    result["fields"] += "self.token = token\n        "
+                    result['header_setup'] += 'headers["Authorization"] = f"Bearer {self.token}"\n        '
+                elif scheme.get("scheme") == "basic":
+                    result["params"] += 'username: str = "",\n        password: str = "",\n        '
+                    result["fields"] += "self.username = username\n        self.password = password\n        "
+                    result["header_setup"] += "auth = httpx.BasicAuth(self.username, self.password)\n        "
+
+            elif scheme.get("type") == "oauth2":
+                result["config_lines"].append(
+                    f"# WARNING: OAuth2 scheme '{name}' requires manual implementation"
+                )
+
+        return result

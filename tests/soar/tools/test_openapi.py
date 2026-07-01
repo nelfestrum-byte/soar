@@ -79,3 +79,66 @@ def test_method_name_post_with_body():
     gen = OpenAPIGenerator(MINIMAL_SPEC)
     result = gen._method_name("/users", "post", {})
     assert result == "post_users"
+
+
+SPEC_API_KEY_HEADER = {
+    "openapi": "3.0.0",
+    "info": {"title": "API Key API", "version": "1.0.0"},
+    "paths": {},
+    "components": {
+        "securitySchemes": {
+            "ApiKey": {"type": "apiKey", "in": "header", "name": "X-API-Key"}
+        }
+    },
+}
+
+SPEC_BEARER = {
+    "openapi": "3.0.0",
+    "info": {"title": "Bearer API", "version": "1.0.0"},
+    "paths": {},
+    "components": {
+        "securitySchemes": {
+            "BearerAuth": {"type": "http", "scheme": "bearer"}
+        }
+    },
+}
+
+SPEC_BASIC = {
+    "openapi": "3.0.0",
+    "info": {"title": "Basic API", "version": "1.0.0"},
+    "paths": {},
+    "components": {
+        "securitySchemes": {
+            "BasicAuth": {"type": "http", "scheme": "basic"}
+        }
+    },
+}
+
+
+def test_extract_api_key_header():
+    gen = OpenAPIGenerator(SPEC_API_KEY_HEADER)
+    sec = gen._extract_security()
+    assert "X-API-Key" in sec["params"]
+    assert "X-API-Key" in sec["header_setup"]
+
+
+def test_extract_bearer():
+    gen = OpenAPIGenerator(SPEC_BEARER)
+    sec = gen._extract_security()
+    assert sec["params"] == "token: str = \"\",\n        "
+    assert "Bearer" in sec["header_setup"]
+
+
+def test_extract_basic():
+    gen = OpenAPIGenerator(SPEC_BASIC)
+    sec = gen._extract_security()
+    assert "username" in sec["params"]
+    assert "password" in sec["params"]
+    assert "BasicAuth" in sec["header_setup"]
+
+
+def test_extract_no_security():
+    gen = OpenAPIGenerator(MINIMAL_SPEC)
+    sec = gen._extract_security()
+    assert sec["params"] == ""
+    assert sec["header_setup"] == ""
