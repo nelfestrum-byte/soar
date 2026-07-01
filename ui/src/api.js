@@ -49,4 +49,22 @@ export const api = {
   createConnector: (name, className = '') =>
     request(`/connectors/${name}?class_name=${className}`, { method: 'POST' }),
   deleteConnector: (name) => request(`/connectors/${name}`, { method: 'DELETE' }),
+  exportEntities: async () => {
+    const res = await fetch(`${BASE}/transfer/export`, { method: 'POST' })
+    if (!res.ok) throw new Error('Export failed')
+    return res.blob()
+  },
+  importEntities: async (file, force = false) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`${BASE}/transfer/import?force=${force}`, {
+      method: 'POST',
+      body: formData,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error(err.detail || 'Import failed')
+    }
+    return res.json()
+  },
 }

@@ -1,4 +1,5 @@
 import os
+import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from orchestrator.api import (
     webhooks_router,
     workflows_router,
 )
+from orchestrator.api.transfer import router as transfer_router
 from orchestrator.config import load_config
 from orchestrator.core.git_manager import GitManager
 from orchestrator.core.job_manager import JobManager
@@ -27,6 +29,33 @@ from orchestrator.core.worker_pool import WorkerPool
 from orchestrator.models import ConcurrencyPolicy
 from orchestrator.models.workflow_meta import WorkflowMeta
 from orchestrator.store.job_store import JobStore
+
+_SOAR_PKG = Path(__file__).resolve().parent.parent / "soar"
+
+
+def seed_defaults(config):
+    """Copy built-in defaults to data dirs if missing (replaces Dockerfile build-time cp)."""
+    for d in (config.soar.connectors_dir, config.soar.workflows_dir, config.soar.actions_dir):
+        os.makedirs(d, exist_ok=True)
+
+    builtin_connectors = _SOAR_PKG / "connectors"
+    if builtin_connectors.is_dir():
+        for item in builtin_connectors.iterdir():
+            if item.is_dir() and not item.name.startswith("_"):
+                dest = Path(config.soar.connectors_dir) / item.name
+                if not dest.exists():
+                    shutil.copytree(item, dest)
+
+    for src_dir, dest_dir, exclude in [
+        (_SOAR_PKG / "workflows", config.soar.workflows_dir, {"__init__.py", "base.py"}),
+        (_SOAR_PKG / "actions", config.soar.actions_dir, {"__init__.py"}),
+    ]:
+        if src_dir.is_dir():
+            for f in src_dir.iterdir():
+                if f.is_file() and f.suffix == ".py" and f.name not in exclude:
+                    dest = Path(dest_dir) / f.name
+                    if not dest.exists():
+                        shutil.copy2(f, dest)
 
 
 def create_queue(config):
@@ -96,6 +125,8 @@ async def lifespan(app: FastAPI):
     logger.remove()
     logger.add(config.logging.file, level=config.logging.level)
     logger.add(sys.stderr, level=config.logging.level)
+
+    seed_defaults(config)
 
     queue = create_queue(config)
     job_store = JobStore(keep_completed=config.jobs.keep_completed)
@@ -167,3 +198,4 @@ app.include_router(jobs_router)
 app.include_router(webhooks_router)
 app.include_router(logs_router)
 app.include_router(status_router)
+app.include_router(transfer_router)
