@@ -179,3 +179,59 @@ def test_param_signature_mixed():
     result = gen._param_signature(params)
     assert "org: str" in result
     assert "page: int | None = None" in result
+
+
+SPEC_WITH_ENDPOINTS = {
+    "openapi": "3.0.0",
+    "info": {"title": "Petstore", "version": "1.0.0"},
+    "servers": [{"url": "https://api.petstore.com/v1"}],
+    "paths": {
+        "/pets": {
+            "get": {
+                "operationId": "listPets",
+                "parameters": [
+                    {"name": "limit", "in": "query", "required": False, "schema": {"type": "integer"}},
+                ],
+                "responses": {"200": {"description": "OK"}},
+            },
+            "post": {
+                "operationId": "createPet",
+                "requestBody": {
+                    "content": {"application/json": {"schema": {"type": "object"}}}
+                },
+                "responses": {"201": {"description": "Created"}},
+            },
+        },
+        "/pets/{petId}": {
+            "get": {
+                "operationId": "getPet",
+                "parameters": [
+                    {"name": "petId", "in": "path", "required": True, "schema": {"type": "string"}},
+                ],
+                "responses": {"200": {"description": "OK"}},
+            },
+        },
+    },
+}
+
+
+def test_generate_class_has_required_parts():
+    gen = OpenAPIGenerator(SPEC_WITH_ENDPOINTS)
+    code = gen._generate_class("petstore")
+    assert "class PetstoreConnector(BaseConnector):" in code
+    assert "def _connect_impl(self):" in code
+    assert "def disconnect(self):" in code
+    assert "def listPets(self" in code
+    assert "def createPet(self" in code
+    assert "def getPet(self" in code
+    assert "httpx.Client" in code
+    assert "self._ensure_connected()" in code
+    assert "raise_for_status" in code
+
+
+def test_generate_class_with_auth():
+    gen = OpenAPIGenerator(SPEC_WITH_ENDPOINTS)
+    gen.security_schemes = SPEC_API_KEY_HEADER["components"]["securitySchemes"]
+    code = gen._generate_class("secure_api")
+    assert "X-API-Key" in code
+    assert "headers[\"X-API-Key\"]" in code

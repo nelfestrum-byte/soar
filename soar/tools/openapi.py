@@ -105,3 +105,84 @@ class OpenAPIGenerator:
             else:
                 result.append(f"{p['name']}: {py_type} | None = None")
         return ", ".join(result)
+
+    def _has_request_body(self, operation: dict) -> bool:
+        """Check if operation has JSON request body."""
+        body = operation.get("requestBody", {})
+        content = body.get("content", {})
+        return "application/json" in content
+
+    def _generate_class(self, name: str) -> str:
+        """Generate complete connector Python source code."""
+        class_name = "".join(w.capitalize() for w in name.split("_")) + "Connector"
+        title = self.spec.get("info", {}).get("title", name)
+        base_url = self.servers[0].get("url", "https://api.example.com") if self.servers else "https://api.example.com"
+        sec = self._extract_security()
+
+        # Build methods
+        methods = []
+        for path, path_item in self.paths.items():
+            for method in ["get", "post", "put", "delete", "patch"]:
+                if method not in path_item:
+                    continue
+                operation = path_item[method]
+                method_name = self._method_name(path, method, operation)
+                params = operation.get("parameters", [])
+                has_body = self._has_request_body(operation)
+                sig = self._param_signature(params)
+                if has_body:
+                    if sig:
+                        sig += ", body: dict | None = None"
+                    else:
+                        sig = "body: dict | None = None"
+
+                # Build query params list
+                query_params = [p["name"] for p in params if p.get("in") == "query"]
+
+                # Build method body
+                query_dict = ", ".join(f'"{p}": {p}' for p in query_params)
+                method_body = f"""    def {method_name}(self{', ' + sig if sig else ''}) -> dict:
+        self._ensure_connected()
+        assert self._client is not None
+        resp = self._client.{method}("{path}"{', params={' + query_dict + '}' if query_params else ''}{', json=body' if has_body else ''})
+        resp.raise_for_status()
+        return resp.json()"""
+                methods.append(method_body)
+
+        methods_str = "\n\n".join(methods) if methods else "    pass"
+
+        return f'''"""Auto-generated from OpenAPI spec: {title}"""
+from __future__ import annotations
+import httpx
+from soar.connectors.base import BaseConnector
+
+
+class {class_name}(BaseConnector):
+    """Connector for {title}"""
+
+    def __init__(
+        self,
+        instance_name: str,
+        base_url: str = "{base_url}",
+        {sec['params']}**kwargs,
+    ):
+        super().__init__(instance_name, **kwargs)
+        self.base_url = base_url
+        {sec['fields']}self._client: httpx.Client | None = None
+
+    def _connect_impl(self):
+        headers = {{}}
+        {sec['header_setup']}self._client = httpx.Client(
+            base_url=self.base_url,
+            headers=headers,
+            timeout=30.0,
+        )
+
+    def disconnect(self):
+        if self._client:
+            self._client.close()
+            self._client = None
+            self._connected = False
+
+{methods_str}
+'''
