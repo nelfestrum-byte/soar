@@ -34,3 +34,16 @@ class OpenAPIGenerator:
             else:
                 raise ValueError(f"Cannot resolve $ref: {ref}")
         return current
+
+    def _method_name(self, path: str, method: str, operation: dict) -> str:
+        """Derive Python method name from path + operationId or fallback."""
+        if "operationId" in operation:
+            return operation["operationId"]
+        parts = [p for p in path.split("/") if p]
+        sanitized = []
+        for p in parts:
+            if p.startswith("{"):
+                sanitized.append("by_" + p[1:-1])
+            else:
+                sanitized.append(p)
+        return method.lower() + "_" + "_".join(sanitized)

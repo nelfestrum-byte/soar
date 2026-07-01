@@ -55,3 +55,27 @@ def test_resolve_ref_not_found():
     gen = OpenAPIGenerator(MINIMAL_SPEC)
     with pytest.raises(ValueError, match="Cannot resolve"):
         gen._resolve_ref("#/components/schemas/Nonexistent")
+
+
+def test_method_name_from_operation_id():
+    gen = OpenAPIGenerator(MINIMAL_SPEC)
+    result = gen._method_name("/users", "get", {"operationId": "listUsers"})
+    assert result == "listUsers"
+
+
+def test_method_name_derived_from_path():
+    gen = OpenAPIGenerator(MINIMAL_SPEC)
+    result = gen._method_name("/users/{id}/posts", "get", {})
+    assert result == "get_users_by_id_posts"
+
+
+def test_method_name_simple_path():
+    gen = OpenAPIGenerator(MINIMAL_SPEC)
+    result = gen._method_name("/health", "get", {})
+    assert result == "get_health"
+
+
+def test_method_name_post_with_body():
+    gen = OpenAPIGenerator(MINIMAL_SPEC)
+    result = gen._method_name("/users", "post", {})
+    assert result == "post_users"
