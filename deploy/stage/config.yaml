@@ -3,7 +3,11 @@ workers:
   default_timeout: 300
 
 queue:
-  backend: memory
+  backend: redis
+  redis_url: redis://redis:6379/0
+  redis_max_connections: 10
+  redis_push_timeout: 5.0
+  redis_pop_timeout: 1.0
 
 soar:
   workflows_dir: /app/data/workflows

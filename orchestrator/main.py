@@ -31,7 +31,12 @@ from orchestrator.store.job_store import JobStore
 
 def create_queue(config):
     if config.queue.backend == "redis":
-        return RedisQueue(config.queue.redis_url)
+        return RedisQueue(
+            config.queue.redis_url,
+            max_connections=config.queue.redis_max_connections,
+            push_timeout=config.queue.redis_push_timeout,
+            pop_timeout=config.queue.redis_pop_timeout,
+        )
     return InMemoryQueue()
 
 

@@ -12,6 +12,9 @@ class WorkersConfig(BaseModel):
 class QueueConfig(BaseModel):
     backend: str = "memory"
     redis_url: str = "redis://localhost:6379/0"
+    redis_max_connections: int = 10
+    redis_push_timeout: float = 5.0
+    redis_pop_timeout: float = 1.0
 
 
 class SoarConfig(BaseModel):
