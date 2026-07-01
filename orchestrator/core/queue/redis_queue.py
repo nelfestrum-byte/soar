@@ -22,17 +22,15 @@ class RedisQueue(AbstractJobQueue):
         self._push_timeout = push_timeout
         self._pop_timeout = pop_timeout
         self._key = "soar:jobs"
-        self._pool: Optional[aioredis.ConnectionPool] = None
         self._redis: Optional[aioredis.Redis] = None
         self._connect()
 
     def _connect(self):
-        self._pool = aioredis.ConnectionPool(
+        self._redis = aioredis.from_url(
             self._redis_url,
             max_connections=self._max_connections,
             decode_responses=True,
         )
-        self._redis = aioredis.Redis(connection_pool=self._pool)
 
     async def _ensure_connected(self):
         if self._redis is None:

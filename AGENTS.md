@@ -217,6 +217,31 @@ Workflows запускаются как отдельные процессы че
 - Контекст передаётся через env vars (SOAR_CONTEXT)
 - Actions и connectors инициализируются в subprocess
 
+### Queue backend
+Очередь задач поддерживает два бэкенда:
+
+**In-Memory (по умолчанию)**:
+```yaml
+queue:
+  backend: memory
+```
+
+**Redis**:
+```yaml
+queue:
+  backend: redis
+  redis_url: redis://redis:6379/0
+  redis_max_connections: 10
+  redis_push_timeout: 5.0
+  redis_pop_timeout: 1.0
+```
+
+RedisQueue (`orchestrator/core/queue/redis_queue.py`):
+- Connection pooling через `aioredis.from_url()`
+- Автоматическое переподключение при ошибках соединения
+- Таймауты для push/pop операций
+- Health check через `/status` endpoint (`connected: true/false`)
+
 ## File map (для быстрого навигации)
 
 | Что нужно | Куда смотреть |
