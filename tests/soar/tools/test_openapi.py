@@ -272,3 +272,32 @@ def test_generate_validates_name(tmp_path):
     gen = OpenAPIGenerator(MINIMAL_SPEC)
     with pytest.raises(ValueError, match="Invalid name"):
         gen.generate("invalid name!", tmp_path)
+
+
+def test_generate_with_oauth2_warning(tmp_path):
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "OAuth API", "version": "1.0.0"},
+        "paths": {},
+        "components": {
+            "securitySchemes": {
+                "OAuth2": {
+                    "type": "oauth2",
+                    "flows": {"authorizationCode": {"authorizationUrl": "...", "tokenUrl": "..."}},
+                }
+            }
+        },
+    }
+    gen = OpenAPIGenerator(spec)
+    result = gen.generate("oauth_api", tmp_path)
+    assert any("OAuth2" in w for w in result["warnings"])
+
+
+def test_generate_with_no_paths(tmp_path):
+    spec = {"openapi": "3.0.0", "info": {"title": "Empty", "version": "1.0.0"}, "paths": {}}
+    gen = OpenAPIGenerator(spec)
+    result = gen.generate("empty_api", tmp_path)
+    assert len(result["files"]) == 3
+    # Generated class should have 'pass' since no methods
+    py_content = (tmp_path / "empty_api" / "empty_api.py").read_text()
+    assert "pass" in py_content
