@@ -21,3 +21,16 @@ class OpenAPIGenerator:
     def generate(self, name: str, output_dir: Path) -> dict:
         """Generate connector files. Returns dict with 'files' and 'warnings'."""
         raise NotImplementedError
+
+    def _resolve_ref(self, ref: str) -> dict:
+        """Resolve a $ref pointer like '#/components/schemas/User'."""
+        if not ref.startswith("#/"):
+            raise ValueError(f"Cannot resolve external $ref: {ref}")
+        parts = ref[2:].split("/")
+        current = self.spec
+        for part in parts:
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+            else:
+                raise ValueError(f"Cannot resolve $ref: {ref}")
+        return current
