@@ -1,4 +1,18 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: soar-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   orchestrator:
     build:
       context: ../..
@@ -11,6 +25,9 @@ services:
       - soar-logs:/var/log/soar
     environment:
       - SOAR_CONFIG=/app/data/config.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/status')"]
@@ -33,3 +50,4 @@ services:
 volumes:
   soar-data:
   soar-logs:
+  redis-data:
