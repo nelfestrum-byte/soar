@@ -97,8 +97,8 @@ async def generate_connector(request: Request, body: GenerateRequest):
     except json.JSONDecodeError:
         try:
             spec = pyyaml.safe_load(body.spec)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid spec format: not valid JSON or YAML")
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid spec format: not valid JSON or YAML") from exc
 
     if not isinstance(spec, dict):
         raise HTTPException(status_code=400, detail="Invalid spec format: must be a mapping")
@@ -107,8 +107,8 @@ async def generate_connector(request: Request, body: GenerateRequest):
     try:
         generator = OpenAPIGenerator(spec)
         result = generator.generate(body.name, connectors_dir)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     # Git auto-commit
     git = request.app.state.git

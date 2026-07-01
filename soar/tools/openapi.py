@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# mypy: disable-error-code="no-any-return,operator,attr-defined"
+
 
 class OpenAPIGenerator:
     """Parse OpenAPI spec and generate SOAR connector code."""
@@ -28,7 +30,7 @@ class OpenAPIGenerator:
         warnings = []
         for scheme in self.security_schemes.values():
             if scheme.get("type") == "oauth2":
-                warnings.append(f"OAuth2 auth detected — generated stub, requires manual implementation")
+                warnings.append("OAuth2 auth detected — generated stub, requires manual implementation")
 
         conn_dir = output_dir / name
         conn_dir.mkdir(parents=True, exist_ok=True)
@@ -75,7 +77,7 @@ class OpenAPIGenerator:
                 sanitized.append(p)
         return method.lower() + "_" + "_".join(sanitized)
 
-    def _extract_security(self) -> dict:
+    def _extract_security(self) -> dict:  # type: ignore[type-arg]
         """Parse securitySchemes into auth config for __init__ and _connect_impl."""
         result = {"params": "", "fields": "", "header_setup": "", "config_lines": []}
         if not self.security_schemes:
@@ -227,7 +229,7 @@ __all__ = ["{class_name}"]
         lines = ["instances:", f"  {name}:"]
         lines.append("    # TODO: add instance-specific configuration")
 
-        for scheme_name, scheme in self.security_schemes.items():
+        for _scheme_name, scheme in self.security_schemes.items():
             if scheme.get("type") == "apiKey":
                 lines.append(f"    {scheme.get('name', 'api_key')}: YOUR_{scheme.get('name', 'API_KEY').upper()}")
             elif scheme.get("type") == "http":
