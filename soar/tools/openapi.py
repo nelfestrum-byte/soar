@@ -20,7 +20,34 @@ class OpenAPIGenerator:
 
     def generate(self, name: str, output_dir: Path) -> dict:
         """Generate connector files. Returns dict with 'files' and 'warnings'."""
-        raise NotImplementedError
+        import re
+
+        if not re.match(r"^[a-z][a-z0-9_]*$", name):
+            raise ValueError(f"Invalid name '{name}': must be snake_case")
+
+        warnings = []
+        for scheme in self.security_schemes.values():
+            if scheme.get("type") == "oauth2":
+                warnings.append(f"OAuth2 auth detected — generated stub, requires manual implementation")
+
+        conn_dir = output_dir / name
+        conn_dir.mkdir(parents=True, exist_ok=True)
+
+        files = []
+
+        py_file = conn_dir / f"{name}.py"
+        py_file.write_text(self._generate_class(name), encoding="utf-8")
+        files.append(str(py_file.relative_to(output_dir)))
+
+        init_file = conn_dir / "__init__.py"
+        init_file.write_text(self._generate_init(name), encoding="utf-8")
+        files.append(str(init_file.relative_to(output_dir)))
+
+        yml_file = conn_dir / f"{name}.example.yml"
+        yml_file.write_text(self._generate_config(name), encoding="utf-8")
+        files.append(str(yml_file.relative_to(output_dir)))
+
+        return {"files": files, "warnings": warnings}
 
     def _resolve_ref(self, ref: str) -> dict:
         """Resolve a $ref pointer like '#/components/schemas/User'."""

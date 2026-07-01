@@ -255,3 +255,20 @@ def test_generate_config_with_auth():
     gen = OpenAPIGenerator(SPEC_API_KEY_HEADER)
     config = gen._generate_config("secure_api")
     assert "X-API-Key:" in config
+
+
+def test_generate_creates_files(tmp_path):
+    gen = OpenAPIGenerator(SPEC_WITH_ENDPOINTS)
+    result = gen.generate("petstore", tmp_path)
+    assert "files" in result
+    assert "warnings" in result
+    assert len(result["files"]) == 3
+    assert (tmp_path / "petstore" / "petstore.py").exists()
+    assert (tmp_path / "petstore" / "__init__.py").exists()
+    assert (tmp_path / "petstore" / "petstore.example.yml").exists()
+
+
+def test_generate_validates_name(tmp_path):
+    gen = OpenAPIGenerator(MINIMAL_SPEC)
+    with pytest.raises(ValueError, match="Invalid name"):
+        gen.generate("invalid name!", tmp_path)
