@@ -199,7 +199,8 @@ async def test_generated_connector_config():
         assert r.status_code == 200
         content = r.json()["content"]
         assert "instances:" in content
-        assert "gen_config_test:" in content
+        assert "GenConfigTestConnector1:" in content
+        assert "base_url:" in content
 
 
 SAMPLE_SPEC_JSON = json.dumps({

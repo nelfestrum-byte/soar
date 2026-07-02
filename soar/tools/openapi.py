@@ -226,20 +226,25 @@ __all__ = ["{class_name}"]
 
     def _generate_config(self, name: str) -> str:
         """Generate .example.yml from securitySchemes + servers."""
-        lines = ["instances:", f"  {name}:"]
-        lines.append("    # TODO: add instance-specific configuration")
+        class_name = "".join(w.capitalize() for w in name.split("_")) + "Connector"
+        instance_name = f"{class_name}1"
 
+        lines = ["instances:", f"  {instance_name}:"]
+
+        # Add base_url
+        base_url = self.servers[0].get("url", "https://api.example.com") if self.servers else "https://api.example.com"
+        lines.append(f"    base_url: {base_url}")
+
+        # Add auth params from securitySchemes
         for _scheme_name, scheme in self.security_schemes.items():
             if scheme.get("type") == "apiKey":
-                lines.append(f"    {scheme.get('name', 'api_key')}: YOUR_{scheme.get('name', 'API_KEY').upper()}")
+                param_name = scheme.get("name", "api_key")
+                lines.append(f"    {param_name}: YOUR_{param_name.upper().replace('-', '_')}")
             elif scheme.get("type") == "http":
                 if scheme.get("scheme") == "bearer":
                     lines.append("    token: YOUR_BEARER_TOKEN")
                 elif scheme.get("scheme") == "basic":
                     lines.append("    username: YOUR_USERNAME")
                     lines.append("    password: YOUR_PASSWORD")
-
-        if self.servers:
-            lines.append(f"    base_url: {self.servers[0].get('url', 'https://api.example.com')}")
 
         return "\n".join(lines) + "\n"
