@@ -11,3 +11,7 @@ pymysql>=1.1.0
 pymssql>=2.2.11
 aiogram>=3.7.0
 aiosmtplib>=3.0.1
+pywinrm>=0.5.0
+smbprotocol>=1.13.0
+shodan>=1.31.0
+pymisp>=2.4.180

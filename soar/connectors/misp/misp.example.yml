@@ -1,0 +1,5 @@
+instances:
+  misp_main:
+    url: https://misp.example.com
+    api_key: YOUR_API_KEY
+    verify_ssl: true

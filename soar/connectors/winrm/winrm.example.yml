@@ -1,0 +1,15 @@
+instances:
+  winrm_prod:
+    host: 10.0.0.50
+    port: 5985
+    username: Administrator
+    password: YOUR_PASSWORD
+    transport: ntlm
+    verify_ssl: false
+  winrm_https:
+    host: 10.0.0.51
+    port: 5986
+    username: Administrator
+    password: YOUR_PASSWORD
+    transport: ntlm
+    verify_ssl: true

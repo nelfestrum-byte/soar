@@ -1,0 +1,3 @@
+instances:
+  shodan_main:
+    api_key: "YOUR_SHODAN_API_KEY"

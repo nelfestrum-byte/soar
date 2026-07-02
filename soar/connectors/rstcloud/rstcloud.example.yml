@@ -1,0 +1,5 @@
+instances:
+  rstcloud_main:
+    api_key: YOUR_API_KEY
+    base_url: https://opentip.rstcloud.net
+    verify_ssl: true

@@ -1,0 +1,4 @@
+instances:
+  fofa_main:
+    email: "YOUR_FOFA_EMAIL"
+    api_key: "YOUR_FOFA_API_KEY"

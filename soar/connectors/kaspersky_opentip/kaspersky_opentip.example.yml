@@ -1,0 +1,5 @@
+instances:
+  kaspersky_opentip_main:
+    api_key: YOUR_API_KEY
+    base_url: https://opentip.kaspersky.com
+    verify_ssl: true

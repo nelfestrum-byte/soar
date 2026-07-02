@@ -1,0 +1,13 @@
+instances:
+  smb_fileserver:
+    host: 10.0.0.20
+    port: 445
+    username: admin
+    password: YOUR_PASSWORD
+    domain: WORKGROUP
+  smb_domain_admin:
+    host: 10.0.0.21
+    port: 445
+    username: administrator
+    password: YOUR_PASSWORD
+    domain: CORP
