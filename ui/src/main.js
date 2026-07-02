@@ -8,6 +8,7 @@ const routes = [
   { path: '/jobs', component: () => import('./views/Jobs.vue') },
   { path: '/actions', component: () => import('./views/Actions.vue') },
   { path: '/connectors', component: () => import('./views/Connectors.vue') },
+  { path: '/generate', component: () => import('./views/Generate.vue') },
   { path: '/settings', component: () => import('./views/Settings.vue') },
   { path: '/logs/:id', component: () => import('./views/Logs.vue') },
 ]
