@@ -29,7 +29,7 @@ class CensysConnector(BaseConnector):
     def _get(self, path: str, params: dict | None = None) -> dict:
         self._ensure_connected()
         assert self._session is not None
-        resp = self._session.get(f"{self.base_url}{path}", params=params)
+        resp = self._session.get(f"{self.base_url}{path}", params=params, timeout=30)
         resp.raise_for_status()
         return resp.json()
 

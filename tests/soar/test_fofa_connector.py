@@ -103,6 +103,7 @@ def test_fofa_get_host_info():
     mock_session.get.assert_called_once_with(
         "https://fofa.info/api/v1/host/",
         params={"email": "test@example.com", "key": "key123", "ip": "1.2.3.4"},
+        timeout=30,
     )
 
 
@@ -125,4 +126,5 @@ def test_fofa_get_user_info():
     mock_session.get.assert_called_once_with(
         "https://fofa.info/api/v1/info/my",
         params={"email": "test@example.com", "key": "key123"},
+        timeout=30,
     )

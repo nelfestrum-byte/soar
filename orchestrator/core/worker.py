@@ -35,6 +35,11 @@ class Worker:
                 await self._execute(job)
 
     async def _execute(self, job: WorkflowJob) -> None:
+        # Check if job was cancelled while in queue
+        current = await self.job_store.get(job.id)
+        if current and current.status == JobStatus.CANCELLED:
+            logger.info(f"Skipping cancelled job {job.id}")
+            return
         self._busy = True
         try:
             job.status = JobStatus.RUNNING
@@ -56,9 +61,16 @@ class Worker:
                 await self.job_store.save(job)
                 logger.warning(f"Job {job.id} timed out after {timeout}s")
                 return
-
-            if hasattr(proc, '_log_file') and proc._log_file:
-                proc._log_file.close()
+            except asyncio.CancelledError:
+                proc.kill()
+                await proc.wait()
+                job.status = JobStatus.CANCELLED
+                job.finished_at = datetime.now(UTC)
+                await self.job_store.save(job)
+                raise
+            finally:
+                if hasattr(proc, '_log_file') and proc._log_file:
+                    proc._log_file.close()
 
             if proc.returncode == 0:
                 job.status = JobStatus.COMPLETED

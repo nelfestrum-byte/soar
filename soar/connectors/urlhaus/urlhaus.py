@@ -25,7 +25,7 @@ class UrlhausConnector(BaseConnector):
     def _post(self, data: dict) -> dict:
         self._ensure_connected()
         assert self._session is not None
-        resp = self._session.post(f"{self.BASE_URL}/url/", data=data)
+        resp = self._session.post(f"{self.BASE_URL}/url/", data=data, timeout=30)
         resp.raise_for_status()
         return resp.json()
 
@@ -63,6 +63,7 @@ class UrlhausConnector(BaseConnector):
         resp = self._session.post(
             f"{self.BASE_URL}/url/",
             data={"url": url, "threat": threat, "tags": tag},
+            timeout=30,
         )
         resp.raise_for_status()
         return resp.json()

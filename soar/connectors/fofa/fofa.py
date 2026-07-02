@@ -32,7 +32,7 @@ class FofaConnector(BaseConnector):
         base_params = {"email": self.email, "key": self.api_key}
         if params:
             base_params.update(params)
-        resp = self._session.get(f"{self.base_url}{path}", params=base_params)
+        resp = self._session.get(f"{self.base_url}{path}", params=base_params, timeout=30)
         resp.raise_for_status()
         return resp.json()
 

@@ -9,6 +9,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
+from orchestrator.api.validation import validate_name
+
 router = APIRouter(prefix="/transfer", tags=["transfer"])
 
 
@@ -98,11 +100,21 @@ async def import_entities(request: Request, file: UploadFile):
         raise HTTPException(status_code=400, detail="Invalid file: not a valid ZIP archive") from exc
 
     with zf:
+        # Validate zip entries don't contain path traversal
+        for entry in zf.namelist():
+            if entry.startswith("/") or ".." in entry.split("/"):
+                raise HTTPException(status_code=400, detail=f"Invalid archive entry: {entry}")
+
         # Parse manifest
         if "manifest.json" not in zf.namelist():
             raise HTTPException(status_code=400, detail="Invalid archive: missing manifest.json")
 
         manifest = json.loads(zf.read("manifest.json"))
+
+        # Validate all names in manifest
+        for key in ("connectors", "actions", "workflows"):
+            for name in manifest.get(key, []):
+                validate_name(name)
 
         # Check conflicts
         connectors_dir = config.soar.connectors_dir

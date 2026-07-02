@@ -13,7 +13,10 @@ class FileConnector(BaseConnector):
         self.base_path.mkdir(parents=True, exist_ok=True)
 
     def _resolve(self, path: str) -> Path:
-        return self.base_path / path
+        resolved = (self.base_path / path).resolve()
+        if not str(resolved).startswith(str(self.base_path.resolve())):
+            raise ValueError(f"Path {path} escapes base_path")
+        return resolved
 
     def write(self, path: str, content: str | bytes) -> bool:
         target = self._resolve(path)

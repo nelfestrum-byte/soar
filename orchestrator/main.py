@@ -1,5 +1,7 @@
 import os
 import shutil
+import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -179,10 +181,25 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="SOAR Orchestrator", lifespan=lifespan)
 
 
+class RateLimiter:
+    def __init__(self, max_requests: int = 60, window: float = 60.0):
+        self._requests: dict[str, list[float]] = defaultdict(list)
+        self._max = max_requests
+        self._window = window
+
+    def is_allowed(self, key: str) -> bool:
+        now = time.monotonic()
+        self._requests[key] = [t for t in self._requests[key] if now - t < self._window]
+        if len(self._requests[key]) >= self._max:
+            return False
+        self._requests[key].append(now)
+        return True
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -199,6 +216,20 @@ async def limit_request_body(request: Request, call_next):
             return JSONResponse(status_code=413, content={"detail": "Request body too large"})
     response = await call_next(request)
     return response
+
+
+rate_limiter = RateLimiter(max_requests=120, window=60.0)
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    client_ip = request.client.host if request.client else "unknown"
+    # Skip rate limiting for localhost/test clients
+    if client_ip in ("testclient", "127.0.0.1", "::1"):
+        return await call_next(request)
+    if not rate_limiter.is_allowed(client_ip):
+        return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
+    return await call_next(request)
 
 
 app.include_router(workflows_router)

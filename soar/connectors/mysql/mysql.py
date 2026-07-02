@@ -1,3 +1,5 @@
+import re
+
 import pymysql
 import pymysql.cursors
 
@@ -65,14 +67,21 @@ class MySQLConnector(BaseConnector):
             self._conn.commit()
             return cur.rowcount
 
+    def _validate_identifier(self, name: str) -> None:
+        if not re.match(r'^[a-zA-Z0-9_]+$', name):
+            raise ValueError(f"Invalid identifier: {name}")
+
     def tables(self, database: str | None = None) -> list[str]:
         db = database or self.database
+        self._validate_identifier(db)
         rows = self.execute("SHOW TABLES FROM %s" % db)
         key = f"Tables_in_{db}"
         return [row[key] for row in rows]
 
     def columns(self, table: str, database: str | None = None) -> list[dict]:
         db = database or self.database
+        self._validate_identifier(db)
+        self._validate_identifier(table)
         return self.execute(f"SHOW COLUMNS FROM `{db}`.`{table}`")
 
     def close(self):

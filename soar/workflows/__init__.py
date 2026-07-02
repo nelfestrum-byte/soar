@@ -33,7 +33,8 @@ class WorkflowRegistry:
                     and obj is not BaseWorkflow
                     and obj.__module__ == fqn
                 ):
-                    self._workflows[attr_name] = obj
+                    # Use filename (module_name) as key, not class name
+                    self._workflows[module_name] = obj
 
     def _discover_external(self, external_dir: str) -> None:
         ext_path = Path(external_dir)
@@ -64,9 +65,17 @@ class WorkflowRegistry:
                     and obj is not BaseWorkflow
                     and obj.__module__ == fqn
                 ):
-                    self._workflows[attr_name] = obj
+                    # Use filename (module_name) as key, not class name
+                    self._workflows[module_name] = obj
 
     def init(self, external_dir: str | None = None) -> None:
+        self._workflows.clear()
+        # Remove stale sys.modules entries for external workflows
+        stale = [k for k in sys.modules if k.startswith("soar.workflows.") and k != "soar.workflows.__init__"]
+        for key in stale:
+            mod = sys.modules.get(key)
+            if hasattr(mod, "__file__") and mod.__file__ and not mod.__file__.startswith(str(Path(__file__).parent)):
+                del sys.modules[key]
         self._discover()
         if external_dir:
             self._discover_external(external_dir)
@@ -82,6 +91,8 @@ class WorkflowRegistry:
                 meta["interval"] = cls.interval
             if hasattr(cls, "path"):
                 meta["path"] = cls.path
+            if hasattr(cls, "token"):
+                meta["token"] = cls.token
             result.append(meta)
         return result
 

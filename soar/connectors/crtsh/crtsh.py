@@ -25,7 +25,7 @@ class CrtshConnector(BaseConnector):
     def _get(self, path: str, params: dict | None = None) -> dict | list:
         self._ensure_connected()
         assert self._session is not None
-        resp = self._session.get(f"{self.BASE_URL}{path}", params=params)
+        resp = self._session.get(f"{self.BASE_URL}{path}", params=params, timeout=30)
         resp.raise_for_status()
         return resp.json()
 

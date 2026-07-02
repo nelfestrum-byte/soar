@@ -29,7 +29,7 @@ class SecurityOnionConnector(BaseConnector):
         self._session = requests.Session()
         self._session.verify = self.verify_ssl
         login_url = f"{self._base_url}/api/auth"
-        resp = self._session.post(login_url, json={"username": self.username, "password": self.password})
+        resp = self._session.post(login_url, json={"username": self.username, "password": self.password}, timeout=30)
         resp.raise_for_status()
         token = resp.json().get("token")
         if token:
@@ -47,7 +47,7 @@ class SecurityOnionConnector(BaseConnector):
         assert self._session is not None
         url = f"{self._base_url}/api/elastic/{index}/_search"
         payload = {"query": query, "size": size}
-        resp = self._session.post(url, json=payload)
+        resp = self._session.post(url, json=payload, timeout=30)
         resp.raise_for_status()
         hits = resp.json().get("hits", {}).get("hits", [])
         return [hit["_source"] | {"_id": hit["_id"]} for hit in hits]
@@ -74,27 +74,27 @@ class SecurityOnionConnector(BaseConnector):
     def get_agents(self) -> list[dict]:
         self._ensure_connected()
         assert self._session is not None
-        resp = self._session.get(f"{self._base_url}/api/agents")
+        resp = self._session.get(f"{self._base_url}/api/agents", timeout=30)
         resp.raise_for_status()
         return resp.json()
 
     def get_detections(self) -> list[dict]:
         self._ensure_connected()
         assert self._session is not None
-        resp = self._session.get(f"{self._base_url}/api/detections")
+        resp = self._session.get(f"{self._base_url}/api/detections", timeout=30)
         resp.raise_for_status()
         return resp.json()
 
     def get_hunts(self, query: str) -> list[dict]:
         self._ensure_connected()
         assert self._session is not None
-        resp = self._session.post(f"{self._base_url}/api/hunts", json={"query": query})
+        resp = self._session.post(f"{self._base_url}/api/hunts", json={"query": query}, timeout=30)
         resp.raise_for_status()
         return resp.json()
 
     def get_pcap(self, event_id: str) -> bytes:
         self._ensure_connected()
         assert self._session is not None
-        resp = self._session.get(f"{self._base_url}/api/pcap/{event_id}")
+        resp = self._session.get(f"{self._base_url}/api/pcap/{event_id}", timeout=30)
         resp.raise_for_status()
         return resp.content

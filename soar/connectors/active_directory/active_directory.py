@@ -58,17 +58,23 @@ class ActiveDirectoryConnector(BaseConnector):
             for entry in self._conn.entries
         ]
 
+    @staticmethod
+    def _escape_ldap(value: str) -> str:
+        return value.replace('\\', '\\5c').replace('*', '\\2a').replace('(', '\\28').replace(')', '\\29').replace('\x00', '\\00')
+
     def get_user(self, username: str) -> dict | None:
+        safe_username = self._escape_ldap(username)
         results = self.search(
             self.base_dn,
-            f"(&(objectClass=user)(sAMAccountName={username}))",
+            f"(&(objectClass=user)(sAMAccountName={safe_username}))",
         )
         return results[0] if results else None
 
     def get_user_groups(self, username: str) -> list[str]:
+        safe_username = self._escape_ldap(username)
         results = self.search(
             self.base_dn,
-            f"(&(objectClass=user)(sAMAccountName={username}))",
+            f"(&(objectClass=user)(sAMAccountName={safe_username}))",
             ["memberOf"],
         )
         if not results:

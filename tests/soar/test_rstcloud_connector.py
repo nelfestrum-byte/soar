@@ -54,7 +54,7 @@ def test_rstcloud_check_ip():
     result = conn.check_ip("1.2.3.4")
     assert result["ip"] == "1.2.3.4"
     mock_session.get.assert_called_once_with(
-        "https://opentip.rstcloud.net/api/v1/ip/1.2.3.4", verify=True
+        "https://opentip.rstcloud.net/api/v1/ip/1.2.3.4", verify=True, timeout=30
     )
 
 
@@ -70,7 +70,7 @@ def test_rstcloud_check_domain():
     result = conn.check_domain("example.com")
     assert result["domain"] == "example.com"
     mock_session.get.assert_called_once_with(
-        "https://opentip.rstcloud.net/api/v1/domain/example.com", verify=True
+        "https://opentip.rstcloud.net/api/v1/domain/example.com", verify=True, timeout=30
     )
 
 
@@ -86,7 +86,7 @@ def test_rstcloud_check_hash():
     result = conn.check_hash("abc123")
     assert result["sha256"] == "abc123"
     mock_session.get.assert_called_once_with(
-        "https://opentip.rstcloud.net/api/v1/file/abc123", verify=True
+        "https://opentip.rstcloud.net/api/v1/file/abc123", verify=True, timeout=30
     )
 
 
@@ -105,4 +105,5 @@ def test_rstcloud_check_url():
         "https://opentip.rstcloud.net/api/v1/url",
         params={"url": "http://evil.com"},
         verify=True,
+        timeout=30,
     )

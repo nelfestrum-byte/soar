@@ -53,7 +53,7 @@ def test_kaspersky_opentip_check_ip():
     result = conn.check_ip("1.2.3.4")
     assert result["ip"] == "1.2.3.4"
     mock_session.get.assert_called_once_with(
-        "https://opentip.kaspersky.com/api/v1/ip/1.2.3.4", verify=True
+        "https://opentip.kaspersky.com/api/v1/ip/1.2.3.4", verify=True, timeout=30
     )
 
 
@@ -85,6 +85,7 @@ def test_kaspersky_opentip_check_url():
         "https://opentip.kaspersky.com/api/v1/url",
         params={"url": "http://evil.com"},
         verify=True,
+        timeout=30,
     )
 
 

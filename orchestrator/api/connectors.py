@@ -1,7 +1,9 @@
+import ipaddress
 import json
 import os
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 import yaml as pyyaml
 from fastapi import APIRouter, HTTPException, Request
@@ -139,8 +141,25 @@ async def preview_spec(request: Request, body: PreviewRequest):
     }
 
 
+def _validate_external_url(url: str) -> None:
+    """Block requests to internal/private IP ranges."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Only HTTP/HTTPS URLs allowed")
+    hostname = parsed.hostname or ""
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            raise HTTPException(status_code=400, detail="Requests to internal IPs are not allowed")
+    except ValueError:
+        # hostname is a domain name, not an IP — check common internal names
+        if hostname in ("localhost", "metadata.google.internal"):
+            raise HTTPException(status_code=400, detail="Requests to internal hosts are not allowed")
+
+
 @router.get("/preview")
 async def preview_spec_url(url: str):
+    _validate_external_url(url)
     import httpx
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -247,8 +266,14 @@ async def save_connector_code(name: str, request: Request):
     os.makedirs(dirpath, exist_ok=True)
     filepath = os.path.join(dirpath, f"{name}.py")
     body = await request.body()
-    with open(filepath, "wb") as f:
-        f.write(body)
+    try:
+        content = body.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="Content must be valid UTF-8")
+    if "\x00" in content:
+        raise HTTPException(status_code=400, detail="Content must not contain null bytes")
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(content)
     git = request.app.state.git
     try:
         commit_hash = await git.commit(f"connectors/{name}/{name}.py", f"Update connector {name}")
@@ -289,8 +314,14 @@ async def save_connector_config(name: str, request: Request):
     os.makedirs(dirpath, exist_ok=True)
     filepath = os.path.join(dirpath, f"{name}.yml")
     body = await request.body()
-    with open(filepath, "wb") as f:
-        f.write(body)
+    try:
+        content = body.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="Content must be valid UTF-8")
+    if "\x00" in content:
+        raise HTTPException(status_code=400, detail="Content must not contain null bytes")
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(content)
     git = request.app.state.git
     try:
         commit_hash = await git.commit(f"connectors/{name}/{name}.yml", f"Update config {name}")

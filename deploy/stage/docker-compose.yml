@@ -18,13 +18,13 @@ services:
       context: ../..
       dockerfile: deploy/stage/Dockerfile.orchestrator
     container_name: soar-orchestrator
-    expose:
-      - "8000"
+    ports:
+      - "8000:8000"
     volumes:
       - soar-data:/app/data
       - soar-logs:/var/log/soar
     environment:
-      - SOAR_CONFIG=/app/data/config.yaml
+      - SOAR_CONFIG=/app/config.yaml
     depends_on:
       redis:
         condition: service_healthy

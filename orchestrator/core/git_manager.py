@@ -79,13 +79,13 @@ class GitManager:
     async def history(self, filepath: str, limit: int = 20) -> list[GitCommit]:
         output = await self._run(
             "log", "--follow", "-n", str(limit),
-            "--format=%H|%s|%an|%ai", "--", filepath,
+            "--format=%H%x00%s%x00%an%x00%ai", "--", filepath,
         )
         commits = []
         for line in output.strip().splitlines():
             if not line:
                 continue
-            parts = line.split("|", 3)
+            parts = line.split("\x00", 3)
             if len(parts) == 4:
                 commits.append(GitCommit(
                     hash=parts[0],

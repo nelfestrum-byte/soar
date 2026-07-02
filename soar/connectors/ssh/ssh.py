@@ -25,7 +25,7 @@ class SSHConnector(BaseConnector):
 
     def _connect_impl(self):
         self._client = paramiko.SSHClient()
-        self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self._client.set_missing_host_key_policy(paramiko.WarningPolicy())
         connect_kwargs = {
             "hostname": self.host,
             "port": self.port,

@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from typing import Optional
 
 from redis import asyncio as aioredis
@@ -26,6 +27,16 @@ class RedisQueue(AbstractJobQueue):
         self._connect()
 
     def _connect(self):
+        if self._redis is not None:
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.ensure_future(self._redis.close())
+                else:
+                    loop.run_until_complete(self._redis.close())
+            except Exception:
+                pass
         self._redis = aioredis.from_url(
             self._redis_url,
             max_connections=self._max_connections,
@@ -46,6 +57,7 @@ class RedisQueue(AbstractJobQueue):
             "context": job.context,
             "log_path": job.log_path,
             "timeout": job.timeout,
+            "triggered_at": job.triggered_at.isoformat() if job.triggered_at else None,
         })
         try:
             await self._redis.lpush(self._key, data)
@@ -57,11 +69,17 @@ class RedisQueue(AbstractJobQueue):
     async def pop(self, timeout: float = 1.0) -> Optional[WorkflowJob]:
         await self._ensure_connected()
         try:
+            # NOTE: brpop is atomic but message loss is possible if connection drops
+            # between item removal and response receipt. For at-least-once delivery,
+            # consider RPOPLPUSH or Redis Streams in the future.
             result = await self._redis.brpop(self._key, timeout=timeout)
             if result is None:
                 return None
             _, data = result
             item = json.loads(data)
+            triggered_at = None
+            if item.get("triggered_at"):
+                triggered_at = datetime.fromisoformat(item["triggered_at"])
             return WorkflowJob(
                 id=item["id"],
                 workflow_name=item["workflow_name"],
@@ -70,6 +88,7 @@ class RedisQueue(AbstractJobQueue):
                 context=item["context"],
                 log_path=item.get("log_path"),
                 timeout=item.get("timeout"),
+                triggered_at=triggered_at,
             )
         except (ConnectionError, TimeoutError) as e:
             logger.error(f"Redis pop failed: {e}")

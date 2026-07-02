@@ -12,7 +12,7 @@ class WinRMConnector(BaseConnector):
         username: str = "",
         password: str = "",
         transport: str = "ntlm",
-        verify_ssl: bool = False,
+        verify_ssl: bool = True,
     ):
         super().__init__(instance_name)
         self.host = host
@@ -30,7 +30,7 @@ class WinRMConnector(BaseConnector):
             endpoint,
             auth=(self.username, self.password),
             transport=self.transport,
-            server_cert_validation="ignore" if not self.verify_ssl else "validate",
+            server_cert_validation="validate" if self.verify_ssl else "ignore",
         )
 
     def disconnect(self):

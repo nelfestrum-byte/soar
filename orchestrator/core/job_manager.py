@@ -106,6 +106,8 @@ class JobManager:
         import signal
         if job.status == JobStatus.RUNNING and job.pid:
             try:
+                # On Windows, os.kill calls TerminateProcess (immediate hard kill)
+                # On Unix, sends SIGTERM (graceful)
                 os.kill(job.pid, signal.SIGTERM)
             except (ProcessLookupError, OSError):
                 pass
@@ -124,3 +126,5 @@ class JobManager:
                 raise JobAlreadyRunningError(
                     f"Workflow '{meta.name}' is already running"
                 )
+        # NOTE: QUEUE policy is not yet implemented — behaves like ALLOW
+        # TODO: implement sequential queuing for QUEUE policy

@@ -44,7 +44,7 @@ def test_crtsh_search_domain():
     result = conn.search_domain("example.com")
     assert len(result) == 2
     mock_session.get.assert_called_once_with(
-        "https://crt.sh/q/", params={"q": "example.com", "output": "json"}
+        "https://crt.sh/q/", params={"q": "example.com", "output": "json"}, timeout=30
     )
 
 
@@ -60,7 +60,7 @@ def test_crtsh_search_domain_with_subdomains():
     result = conn.search_domain("example.com", include_subdomains=True)
     assert len(result) == 1
     mock_session.get.assert_called_once_with(
-        "https://crt.sh/q/", params={"q": "%.example.com", "output": "json"}
+        "https://crt.sh/q/", params={"q": "%.example.com", "output": "json"}, timeout=30
     )
 
 
@@ -76,7 +76,7 @@ def test_crtsh_search_identity():
     result = conn.search_identity("John Doe")
     assert len(result) == 1
     mock_session.get.assert_called_once_with(
-        "https://crt.sh/q/", params={"identity": "John Doe", "output": "json"}
+        "https://crt.sh/q/", params={"identity": "John Doe", "output": "json"}, timeout=30
     )
 
 
@@ -92,7 +92,7 @@ def test_crtsh_get_certificate():
     result = conn.get_certificate(12345)
     assert result["id"] == 12345
     mock_session.get.assert_called_once_with(
-        "https://crt.sh/d/", params={"id": 12345, "output": "json"}
+        "https://crt.sh/d/", params={"id": 12345, "output": "json"}, timeout=30
     )
 
 

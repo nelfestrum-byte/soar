@@ -28,7 +28,7 @@ class KasperskyOpenTipConnector(BaseConnector):
     def _get(self, path: str) -> dict:
         self._ensure_connected()
         assert self._session is not None
-        resp = self._session.get(f"{self.base_url}{path}", verify=self.verify_ssl)
+        resp = self._session.get(f"{self.base_url}{path}", verify=self.verify_ssl, timeout=30)
         resp.raise_for_status()
         return resp.json()
 
@@ -45,6 +45,7 @@ class KasperskyOpenTipConnector(BaseConnector):
             f"{self.base_url}/api/v1/url",
             params={"url": url},
             verify=self.verify_ssl,
+            timeout=30,
         )
         resp.raise_for_status()
         return resp.json()

@@ -26,7 +26,7 @@ class AbuseChConnector(BaseConnector):
     def _post(self, url: str, data: dict) -> dict:
         self._ensure_connected()
         assert self._session is not None
-        resp = self._session.post(url, data=data)
+        resp = self._session.post(url, data=data, timeout=30)
         resp.raise_for_status()
         return resp.json()
 

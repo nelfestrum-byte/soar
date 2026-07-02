@@ -77,6 +77,7 @@ def test_censys_search_hosts():
     mock_session.get.assert_called_once_with(
         "https://search.censys.io/api/v2/hosts/search",
         params={"q": "services.port=443", "page": 1, "per_page": 50},
+        timeout=30,
     )
 
 
@@ -99,6 +100,7 @@ def test_censys_get_host():
     mock_session.get.assert_called_once_with(
         "https://search.censys.io/api/v2/hosts/1.2.3.4",
         params=None,
+        timeout=30,
     )
 
 
@@ -124,6 +126,7 @@ def test_censys_search_certificates():
     mock_session.get.assert_called_once_with(
         "https://search.censys.io/api/v2/certificates/search",
         params={"q": "names=example.com", "page": 2, "per_page": 25},
+        timeout=30,
     )
 
 
@@ -146,4 +149,5 @@ def test_censys_get_certificate():
     mock_session.get.assert_called_once_with(
         "https://search.censys.io/api/v2/certificates/abc123",
         params=None,
+        timeout=30,
     )

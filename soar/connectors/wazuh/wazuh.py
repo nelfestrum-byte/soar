@@ -3,8 +3,6 @@ import urllib3
 
 from soar.connectors.base import BaseConnector
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
 
 class WazuhConnector(BaseConnector):
     def __init__(
@@ -12,9 +10,9 @@ class WazuhConnector(BaseConnector):
         instance_name: str,
         host: str,
         port: int = 55000,
-        username: str = "admin",
-        password: str = "admin",
-        verify_ssl: bool = False,
+        username: str = "",
+        password: str = "",
+        verify_ssl: bool = True,
     ):
         super().__init__(instance_name)
         self.host = host
@@ -31,6 +29,7 @@ class WazuhConnector(BaseConnector):
         resp = self._session.post(
             f"https://{self.host}:{self.port}/security/user/authenticate",
             auth=(self.username, self.password),
+            timeout=30,
         )
         resp.raise_for_status()
         self._token = resp.json()["data"]["token"]
@@ -46,14 +45,14 @@ class WazuhConnector(BaseConnector):
     def _get(self, path: str, params: dict | None = None) -> dict:
         self._ensure_connected()
         assert self._session is not None
-        resp = self._session.get(f"https://{self.host}:{self.port}{path}", params=params)
+        resp = self._session.get(f"https://{self.host}:{self.port}{path}", params=params, timeout=30)
         resp.raise_for_status()
         return resp.json()
 
     def _put(self, path: str, params: dict | None = None) -> dict:
         self._ensure_connected()
         assert self._session is not None
-        resp = self._session.put(f"https://{self.host}:{self.port}{path}", params=params)
+        resp = self._session.put(f"https://{self.host}:{self.port}{path}", params=params, timeout=30)
         resp.raise_for_status()
         return resp.json()
 

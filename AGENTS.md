@@ -1,12 +1,12 @@
-# AGENTS.md — SOAR Project v0.1
+# AGENTS.md — SOAR Project v0.4
 
 ## What is this
 
 SOAR (Security Orchestration, Automation and Response) — система автоматизации инцидентов. Три компонента:
 
-1. **`soar/`** — Python-пакет: enterprise-коннекторы (SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh, PostgreSQL/MySQL/MSSQL, Telegram, SMTP, VirusTotal, Abuse.ch, File), actions, workflows, реестры
+1. **`soar/`** — Python-пакет: enterprise-коннекторы (SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh, PostgreSQL/MySQL/MSSQL, Telegram, SMTP, VirusTotal, Abuse.ch, File, WinRM, SMB, Shodan, Fofa, Censys, MISP, RstCloud, Kaspersky OpenTip, URLhaus, crt.sh), actions, workflows, реестры
 2. **`orchestrator/`** — FastAPI сервис: очередь задач, воркеры, планировщик, git-версионирование
-3. **`ui/`** — Vue.js SPA: минималистичный UI для тестирования и QA
+3. **`ui/`** — Vue.js SPA: **заглушка для ручного тестирования, не часть продукта**. Основной API-доступ — напрямую на порту 8000 (orchestrator). UI нужен только для визуальной проверки workflows/actions/connectors в браузере
 
 ## Stack
 
@@ -79,11 +79,13 @@ orchestrator/
 └── api/
     ├── workflows.py           # GET/POST enable/disable, reload + CRUD кода workflow
     ├── actions.py             # CRUD actions + templates
-    ├── connectors.py          # CRUD connectors + code/config
+    ├── connectors.py          # CRUD connectors + code/config + OpenAPI generate/preview
     ├── jobs.py                # POST запуск, GET статус, cancel
     ├── webhooks.py            # POST webhook с токеном
     ├── logs.py                # GET лог + SSE стрим
-    └── status.py              # GET /status — воркеры, очередь, статистика
+    ├── status.py              # GET /status — воркеры, очередь, статистика
+    ├── transfer.py            # POST export/import — импорт/экспорт конфигурации
+    └── validation.py          # validate_name, validate_path_within, SSRF validation
 
 soar/
 ├── __init__.py                # Экспорт connectors, actions, workflows
@@ -101,16 +103,28 @@ soar/
 │   ├── postgresql/            # PostgreSQLConnector — execute, tables, columns
 │   ├── mysql/                 # MySQLConnector — execute, tables, columns
 │   ├── mssql/                 # MSSQLConnector — execute, tables, columns
+│   ├── winrm/                 # WinRMConnector — exec_command, run_ps, upload/download
+│   ├── smb_rpc/               # SmbRpcConnector — SMB/RPC file operations
 │   ├── telegram/              # TelegramConnector — send_message/photo/document, get_updates
 │   ├── smtp/                  # SMTPConnector — send_email/text/html with attachments
 │   ├── virus_total/           # VirusTotalConnector — IP/domain/file/URL reports, upload
 │   ├── abusech/               # AbuseChConnector — ThreatFox IOCs, MalwareBazaar, URLhaus
+│   ├── shodan/                # ShodanConnector — search hosts, DNS resolve/reverse
+│   ├── censys/                # CensysConnector — hosts/certificates search
+│   ├── fofa/                  # FofaConnector — host search, user info
+│   ├── misp/                  # MispConnector — events/attributes/sightings CRUD
+│   ├── rstcloud/              # RstCloudConnector — IP/domain/hash/URL checks
+│   ├── kaspersky_opentip/     # KasperskyOpenTipConnector — IP/domain/hash/URL checks
+│   ├── urlhaus/               # UrlhausConnector — URL/host/payload lookups
+│   ├── crtsh/                 # CrtshConnector — certificate/domain/identity search
 │   └── file/                  # FileConnector — write/read/append/delete файлы
 ├── actions/
 │   └── __init__.py            # ActionsRegistry — автообнаружение actions
 ├── workflows/
 │   ├── __init__.py            # WorkflowRegistry — автообнаружение workflows
 │   └── base.py                # BaseWorkflow, ScheduledWorkflow, WebhookWorkflow, ManualWorkflow
+├── tools/
+│   └── openapi.py             # OpenAPI connector code generator
 └── examples/
     └── nadproject_integration.py
 
@@ -126,7 +140,7 @@ ui/src/
     └── Connectors.vue         # Управление коннекторами (code/config)
 
 deploy/stage/
-├── docker-compose.yml         # orchestrator + UI (nginx)
+├── docker-compose.yml         # orchestrator :8000 (direct API) + UI :3000 (nginx proxy)
 ├── Dockerfile.orchestrator    # Python 3.11 + git + deps
 ├── Dockerfile.ui              # Node build → nginx
 ├── nginx.conf                 # proxy /api, /docs, /openapi.json → orchestrator:8000
@@ -169,6 +183,15 @@ deploy/stage/
 | PUT | /connectors/{name}/code | Сохранить код .py |
 | GET | /connectors/{name}/config | Получить конфиг .yml |
 | PUT | /connectors/{name}/config | Сохранить конфиг .yml |
+| POST | /connectors/generate | Генерация коннектора из OpenAPI spec |
+| POST | /connectors/preview | Парсинг OpenAPI spec (POST, тело) |
+| GET | /connectors/preview | Парсинг OpenAPI spec (GET, URL) — SSRF-защищён |
+
+### Transfer
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /transfer/export | Экспорт конфигурации в ZIP |
+| POST | /transfer/import | Импорт конфигурации из ZIP |
 
 ### Jobs
 | Method | Path | Description |
@@ -245,6 +268,57 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 - Таймауты для push/pop операций
 - Health check через `/status` endpoint (`connected: true/false`)
 
+## Security patterns
+
+### Input validation (orchestrator/api/validation.py)
+- `validate_name(name)` — regex `^[a-zA-Z0-9_\-]+$`, блокирует path traversal и shell metacharacters
+- `validate_path_within(base, target)` — `normpath + startswith`, предотвращает directory escape
+- SSRF protection — блокировка RFC 1918, link-local, localhost, cloud metadata IPs
+
+### Connector security (soar/connectors/)
+- SQL: параметризованные запросы (PostgreSQL, MSSQL) + валидация имён (MySQL)
+- LDAP: RFC 4515 escaping спецсимволов (`*`, `(`, `)`, `\`, NUL)
+- File: path boundary check через `_resolve()` + `resolve()` + `startswith()`
+- SSH: `WarningPolicy()` вместо `AutoAddPolicy()` (MITM protection)
+- WinRM: SSL verification по умолчанию (`verify_ssl=True`)
+- HTTP: `timeout=30` на все HTTP-запросы (prevents worker pool exhaustion)
+- Wazuh: пустые credentials по умолчанию, SSL verification включён
+
+### Rate limiting (orchestrator/main.py)
+- In-memory rate limiter: 120 req/60s per IP
+- Пропускает localhost/testclient для dev/тестов
+
+### Request body limit
+- 5MB максимум для POST/PUT/PATCH
+
+### Subprocess isolation
+- `create_subprocess_exec` (argument list, no shell) — prevent command injection
+- Environment variable allowlist — предотвращает утечку секретов
+- Log-per-job файл с guaranteed cleanup в finally block
+
+### Connector HTTP hardening
+- Все HTTP-коннекторы: `timeout=30` на каждый запрос (Abuse.ch, Censys, Crtsh, Fofa, FreeIPA, Kaspersky, RstCloud, SecurityOnion, Urlhaus, Wazuh)
+- SSH: `WarningPolicy()` вместо `AutoAddPolicy()` — MITM protection
+- WinRM: `verify_ssl=True` по умолчанию, `server_cert_validation="validate"`
+- Wazuh: пустые credentials по умолчанию, SSL verification включён, `urllib3` warnings не глушаются
+
+### API hardening
+- `DELETE /workflows/{name}/code` — cleanup `orchestrator_state.yaml` перед reload
+- `GET /workflows/{name}` и `GET /workflows` — webhook token в response dict
+- `POST /jobs` — отдельный 409 для disabled workflow (`WorkflowDisabledError`)
+- `POST /transfer/import` — Zip Slip protection (path traversal + `..` check), name validation
+- `GET /connectors/preview` — SSRF protection: блокировка internal/private IPs и localhost
+- `PUT /connectors/{name}/code` и `config` — UTF-8 validation + null byte check
+- Git log history: null-byte delimiter вместо `|` (prevents delimiter injection)
+- `CORSMiddleware(allow_credentials=False)` — security best practice
+
+## Known limitations
+
+- **ConcurrencyPolicy.QUEUE** — не реализован, работает как ALLOW
+- **RedisQueue** — brpop может терять сообщения при обрыве соединения; serialized data не полный (без `triggered_at`)
+- **No authentication** — сервис доверяет Docker-сети
+- **Worker crash recovery** — jobs в статусе RUNNING без активного процесса не восстанавливаются автоматически
+
 ## File map (для быстрого навигации)
 
 | Что нужно | Куда смотреть |
@@ -265,6 +339,16 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 | MSSQL | `soar/connectors/mssql/` — execute, tables, columns |
 | VirusTotal | `soar/connectors/virus_total/` — IP/domain/file/URL reports, upload |
 | Abuse.ch | `soar/connectors/abusech/` — ThreatFox IOCs, MalwareBazaar, URLhaus |
+| WinRM | `soar/connectors/winrm/` — exec_command, run_ps, upload/download |
+| SMB/RPC | `soar/connectors/smb_rpc/` — SMB/RPC file operations |
+| Shodan | `soar/connectors/shodan/` — search hosts, DNS resolve/reverse |
+| Fofa | `soar/connectors/fofa/` — host search, user info |
+| Censys | `soar/connectors/censys/` — hosts/certificates search |
+| MISP | `soar/connectors/misp/` — events/attributes/sightings CRUD |
+| RstCloud | `soar/connectors/rstcloud/` — IP/domain/hash/URL checks |
+| Kaspersky OpenTip | `soar/connectors/kaspersky_opentip/` — IP/domain/hash/URL checks |
+| URLhaus | `soar/connectors/urlhaus/` — URL/host/payload lookups |
+| crt.sh | `soar/connectors/crtsh/` — certificate/domain/identity search |
 | Новый action | `soar/actions/`, один файл = одна функция |
 | Новый workflow | `soar/workflows/`, наследовать от `ScheduledWorkflow`/`WebhookWorkflow`/`ManualWorkflow` |
 | Шаблон workflow | `orchestrator/api/workflows.py` — TEMPLATES dict |
@@ -301,3 +385,5 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 
 - **v0.1** (2026-06-30) — Minimal SOAR: connectors, actions, workflows, orchestrator, UI, Docker deploy
 - **v0.2** (2026-07-01) — Enterprise SOAR connectors: SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh, PostgreSQL/MySQL/MSSQL, Telegram, SMTP, VirusTotal, Abuse.ch, File
+- **v0.3** (2026-07-02) — Security hardening: 11 critical + 12 important fixes. SSRF protection, Zip Slip prevention, SQL/LDAP injection fixes, path traversal guards, rate limiting, subprocess lifecycle management
+- **v0.4** (2026-07-02) — BIG FIX: DELETE workflow state cleanup, webhook token in API responses, additional connector hardening. Rate limiting (120 req/60s), SSRF protection for OpenAPI preview, SSH WarningPolicy, WinRM SSL verification, Wazuh secure defaults, MySQL identifier validation, SMTP attachment existence check, subprocess config path resolution, workflow registry filename-based keys, Redis queue triggered_at serialization, worker cancel skip + finally cleanup, CORSMiddleware credentials=False

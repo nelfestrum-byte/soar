@@ -1,3 +1,4 @@
+import os
 import smtplib
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
@@ -64,7 +65,10 @@ class SMTPConnector(BaseConnector):
         content_type = "html" if html else "plain"
         msg.attach(MIMEText(body, content_type, "utf-8"))
         for att in attachments or []:
-            with open(att["path"], "rb") as f:
+            att_path = att["path"]
+            if not os.path.exists(att_path):
+                raise FileNotFoundError(f"Attachment not found: {att_path}")
+            with open(att_path, "rb") as f:
                 part = MIMEApplication(f.read(), Name=att.get("name", att["path"].split("/")[-1]))
             part["Content-Disposition"] = f'attachment; filename="{att.get("name", att["path"].split("/")[-1])}"'
             msg.attach(part)

@@ -62,8 +62,9 @@ TEMPLATES = {
 async def list_workflows(request: Request):
     job_manager = request.app.state.job_manager
     metas = job_manager._metas.values()
-    return [
-        {
+    result = []
+    for m in metas:
+        item = {
             "name": m.name,
             "type": m.type,
             "enabled": m.enabled,
@@ -73,8 +74,10 @@ async def list_workflows(request: Request):
             "timeout": m.timeout,
             "concurrency": m.concurrency.value,
         }
-        for m in metas
-    ]
+        if hasattr(m, "token") and m.token:
+            item["token"] = m.token
+        result.append(item)
+    return result
 
 
 @router.get("/{name}")
@@ -83,7 +86,7 @@ async def get_workflow(name: str, request: Request):
     meta = job_manager._metas.get(name)
     if not meta:
         raise HTTPException(status_code=404, detail=f"Workflow '{name}' not found")
-    return {
+    result = {
         "name": meta.name,
         "type": meta.type,
         "enabled": meta.enabled,
@@ -93,6 +96,9 @@ async def get_workflow(name: str, request: Request):
         "timeout": meta.timeout,
         "concurrency": meta.concurrency.value,
     }
+    if hasattr(meta, "token") and meta.token:
+        result["token"] = meta.token
+    return result
 
 
 @router.post("/{name}/enable")
@@ -212,6 +218,9 @@ async def delete_workflow_code(name: str, request: Request):
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Workflow not found")
     os.remove(filepath)
+
+    _remove_from_state(config, name)
+
     git = request.app.state.git
     try:
         commit_hash = await git.commit(f"workflows/{name}.py", f"Delete workflow {name}")
@@ -226,6 +235,24 @@ async def delete_workflow_code(name: str, request: Request):
     await scheduler.reload(workflows)
 
     return {"status": "deleted", "commit": commit_hash}
+
+
+def _remove_from_state(config, name: str):
+    from pathlib import Path
+
+    import yaml
+
+    state_path = Path(config.soar.workflows_dir).parent / "orchestrator_state.yaml"
+    if not state_path.exists():
+        return
+    with open(state_path) as f:
+        state = yaml.safe_load(f) or {}
+    workflows = state.get("workflows", {})
+    if name in workflows:
+        del workflows[name]
+        state["workflows"] = workflows
+        with open(state_path, "w") as f:
+            yaml.dump(state, f)
 
 
 def _save_state(config, metas: dict):

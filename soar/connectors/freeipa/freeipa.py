@@ -31,6 +31,7 @@ class FreeIPAConnector(BaseConnector):
             login_url,
             data={"user": self.username, "password": self.password},
             headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=30,
         )
         resp.raise_for_status()
 
@@ -50,7 +51,7 @@ class FreeIPAConnector(BaseConnector):
             "params": params or [],
             "options": {},
         }
-        resp = self._session.post(url, json=payload)
+        resp = self._session.post(url, json=payload, timeout=30)
         resp.raise_for_status()
         data = resp.json()
         if data.get("error"):

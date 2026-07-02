@@ -27,10 +27,10 @@ def test_winrm_connect_impl():
     with patch("soar.connectors.winrm.winrm.winrm.Session") as mock_client:
         conn._connect_impl()
         mock_client.assert_called_once_with(
-            "http://10.0.0.1:5985/wsman",
+            "https://10.0.0.1:5985/wsman",
             auth=("admin", "pass"),
             transport="ntlm",
-            server_cert_validation="ignore",
+            server_cert_validation="validate",
         )
         assert conn.is_connected is False
 

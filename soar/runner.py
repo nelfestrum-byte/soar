@@ -22,8 +22,12 @@ try:
         "connectors": soar_config.get("connectors_dir"),
         "actions": soar_config.get("actions_dir"),
     }
-except Exception:
-    pass
+except FileNotFoundError:
+    import sys
+    print(f"Warning: Config file not found at {config_path}", file=sys.stderr)
+except Exception as e:
+    import sys
+    print(f"Warning: Failed to load config from {config_path}: {e}", file=sys.stderr)
 
 workflows.init(external_dir=external_dirs.get("workflows"))
 connectors.init(external_dir=external_dirs.get("connectors"))
