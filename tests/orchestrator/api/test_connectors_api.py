@@ -183,6 +183,25 @@ async def test_generate_connector_invalid_name():
         assert r.status_code == 400
 
 
+@pytest.mark.asyncio
+async def test_generated_connector_config():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        # Generate a connector
+        r = await c.post(
+            "/connectors/generate",
+            json={"spec": json.dumps(SAMPLE_SPEC), "name": "gen_config_test"},
+        )
+        assert r.status_code == 200
+
+        # Get config - should return the example.yml content
+        r = await c.get("/connectors/gen_config_test/config")
+        assert r.status_code == 200
+        content = r.json()["content"]
+        assert "instances:" in content
+        assert "gen_config_test:" in content
+
+
 SAMPLE_SPEC_JSON = json.dumps({
     "openapi": "3.0.0",
     "info": {"title": "Test API", "version": "1.0.0"},

@@ -229,6 +229,12 @@ async def get_connector_config(name: str, request: Request):
     filepath = os.path.join(config.soar.connectors_dir, name, f"{name}.yml")
     validate_path_within(config.soar.connectors_dir, filepath)
     if not os.path.exists(filepath):
+        # Look for .example.yml in connectors_dir (generated connectors)
+        example_in_dir = os.path.join(config.soar.connectors_dir, name, f"{name}.example.yml")
+        if os.path.exists(example_in_dir):
+            with open(example_in_dir) as f:
+                return {"name": name, "content": f.read()}
+        # Fall back to builtin example
         builtin_dir = Path(__file__).resolve().parent.parent.parent / "soar" / "connectors"
         example = builtin_dir / name / f"{name}.example.yml"
         if example.exists():
