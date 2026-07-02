@@ -146,7 +146,10 @@ async def reload_scheduler(request: Request):
 @router.get("/code/template")
 async def get_workflow_template(name: str = "MyWorkflow", wf_type: str = "scheduled", path: str = "my-endpoint"):
     template = TEMPLATES.get(wf_type, SCHEDULED_TEMPLATE)
-    return {"content": template.format(name=name, path=path)}
+    result = {"content": template.format(name=name, path=path)}
+    if wf_type != "webhook" and path != "my-endpoint":
+        result["warning"] = "path parameter is only used for webhook workflows"
+    return result
 
 
 @router.get("/{name}/code")
@@ -169,14 +172,34 @@ async def save_workflow_code(name: str, request: Request):
     filepath = os.path.join(config.soar.workflows_dir, f"{name}.py")
     validate_path_within(config.soar.workflows_dir, filepath)
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    body = await request.body()
-    with open(filepath, "wb") as f:
-        f.write(body)
+
+    raw = await request.body()
+    try:
+        import json
+        body = json.loads(raw)
+        code = body.get("code", "")
+    except (json.JSONDecodeError, ValueError):
+        code = raw.decode("utf-8")
+
+    if not code.strip():
+        raise HTTPException(status_code=422, detail="Code must not be empty")
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(code)
+
     git = request.app.state.git
     try:
         commit_hash = await git.commit(f"workflows/{name}.py", f"Update workflow {name}")
     except RuntimeError as e:
         return {"status": "saved", "commit": "", "warning": str(e)}
+
+    from orchestrator.main import load_workflow_metas
+    job_manager = request.app.state.job_manager
+    scheduler = request.app.state.scheduler
+    workflows = load_workflow_metas(config)
+    job_manager.set_metas(workflows)
+    await scheduler.reload(workflows)
+
     return {"status": "saved", "commit": commit_hash}
 
 
@@ -194,6 +217,14 @@ async def delete_workflow_code(name: str, request: Request):
         commit_hash = await git.commit(f"workflows/{name}.py", f"Delete workflow {name}")
     except RuntimeError as e:
         return {"status": "deleted", "commit": "", "warning": str(e)}
+
+    from orchestrator.main import load_workflow_metas
+    job_manager = request.app.state.job_manager
+    scheduler = request.app.state.scheduler
+    workflows = load_workflow_metas(config)
+    job_manager.set_metas(workflows)
+    await scheduler.reload(workflows)
+
     return {"status": "deleted", "commit": commit_hash}
 
 

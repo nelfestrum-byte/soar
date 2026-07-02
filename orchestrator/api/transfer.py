@@ -92,7 +92,12 @@ async def import_entities(request: Request, file: UploadFile):
     conflicts = []
     imported: dict = {"connectors": [], "actions": [], "workflows": []}
 
-    with zipfile.ZipFile(buffer, "r") as zf:
+    try:
+        zf = zipfile.ZipFile(buffer, "r")
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=400, detail="Invalid file: not a valid ZIP archive") from exc
+
+    with zf:
         # Parse manifest
         if "manifest.json" not in zf.namelist():
             raise HTTPException(status_code=400, detail="Invalid archive: missing manifest.json")

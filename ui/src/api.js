@@ -20,7 +20,7 @@ export const api = {
   disableWorkflow: (name) => request(`/workflows/${name}/disable`, { method: 'POST' }),
   getWorkflowCode: (name) => request(`/workflows/${name}/code`),
   saveWorkflowCode: (name, content) =>
-    request(`/workflows/${name}/code`, { method: 'PUT', body: content }),
+    request(`/workflows/${name}/code`, { method: 'PUT', body: JSON.stringify({ code: content }) }),
   deleteWorkflowCode: (name) => request(`/workflows/${name}/code`, { method: 'DELETE' }),
   getWorkflowTemplate: (name, type = 'scheduled') =>
     request(`/workflows/code/template?name=${name}&wf_type=${type}`),
@@ -35,7 +35,7 @@ export const api = {
   getActions: () => request('/actions'),
   getAction: (name) => request(`/actions/${name}`),
   saveAction: (name, content) =>
-    request(`/actions/${name}`, { method: 'PUT', body: content }),
+    request(`/actions/${name}`, { method: 'PUT', body: JSON.stringify({ code: content }) }),
   deleteAction: (name) => request(`/actions/${name}`, { method: 'DELETE' }),
   getActionTemplate: (name) => request(`/actions/template?name=${name}`),
   getLogs: (id) => request(`/logs/${id}`),

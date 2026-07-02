@@ -187,7 +187,42 @@ async def generate_connector(request: Request, body: GenerateRequest):
     except RuntimeError:
         pass
 
+    from orchestrator.main import load_workflow_metas
+    job_manager = request.app.state.job_manager
+    scheduler = request.app.state.scheduler
+    workflows = load_workflow_metas(config)
+    job_manager.set_metas(workflows)
+    await scheduler.reload(workflows)
+
     return {"name": body.name, **result}
+
+
+@router.get("/{name}")
+async def get_connector(name: str, request: Request):
+    validate_name(name)
+    config = request.app.state.config
+    connectors_dir = config.soar.connectors_dir
+    dirpath = os.path.join(connectors_dir, name)
+    validate_path_within(connectors_dir, dirpath)
+    if not os.path.exists(dirpath) or not os.path.isdir(dirpath):
+        raise HTTPException(status_code=404, detail="Connector not found")
+    py_file = os.path.join(dirpath, f"{name}.py")
+    yml_file = os.path.join(dirpath, f"{name}.yml")
+    has_code = os.path.exists(py_file)
+    has_config = os.path.exists(yml_file)
+    class_name = ""
+    if has_code:
+        try:
+            with open(py_file) as f:
+                class_name = _parse_class_name(f.read())
+        except Exception:
+            pass
+    return {
+        "name": name,
+        "class_name": class_name,
+        "has_code": has_code,
+        "has_config": has_config,
+    }
 
 
 @router.get("/{name}/code")
@@ -275,7 +310,9 @@ async def create_connector(name: str, request: Request, class_name: str = ""):
     os.makedirs(dirpath, exist_ok=True)
 
     if not class_name:
-        class_name = "".join(w.capitalize() for w in name.split("_")) + "Connector"
+        class_name = "".join(w.capitalize() for w in name.split("_"))
+        if not class_name.endswith("Connector"):
+            class_name += "Connector"
 
     py_content = CONNECTOR_TEMPLATE.format(class_name=class_name)
     py_file = os.path.join(dirpath, f"{name}.py")

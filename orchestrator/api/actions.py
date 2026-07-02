@@ -40,6 +40,19 @@ async def get_template(name: str = "my_action", description: str = "TODO", param
     return {"content": ACTION_TEMPLATE.format(name=name, description=description, params=params)}
 
 
+@router.get("/{name}/code")
+async def get_action_code(name: str, request: Request):
+    validate_name(name)
+    config = request.app.state.config
+    filepath = os.path.join(config.soar.actions_dir, f"{name}.py")
+    validate_path_within(config.soar.actions_dir, filepath)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Action not found")
+    with open(filepath) as f:
+        content = f.read()
+    return {"name": name, "content": content}
+
+
 @router.get("/{name}")
 async def get_action(name: str, request: Request):
     validate_name(name)
@@ -60,9 +73,20 @@ async def save_action(name: str, request: Request):
     filepath = os.path.join(config.soar.actions_dir, f"{name}.py")
     validate_path_within(config.soar.actions_dir, filepath)
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    body = await request.body()
-    with open(filepath, "wb") as f:
-        f.write(body)
+
+    raw = await request.body()
+    try:
+        import json
+        body = json.loads(raw)
+        code = body.get("code", "")
+    except (json.JSONDecodeError, ValueError):
+        code = raw.decode("utf-8")
+
+    if not code.strip():
+        raise HTTPException(status_code=422, detail="Code must not be empty")
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(code)
     git = request.app.state.git
     try:
         commit_hash = await git.commit(f"actions/{name}.py", f"Update action {name}")
