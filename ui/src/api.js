@@ -49,6 +49,10 @@ export const api = {
   createConnector: (name, className = '') =>
     request(`/connectors/${name}?class_name=${className}`, { method: 'POST' }),
   deleteConnector: (name) => request(`/connectors/${name}`, { method: 'DELETE' }),
+  preview: (spec) => request('/connectors/preview', { method: 'POST', body: JSON.stringify({ spec }) }),
+  previewUrl: (url) => request(`/connectors/preview?url=${encodeURIComponent(url)}`),
+  generateConnector: (spec, name) =>
+    request('/connectors/generate', { method: 'POST', body: JSON.stringify({ spec, name }) }),
   exportEntities: async () => {
     const res = await fetch(`${BASE}/transfer/export`, { method: 'POST' })
     if (!res.ok) throw new Error('Export failed')
