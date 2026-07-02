@@ -135,7 +135,7 @@ async function editConfig(name) {
   saveResult.value = null
   try {
     const res = await api.getConnectorConfig(name)
-    configContent.value = res.content || `instances:\n  ${name}:\n    # TODO: add config\n`
+    configContent.value = res.content
   } catch (e) { configContent.value = `Error: ${e.message}` }
 }
 
