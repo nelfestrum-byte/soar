@@ -18,6 +18,10 @@ class GenerateRequest(BaseModel):
     name: str
     overwrite: bool = False
 
+
+class PreviewRequest(BaseModel):
+    spec: str
+
 CONNECTOR_TEMPLATE = '''from soar.connectors.base import BaseConnector
 
 
@@ -84,6 +88,71 @@ async def get_template(name: str = "my_connector", class_name: str = "MyConnecto
         "code": CONNECTOR_TEMPLATE.format(class_name=class_name),
         "config": CONFIG_TEMPLATE.format(name=name),
     }
+
+
+@router.post("/preview")
+async def preview_spec(request: Request, body: PreviewRequest):
+    # Parse spec
+    try:
+        spec = json.loads(body.spec)
+    except json.JSONDecodeError:
+        try:
+            spec = pyyaml.safe_load(body.spec)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="Invalid spec format") from exc
+
+    if not isinstance(spec, dict):
+        raise HTTPException(status_code=400, detail="Invalid spec format: must be a mapping")
+
+    if "openapi" not in spec:
+        raise HTTPException(status_code=400, detail="Not an OpenAPI spec: missing 'openapi' version")
+    if "paths" not in spec:
+        raise HTTPException(status_code=400, detail="Not an OpenAPI spec: missing 'paths' section")
+
+    # Extract endpoints
+    endpoints = []
+    for path, path_item in spec.get("paths", {}).items():
+        for method in ["get", "post", "put", "delete", "patch"]:
+            if method in path_item:
+                op = path_item[method]
+                endpoints.append({
+                    "method": method.upper(),
+                    "path": path,
+                    "operationId": op.get("operationId", ""),
+                })
+
+    # Extract auth
+    auth = []
+    security_schemes = spec.get("components", {}).get("securitySchemes", {})
+    for name, scheme in security_schemes.items():
+        auth.append({"type": scheme.get("type", ""), "name": name})
+
+    # Extract servers
+    servers = [s.get("url", "") for s in spec.get("servers", [])]
+
+    return {
+        "title": spec.get("info", {}).get("title", ""),
+        "version": spec.get("info", {}).get("version", ""),
+        "endpoints": endpoints,
+        "auth": auth,
+        "servers": servers,
+    }
+
+
+@router.get("/preview")
+async def preview_spec_url(url: str):
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            spec_text = resp.text
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to fetch spec from URL: {exc}") from exc
+
+    # Reuse POST preview logic
+    body = PreviewRequest(spec=spec_text)
+    return await preview_spec(Request, body)
 
 
 @router.post("/generate")

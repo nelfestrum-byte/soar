@@ -181,3 +181,44 @@ async def test_generate_connector_invalid_name():
             json={"spec": json.dumps(SAMPLE_SPEC), "name": "Invalid Name!"},
         )
         assert r.status_code == 400
+
+
+SAMPLE_SPEC_JSON = json.dumps({
+    "openapi": "3.0.0",
+    "info": {"title": "Test API", "version": "1.0.0"},
+    "servers": [{"url": "https://api.test.com"}],
+    "paths": {
+        "/items": {
+            "get": {
+                "operationId": "listItems",
+                "responses": {"200": {"description": "OK"}},
+            }
+        }
+    },
+})
+
+
+@pytest.mark.asyncio
+async def test_preview_connector():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.post(
+            "/connectors/preview",
+            json={"spec": SAMPLE_SPEC_JSON},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["title"] == "Test API"
+        assert len(data["endpoints"]) == 1
+        assert data["endpoints"][0]["method"] == "GET"
+
+
+@pytest.mark.asyncio
+async def test_preview_invalid_spec():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.post(
+            "/connectors/preview",
+            json={"spec": "not valid"},
+        )
+        assert r.status_code == 400
