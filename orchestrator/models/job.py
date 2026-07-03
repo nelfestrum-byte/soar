@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from orchestrator.models import JobStatus
+from orchestrator.models import ConcurrencyPolicy, JobStatus
 
 
 @dataclass
@@ -14,6 +14,7 @@ class WorkflowJob:
     context: dict = field(default_factory=dict)
 
     status: JobStatus = JobStatus.PENDING
+    concurrency: ConcurrencyPolicy = ConcurrencyPolicy.FORBID
     pid: int | None = None
     log_path: str | None = None
     timeout: int | None = None

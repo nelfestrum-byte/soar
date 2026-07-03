@@ -86,3 +86,36 @@ async def test_job_store_stats():
     stats = await store.stats()
     assert stats["running"] == 1
     assert stats["completed_today"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_recover_on_startup_marks_running_as_failed():
+    store = JobStore()
+    running_job = WorkflowJob(workflow_name="wf1", status=JobStatus.RUNNING)
+    pending_job = WorkflowJob(workflow_name="wf1", status=JobStatus.PENDING)
+    completed_job = WorkflowJob(workflow_name="wf1", status=JobStatus.COMPLETED)
+    await store.save(running_job)
+    await store.save(pending_job)
+    await store.save(completed_job)
+
+    count = await store.recover_on_startup()
+    assert count == 1
+
+    r = await store.get(running_job.id)
+    assert r.status == JobStatus.FAILED
+    assert r.result_error == "Process died before startup recovery"
+    assert r.finished_at is not None
+
+    p = await store.get(pending_job.id)
+    assert p.status == JobStatus.PENDING
+
+    c = await store.get(completed_job.id)
+    assert c.status == JobStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_recover_on_startup_returns_zero_when_no_running():
+    store = JobStore()
+    await store.save(WorkflowJob(workflow_name="wf1", status=JobStatus.COMPLETED))
+    count = await store.recover_on_startup()
+    assert count == 0

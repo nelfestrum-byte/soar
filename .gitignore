@@ -6,3 +6,4 @@ orchestrator_state.yaml
 *.log
 var/
 .coverage
+.mimocode/

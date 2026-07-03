@@ -5,6 +5,9 @@ from datetime import UTC, datetime
 from orchestrator.models.job import JobStatus, WorkflowJob
 
 
+from loguru import logger
+
+
 class JobStore:
     def __init__(self, keep_completed: int = 1000):
         self._jobs: dict[str, WorkflowJob] = {}
@@ -68,6 +71,20 @@ class JobStore:
             "failed_today": failed_today,
             "timeout_today": timeout_today,
         }
+
+    async def recover_on_startup(self) -> int:
+        """Mark all RUNNING jobs as FAILED. Called once at startup."""
+        count = 0
+        now = datetime.now(UTC)
+        for job in self._jobs.values():
+            if job.status == JobStatus.RUNNING:
+                job.status = JobStatus.FAILED
+                job.result_error = "Process died before startup recovery"
+                job.finished_at = now
+                count += 1
+        if count > 0:
+            logger.info(f"Startup recovery: {count} RUNNING jobs marked as FAILED")
+        return count
 
     def _cleanup(self) -> None:
         completed = [

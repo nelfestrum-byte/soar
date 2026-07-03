@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/orchestrator/test_redis_queue.py -v)"
+    ]
+  }
+}
