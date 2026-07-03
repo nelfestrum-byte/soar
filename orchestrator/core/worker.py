@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import UTC, datetime
 
 from loguru import logger
@@ -84,6 +85,19 @@ class Worker:
                 if hasattr(proc, '_log_file') and proc._log_file:
                     proc._log_file.close()
 
+            # B4: parse result_data from last JSON line of log file (runner contract)
+            if job.log_path:
+                try:
+                    with open(job.log_path) as f:
+                        lines = [ln.strip() for ln in f if ln.strip()]
+                    if lines:
+                        parsed = json.loads(lines[-1])
+                        job.result_data = parsed.get("data")
+                        if parsed.get("error"):
+                            job.result_error = parsed["error"]
+                except (OSError, json.JSONDecodeError, ValueError):
+                    pass
+
             # B1: re-read from store — cancel() may have set CANCELLED while process ran
             current = await self.job_store.get(job.id)
             if current and current.status == JobStatus.CANCELLED:
@@ -94,7 +108,8 @@ class Worker:
             else:
                 job.status = JobStatus.FAILED
                 job.result_success = False
-                job.result_error = stdout.decode() if stdout else "Process failed"
+                if not job.result_error:
+                    job.result_error = stdout.decode() if stdout else "Process failed"
 
             job.finished_at = datetime.now(UTC)
             await self.job_store.save(job)

@@ -1,4 +1,7 @@
 import asyncio
+import json
+import os
+import tempfile
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -105,6 +108,51 @@ async def test_is_busy(worker_deps):
     job = WorkflowJob(id="j5", workflow_name="test", context={})
     await worker._execute(job)
     assert worker.is_busy is False
+
+
+@pytest.mark.asyncio
+async def test_execute_result_data_parsed(worker_deps, tmp_path):
+    """B4: result_data should be populated from last JSON line of log file."""
+    queue, job_store, runner = worker_deps
+    worker = Worker(0, queue, runner, job_store, default_timeout=30)
+
+    log_file = tmp_path / "job.log"
+    log_file.write_text('some log line\n{"success": true, "data": {"foo": 1}, "error": null}\n')
+
+    proc = AsyncMock()
+    proc.pid = 42
+    proc.communicate.return_value = (b"", b"")
+    proc.returncode = 0
+    runner.start.return_value = proc
+
+    job = WorkflowJob(id="j_rd", workflow_name="test", context={}, log_path=str(log_file))
+    await worker._execute(job)
+
+    assert job.status == JobStatus.COMPLETED
+    assert job.result_data == {"foo": 1}
+    assert job.result_error is None
+
+
+@pytest.mark.asyncio
+async def test_execute_result_data_non_json_ignored(worker_deps, tmp_path):
+    """B4: non-JSON last line must not crash — result_data stays None."""
+    queue, job_store, runner = worker_deps
+    worker = Worker(0, queue, runner, job_store, default_timeout=30)
+
+    log_file = tmp_path / "job.log"
+    log_file.write_text("Workflow finished successfully\n")
+
+    proc = AsyncMock()
+    proc.pid = 43
+    proc.communicate.return_value = (b"", b"")
+    proc.returncode = 0
+    runner.start.return_value = proc
+
+    job = WorkflowJob(id="j_rd2", workflow_name="test", context={}, log_path=str(log_file))
+    await worker._execute(job)
+
+    assert job.status == JobStatus.COMPLETED
+    assert job.result_data is None
 
 
 @pytest.mark.asyncio
