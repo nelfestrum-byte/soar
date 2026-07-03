@@ -2,6 +2,7 @@ import ipaddress
 import json
 import os
 import re
+import socket
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -141,20 +142,40 @@ async def preview_spec(request: Request, body: PreviewRequest):
     }
 
 
+def _is_private_ip(ip_str: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved
+    except ValueError:
+        return False
+
+
 def _validate_external_url(url: str) -> None:
-    """Block requests to internal/private IP ranges."""
+    """Block requests to internal/private IP ranges, including via DNS."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise HTTPException(status_code=400, detail="Only HTTP/HTTPS URLs allowed")
     hostname = parsed.hostname or ""
     try:
+        # Direct IP literal: check immediately
         ip = ipaddress.ip_address(hostname)
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+        if _is_private_ip(str(ip)):
             raise HTTPException(status_code=400, detail="Requests to internal IPs are not allowed")
+        return
     except ValueError:
-        # hostname is a domain name, not an IP — check common internal names
-        if hostname in ("localhost", "metadata.google.internal"):
-            raise HTTPException(status_code=400, detail="Requests to internal hosts are not allowed")
+        pass
+
+    # B6: resolve hostname and check each returned address
+    try:
+        results = socket.getaddrinfo(hostname, None)
+        for result in results:
+            addr_ip = result[4][0]
+            if _is_private_ip(addr_ip):
+                raise HTTPException(status_code=400, detail="Requests to internal IPs are not allowed")
+    except HTTPException:
+        raise
+    except OSError:
+        raise HTTPException(status_code=400, detail="Could not resolve hostname")
 
 
 @router.get("/preview")
@@ -162,7 +183,7 @@ async def preview_spec_url(url: str):
     _validate_external_url(url)
     import httpx
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             spec_text = resp.text
