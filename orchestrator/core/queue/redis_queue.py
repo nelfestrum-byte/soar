@@ -113,3 +113,12 @@ class RedisQueue(AbstractJobQueue):
             await self._redis.delete(self._key)
         except (ConnectionError, TimeoutError) as e:
             logger.error(f"Redis clear failed: {e}")
+
+    async def health(self) -> dict:
+        await self._ensure_connected()
+        try:
+            await self._redis.ping()
+            size = await self._redis.llen(self._key)
+            return {"connected": True, "size": size}
+        except Exception:
+            return {"connected": False, "size": 0}

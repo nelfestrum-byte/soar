@@ -45,6 +45,12 @@ class JobManager:
     def set_metas(self, metas: list[WorkflowMeta]) -> None:
         self._metas = {m.name: m for m in metas}
 
+    def get_meta(self, name: str) -> WorkflowMeta | None:
+        return self._metas.get(name)
+
+    def list_metas(self) -> list[WorkflowMeta]:
+        return list(self._metas.values())
+
     def _get_meta(self, workflow_name: str) -> WorkflowMeta:
         if workflow_name not in self._metas:
             raise ValueError(f"Workflow '{workflow_name}' not found")
@@ -80,6 +86,7 @@ class JobManager:
                 workflow_type=meta.type,
                 triggered_by=triggered_by,
                 context=context,
+                concurrency=meta.concurrency,
                 log_path=self._make_log_path(workflow_name, job_id),
                 timeout=meta.timeout,
             )

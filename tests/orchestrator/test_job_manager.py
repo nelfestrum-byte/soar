@@ -77,3 +77,25 @@ async def test_job_manager_concurrency_forbid(job_manager):
     await job_manager.enqueue("test_wf", context={}, triggered_by="user")
     with pytest.raises(JobAlreadyRunningError):
         await job_manager.enqueue("test_wf", context={}, triggered_by="user")
+
+
+def test_job_manager_list_metas(job_manager):
+    """B7: list_metas() must return all workflow meta objects."""
+    metas = job_manager.list_metas()
+    names = {m.name for m in metas}
+    assert "test_wf" in names
+    assert "disabled_wf" in names
+    assert "scheduled_wf" in names
+
+
+def test_job_manager_get_meta_existing(job_manager):
+    """B7: get_meta() returns the correct meta for known workflow."""
+    meta = job_manager.get_meta("test_wf")
+    assert meta is not None
+    assert meta.name == "test_wf"
+    assert meta.enabled is True
+
+
+def test_job_manager_get_meta_missing(job_manager):
+    """B7: get_meta() returns None for unknown workflow."""
+    assert job_manager.get_meta("nonexistent") is None

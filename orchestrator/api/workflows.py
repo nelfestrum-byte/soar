@@ -61,7 +61,7 @@ TEMPLATES = {
 @router.get("")
 async def list_workflows(request: Request):
     job_manager = request.app.state.job_manager
-    metas = job_manager._metas.values()
+    metas = job_manager.list_metas()
     result = []
     for m in metas:
         item = {
@@ -83,7 +83,7 @@ async def list_workflows(request: Request):
 @router.get("/{name}")
 async def get_workflow(name: str, request: Request):
     job_manager = request.app.state.job_manager
-    meta = job_manager._metas.get(name)
+    meta = job_manager.get_meta(name)
     if not meta:
         raise HTTPException(status_code=404, detail=f"Workflow '{name}' not found")
     result = {
@@ -104,26 +104,26 @@ async def get_workflow(name: str, request: Request):
 @router.post("/{name}/enable")
 async def enable_workflow(name: str, request: Request):
     job_manager = request.app.state.job_manager
-    meta = job_manager._metas.get(name)
+    meta = job_manager.get_meta(name)
     if not meta:
         raise HTTPException(status_code=404, detail=f"Workflow '{name}' not found")
     meta.enabled = True
-    _save_state(request.app.state.config, job_manager._metas)
+    _save_state(request.app.state.config, job_manager.list_metas())
     scheduler = request.app.state.scheduler
-    await scheduler.reload(list(job_manager._metas.values()))
+    await scheduler.reload(job_manager.list_metas())
     return {"status": "enabled", "name": name}
 
 
 @router.post("/{name}/disable")
 async def disable_workflow(name: str, request: Request):
     job_manager = request.app.state.job_manager
-    meta = job_manager._metas.get(name)
+    meta = job_manager.get_meta(name)
     if not meta:
         raise HTTPException(status_code=404, detail=f"Workflow '{name}' not found")
     meta.enabled = False
-    _save_state(request.app.state.config, job_manager._metas)
+    _save_state(request.app.state.config, job_manager.list_metas())
     scheduler = request.app.state.scheduler
-    await scheduler.reload(list(job_manager._metas.values()))
+    await scheduler.reload(job_manager.list_metas())
     return {"status": "disabled", "name": name}
 
 
@@ -145,7 +145,7 @@ async def reload_workflows(request: Request):
 async def reload_scheduler(request: Request):
     scheduler = request.app.state.scheduler
     job_manager = request.app.state.job_manager
-    await scheduler.reload(list(job_manager._metas.values()))
+    await scheduler.reload(job_manager.list_metas())
     return {"status": "reloaded"}
 
 
@@ -255,15 +255,15 @@ def _remove_from_state(config, name: str):
             yaml.dump(state, f)
 
 
-def _save_state(config, metas: dict):
+def _save_state(config, metas: list):
     from pathlib import Path
 
     import yaml
 
     state_path = Path(config.soar.workflows_dir).parent / "orchestrator_state.yaml"
     state: dict = {"workflows": {}}
-    for name, meta in metas.items():
-        state["workflows"][name] = "enabled" if meta.enabled else "disabled"
+    for meta in metas:
+        state["workflows"][meta.name] = "enabled" if meta.enabled else "disabled"
 
     state_path.parent.mkdir(parents=True, exist_ok=True)
     with open(state_path, "w") as f:

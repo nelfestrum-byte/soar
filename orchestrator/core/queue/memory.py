@@ -26,3 +26,6 @@ class InMemoryQueue(AbstractJobQueue):
                 self._queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
+
+    async def health(self) -> dict:
+        return {"connected": True, "size": self._queue.qsize()}

@@ -8,7 +8,7 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 @router.post("/{workflow_name}", status_code=202)
 async def handle_webhook(workflow_name: str, request: Request):
     job_manager = request.app.state.job_manager
-    meta = job_manager._metas.get(workflow_name)
+    meta = job_manager.get_meta(workflow_name)
 
     if not meta:
         raise HTTPException(status_code=404, detail="Workflow not found")

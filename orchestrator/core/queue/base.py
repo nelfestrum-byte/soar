@@ -15,3 +15,6 @@ class AbstractJobQueue(ABC):
 
     @abstractmethod
     async def clear(self) -> None: ...
+
+    @abstractmethod
+    async def health(self) -> dict: ...
