@@ -2,13 +2,13 @@ import json
 from datetime import datetime
 from typing import Optional
 
+from loguru import logger
 from redis import asyncio as aioredis
 from redis.exceptions import ConnectionError, TimeoutError
 
 from orchestrator.core.queue.base import AbstractJobQueue
 from orchestrator.models import ConcurrencyPolicy
 from orchestrator.models.job import WorkflowJob
-from loguru import logger
 
 
 class RedisQueue(AbstractJobQueue):

@@ -174,8 +174,8 @@ def _validate_external_url(url: str) -> None:
                 raise HTTPException(status_code=400, detail="Requests to internal IPs are not allowed")
     except HTTPException:
         raise
-    except OSError:
-        raise HTTPException(status_code=400, detail="Could not resolve hostname")
+    except OSError as e:
+        raise HTTPException(status_code=400, detail="Could not resolve hostname") from e
 
 
 @router.get("/preview")

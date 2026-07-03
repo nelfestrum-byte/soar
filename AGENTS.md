@@ -147,6 +147,20 @@ deploy/stage/
 ├── config.yaml                # Stage defaults
 ├── Makefile                   # make up/down/build/logs
 └── README.md
+
+tests/
+├── soar/                      # flat files: test_<connector>_connector.py (mocked),
+│   │                          #   test_workflows.py, test_workflow_registry_naming.py,
+│   │                          #   test_base_connector*.py
+│   └── tools/                 # OpenAPI generator tests
+└── orchestrator/
+    ├── api/                   # API route tests
+    ├── test_job_manager.py    # enqueue, concurrency policies, cancel
+    ├── test_job_store.py      # store, eviction, recover_on_startup
+    ├── test_worker.py         # execute, timeout, QUEUE wait, crash recovery
+    ├── test_scheduler.py      # scheduled triggers
+    ├── test_queue.py          # InMemoryQueue + RedisQueue (mocked)
+    └── ...                    # config, git_manager, models, worker_pool, subprocess env
 ```
 
 ## API Endpoints
@@ -159,6 +173,7 @@ deploy/stage/
 | POST | /workflows/{name}/enable | Включить workflow |
 | POST | /workflows/{name}/disable | Выключить workflow |
 | POST | /workflows/reload | Перечитать файлы и обновить job_manager |
+| POST | /workflows/scheduler/reload | Пересоздать jobs планировщика из текущих metas |
 | GET | /workflows/{name}/code | Получить код workflow |
 | PUT | /workflows/{name}/code | Сохранить код workflow |
 | DELETE | /workflows/{name}/code | Удалить файл workflow |
@@ -170,6 +185,7 @@ deploy/stage/
 | GET | /actions | Список actions |
 | GET | /actions/template | Шаблон boilerplate |
 | GET | /actions/{name} | Получить код |
+| GET | /actions/{name}/code | Получить код (алиас) |
 | PUT | /actions/{name} | Сохранить код |
 | DELETE | /actions/{name} | Удалить action |
 
@@ -177,6 +193,8 @@ deploy/stage/
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /connectors | Список коннекторов |
+| GET | /connectors/template | Шаблон кода + конфига |
+| GET | /connectors/{name} | Meta коннектора (class_name, has_code, has_config) |
 | POST | /connectors/{name} | Создать коннектор |
 | DELETE | /connectors/{name} | Удалить коннектор |
 | GET | /connectors/{name}/code | Получить код .py |
@@ -243,6 +261,25 @@ Workflows запускаются как отдельные процессы че
 - Контекст передаётся через env vars (SOAR_CONTEXT)
 - Actions и connectors инициализируются в subprocess
 
+## Runner contract (soar/runner.py)
+
+Entry point for subprocess workflow execution. Called by `SubprocessRunner`.
+
+**Reads from environment:**
+- `SOAR_CONFIG` — path to config.yaml
+- `SOAR_WORKFLOW_NAME` — workflow registry key (**имя файла без .py**, не имя класса)
+- `SOAR_CONTEXT` — JSON-encoded context dict
+- `SOAR_JOB_ID`, `SOAR_LOG_PATH` — тоже передаются (информационно)
+
+**Writes to stdout:** last line must be JSON-encoded `WorkflowResult`:
+```json
+{"success": true, "data": {...}, "error": null}
+```
+
+**Exit codes:** `0` = success, `1` = failure (stdout JSON still required)
+
+**Do not change this contract** without updating `SubprocessRunner` and tests simultaneously.
+
 ### Queue backend
 Очередь задач поддерживает два бэкенда:
 
@@ -273,7 +310,7 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 ### Input validation (orchestrator/api/validation.py)
 - `validate_name(name)` — regex `^[a-zA-Z0-9_\-]+$`, блокирует path traversal и shell metacharacters
 - `validate_path_within(base, target)` — `normpath + startswith`, предотвращает directory escape
-- SSRF protection — блокировка RFC 1918, link-local, localhost, cloud metadata IPs
+- SSRF protection — блокировка RFC 1918, link-local, localhost, cloud metadata IPs + DNS resolve (socket.getaddrinfo) + follow_redirects=False
 
 ### Connector security (soar/connectors/)
 - SQL: параметризованные запросы (PostgreSQL, MSSQL) + валидация имён (MySQL)
@@ -314,10 +351,13 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 
 ## Known limitations
 
-- **ConcurrencyPolicy.QUEUE** — не реализован, работает как ALLOW
-- **RedisQueue** — brpop может терять сообщения при обрыве соединения; serialized data не полный (без `triggered_at`)
-- **No authentication** — сервис доверяет Docker-сети
-- **Worker crash recovery** — jobs в статусе RUNNING без активного процесса не восстанавливаются автоматически
+| # | Limitation | Workaround until fixed |
+|---|------------|------------------------|
+| 1 | **ConcurrencyPolicy.QUEUE** — реализован в Worker как busy-wait: ждущий job занимает воркер целиком; между проверкой "нет RUNNING" и установкой RUNNING есть гонка — два QUEUE-job могут стартовать одновременно | Не полагаться на строгую сериализацию; для критичных workflows использовать FORBID |
+| 2 | **RedisQueue may lose messages on connection drop** — at-most-once delivery, no ACK | Use `backend: memory` for critical workflows; Redis only for high-throughput non-critical |
+| 3 | **Worker crash recovery** — `JobStore.recover_on_startup()` вызывается в lifespan, но JobStore in-memory: на старте хранилище пустое, recovery фактически no-op до появления persistent store | `docker compose restart` по-прежнему теряет историю RUNNING jobs |
+| 4 | **JobStore is in-memory** — all job history lost on container restart | Export jobs before restart if history matters |
+| 5 | **`keep_completed` eviction** — eviction policy is FIFO by insertion order | Do not rely on old completed jobs being available if throughput is high |
 
 ## File map (для быстрого навигации)
 
@@ -364,12 +404,24 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 
 ## Rules
 
+### Spec-driven workflow
+
+**Перед началом любой задачи — написать спек.** Без спека не писать код.
+
+1. **Spec** (`docs/compose/specs/YYYY-MM-DD-<feature>-design.md`) — дизайн: проблема, решение, архитектура, интерфейсы. Секции `[S1]`, `[S2]`, ... Без checkbox-ов.
+2. **Plan** (`docs/compose/plans/YYYY-MM-DD-<feature>.md`) — пошаговый план с `- [ ]` checkbox-ами, точный код, test-first (сначала падающий тест, потом фикс).
+3. **Report** (`docs/compose/reports/<feature>.md`) — frontmatter + что сделано, что изменилось, верификация. Пишется после выполнения.
+
+**AGENTS.md отражает фактическое состояние** — обновляется после каждой итерации, не заранее.
+
+### Code rules
+
 - НЕ коммитить `orchestrator_state.yaml` — только `config.yaml` и код
 - НЕ хранить реальные `*.yml` коннекторов в git — только `*.example.yml`
 - НЕ писать бизнес-логику в API роутах — только вызовы JobManager/GitManager
-- НЕ обращаться к очереди напрямую из роутов — только через JobManager.enqueue()
+- НЕ обращаться к очереди и приватным полям напрямую из роутов — только через публичные методы
 - Все пути через config, без хардкода
-- Авторизация не нужна — сервис доверяет локальной Docker-сети
+- Авторизация не нужна до v0.8 — сервис доверяет локальной Docker-сети. В v0.8: API-ключи через Postgres (механизм к обсуждению)
 
 ## Token optimization
 
@@ -387,3 +439,7 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 - **v0.2** (2026-07-01) — Enterprise SOAR connectors: SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh, PostgreSQL/MySQL/MSSQL, Telegram, SMTP, VirusTotal, Abuse.ch, File
 - **v0.3** (2026-07-02) — Security hardening: 11 critical + 12 important fixes. SSRF protection, Zip Slip prevention, SQL/LDAP injection fixes, path traversal guards, rate limiting, subprocess lifecycle management
 - **v0.4** (2026-07-02) — BIG FIX: DELETE workflow state cleanup, webhook token in API responses, additional connector hardening. Rate limiting (120 req/60s), SSRF protection for OpenAPI preview, SSH WarningPolicy, WinRM SSL verification, Wazuh secure defaults, MySQL identifier validation, SMTP attachment existence check, subprocess config path resolution, workflow registry filename-based keys, Redis queue triggered_at serialization, worker cancel skip + finally cleanup, CORSMiddleware credentials=False
+- **v0.5** (2026-07-03) — Reliability + Bug fixes. ConcurrencyPolicy.QUEUE в Worker (busy-wait), `concurrency` в WorkflowJob и enqueue, `JobStore.recover_on_startup()`. Bug fixes (7): B1 cancel race, B2 MySQL backtick, B3 RedisQueue concurrency serialization, B4 result_data from log, B5 trusted_proxies rate limiter, B6 SSRF DNS resolve, B7 public API for private fields
+- **v0.6** (planned) — Tooling: `CachedHttpClient` в `soar/tools/` (InMemory/Redis, TTL per-domain, request logging) для threat-intel actions; расширение `/status` in-memory метриками per-workflow (FP-rate, MTTR)
+- **v0.7** (planned) — Persistence: Postgres JobStore (обязательна для crash recovery и персистентных метрик). После этого — persistent статистика.
+- **v0.8** (planned) — Authentication: API-ключи через таблицу в Postgres (`api_keys`: name, hashed_key, permissions, created_at, expires_at). Конкретный механизм (Bearer token / X-API-Key) — к обсуждению. До реализации сервис доверяет Docker-сети.
