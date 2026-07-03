@@ -5,6 +5,7 @@ from loguru import logger
 
 from orchestrator.core.queue.base import AbstractJobQueue
 from orchestrator.core.subprocess_runner import SubprocessRunner
+from orchestrator.models import ConcurrencyPolicy
 from orchestrator.models.job import JobStatus, WorkflowJob
 from orchestrator.store.job_store import JobStore
 
@@ -40,6 +41,17 @@ class Worker:
         if current and current.status == JobStatus.CANCELLED:
             logger.info(f"Skipping cancelled job {job.id}")
             return
+
+        # QUEUE policy: wait until no other job of this workflow is RUNNING
+        if job.concurrency == ConcurrencyPolicy.QUEUE:
+            while await self.job_store.count_by_status(job.workflow_name, [JobStatus.RUNNING]) > 0:
+                await asyncio.sleep(1.0)
+            # Re-check job wasn't cancelled while waiting
+            current = await self.job_store.get(job.id)
+            if current and current.status == JobStatus.CANCELLED:
+                logger.info(f"Skipping cancelled job {job.id} (was waiting in queue)")
+                return
+
         self._busy = True
         try:
             job.status = JobStatus.RUNNING
@@ -72,7 +84,11 @@ class Worker:
                 if hasattr(proc, '_log_file') and proc._log_file:
                     proc._log_file.close()
 
-            if proc.returncode == 0:
+            # B1: re-read from store — cancel() may have set CANCELLED while process ran
+            current = await self.job_store.get(job.id)
+            if current and current.status == JobStatus.CANCELLED:
+                job.status = JobStatus.CANCELLED
+            elif proc.returncode == 0:
                 job.status = JobStatus.COMPLETED
                 job.result_success = True
             else:

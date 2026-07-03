@@ -105,3 +105,31 @@ async def test_is_busy(worker_deps):
     job = WorkflowJob(id="j5", workflow_name="test", context={})
     await worker._execute(job)
     assert worker.is_busy is False
+
+
+@pytest.mark.asyncio
+async def test_execute_cancel_not_overwritten_by_failed(worker_deps):
+    """B1: if job is cancelled while process runs, status must stay CANCELLED after communicate()."""
+    queue, job_store, runner = worker_deps
+    worker = Worker(0, queue, runner, job_store, default_timeout=30)
+
+    proc = AsyncMock()
+    proc.pid = 99
+
+    async def communicate_side_effect():
+        # Simulate cancel() being called while process runs
+        job.status = JobStatus.CANCELLED
+        await job_store.save(job)
+        return (b"", b"")
+
+    proc.communicate = communicate_side_effect
+    proc.returncode = 1  # non-zero exit (as if killed)
+    runner.start.return_value = proc
+
+    job = WorkflowJob(id="j_cancel", workflow_name="test", context={})
+    await job_store.save(job)
+    await worker._execute(job)
+
+    saved = await job_store.get("j_cancel")
+    assert saved is not None
+    assert saved.status == JobStatus.CANCELLED
