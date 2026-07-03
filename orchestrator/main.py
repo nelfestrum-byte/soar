@@ -141,6 +141,8 @@ async def lifespan(app: FastAPI):
     )
     await git.ensure_repo()
 
+    await job_store.recover_on_startup()
+
     job_manager = JobManager(
         queue=queue,
         job_store=job_store,
@@ -224,6 +226,18 @@ rate_limiter = RateLimiter(max_requests=120, window=60.0)
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     client_ip = request.client.host if request.client else "unknown"
+
+    # B5: if this client is a trusted proxy, use the forwarded IP for rate limiting
+    config = getattr(request.app.state, "config", None)
+    trusted_proxies = config.server.trusted_proxies if config else []
+    if client_ip in trusted_proxies:
+        forwarded_ip = (
+            request.headers.get("X-Real-IP")
+            or (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+        )
+        if forwarded_ip:
+            client_ip = forwarded_ip
+
     # Skip rate limiting for localhost/test clients
     if client_ip in ("testclient", "127.0.0.1", "::1"):
         return await call_next(request)

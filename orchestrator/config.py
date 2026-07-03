@@ -39,6 +39,10 @@ class JobsConfig(BaseModel):
     keep_completed: int = 1000
 
 
+class ServerConfig(BaseModel):
+    trusted_proxies: list[str] = []
+
+
 class OrchestratorConfig(BaseModel):
     workers: WorkersConfig = WorkersConfig()
     queue: QueueConfig = QueueConfig()
@@ -46,6 +50,7 @@ class OrchestratorConfig(BaseModel):
     git: GitConfig = GitConfig()
     logging: LoggingConfig = LoggingConfig()
     jobs: JobsConfig = JobsConfig()
+    server: ServerConfig = ServerConfig()
 
 
 def load_config(path: str = "config.yaml") -> OrchestratorConfig:

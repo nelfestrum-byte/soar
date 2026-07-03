@@ -23,3 +23,6 @@ logging:
 jobs:
   log_dir: /var/log/soar/jobs
   keep_completed: 1000
+
+server:
+  trusted_proxies: []  # set to ["127.0.0.1"] when running behind nginx in same container
