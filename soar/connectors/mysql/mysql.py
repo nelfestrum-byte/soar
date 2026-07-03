@@ -74,7 +74,7 @@ class MySQLConnector(BaseConnector):
     def tables(self, database: str | None = None) -> list[str]:
         db = database or self.database
         self._validate_identifier(db)
-        rows = self.execute("SHOW TABLES FROM %s" % db)
+        rows = self.execute(f"SHOW TABLES FROM `{db}`")
         key = f"Tables_in_{db}"
         return [row[key] for row in rows]
 
