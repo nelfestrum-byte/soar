@@ -87,6 +87,61 @@ async def test_redis_queue_clear():
 
 
 @pytest.mark.asyncio
+async def test_redis_queue_concurrency_preserved():
+    """B3: concurrency field must survive push→pop round-trip through Redis."""
+    import json
+    from orchestrator.models import ConcurrencyPolicy
+
+    with patch('orchestrator.core.queue.redis_queue.aioredis') as mock_redis:
+        client = AsyncMock()
+        mock_redis.from_url.return_value = client
+
+        queue = RedisQueue("redis://localhost:6379/0")
+        job = WorkflowJob(workflow_name="wf", concurrency=ConcurrencyPolicy.QUEUE)
+
+        # Capture what gets pushed to Redis
+        pushed_data = []
+        async def fake_lpush(key, data):
+            pushed_data.append(data)
+        client.lpush = fake_lpush
+
+        await queue.push(job)
+
+        assert pushed_data, "nothing was pushed"
+        payload = json.loads(pushed_data[0])
+        assert payload.get("concurrency") == ConcurrencyPolicy.QUEUE.value
+
+        # Now simulate pop returning that same payload
+        client.brpop = AsyncMock(return_value=("soar:jobs", pushed_data[0]))
+        popped = await queue.pop()
+
+        assert popped is not None
+        assert popped.concurrency == ConcurrencyPolicy.QUEUE
+
+
+@pytest.mark.asyncio
+async def test_redis_queue_concurrency_fallback_to_forbid():
+    """B3: old messages without concurrency field default to FORBID."""
+    import json
+    from orchestrator.models import ConcurrencyPolicy
+
+    old_payload = json.dumps({
+        "id": "abc", "workflow_name": "wf", "workflow_type": "manual",
+        "triggered_by": "api", "context": {},
+    })
+    with patch('orchestrator.core.queue.redis_queue.aioredis') as mock_redis:
+        client = AsyncMock()
+        mock_redis.from_url.return_value = client
+        client.brpop = AsyncMock(return_value=("soar:jobs", old_payload))
+
+        queue = RedisQueue("redis://localhost:6379/0")
+        popped = await queue.pop()
+
+        assert popped is not None
+        assert popped.concurrency == ConcurrencyPolicy.FORBID
+
+
+@pytest.mark.asyncio
 async def test_redis_queue_push_connection_error():
     from redis.exceptions import ConnectionError
 

@@ -6,6 +6,7 @@ from redis import asyncio as aioredis
 from redis.exceptions import ConnectionError, TimeoutError
 
 from orchestrator.core.queue.base import AbstractJobQueue
+from orchestrator.models import ConcurrencyPolicy
 from orchestrator.models.job import WorkflowJob
 from loguru import logger
 
@@ -58,6 +59,7 @@ class RedisQueue(AbstractJobQueue):
             "log_path": job.log_path,
             "timeout": job.timeout,
             "triggered_at": job.triggered_at.isoformat() if job.triggered_at else None,
+            "concurrency": job.concurrency.value,
         })
         try:
             await self._redis.lpush(self._key, data)
@@ -80,6 +82,7 @@ class RedisQueue(AbstractJobQueue):
             triggered_at = None
             if item.get("triggered_at"):
                 triggered_at = datetime.fromisoformat(item["triggered_at"])
+            concurrency = ConcurrencyPolicy(item["concurrency"]) if item.get("concurrency") else ConcurrencyPolicy.FORBID
             return WorkflowJob(
                 id=item["id"],
                 workflow_name=item["workflow_name"],
@@ -89,6 +92,7 @@ class RedisQueue(AbstractJobQueue):
                 log_path=item.get("log_path"),
                 timeout=item.get("timeout"),
                 triggered_at=triggered_at,
+                concurrency=concurrency,
             )
         except (ConnectionError, TimeoutError) as e:
             logger.error(f"Redis pop failed: {e}")
