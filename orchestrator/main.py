@@ -21,6 +21,7 @@ from orchestrator.api import (
     workflows_router,
 )
 from orchestrator.api.transfer import router as transfer_router
+from orchestrator.auth.router import router as auth_router
 from orchestrator.config import load_config
 from orchestrator.core.git_manager import GitManager
 from orchestrator.core.job_manager import JobManager
@@ -29,11 +30,16 @@ from orchestrator.core.queue.redis_queue import RedisQueue
 from orchestrator.core.scheduler import OrchestratorScheduler
 from orchestrator.core.subprocess_runner import SubprocessRunner
 from orchestrator.core.worker_pool import WorkerPool
+from orchestrator.db.session import get_session_factory, init_db, init_engine
 from orchestrator.models import ConcurrencyPolicy
 from orchestrator.models.workflow_meta import WorkflowMeta
 from orchestrator.store.job_store import JobStore
 
 _SOAR_PKG = Path(__file__).resolve().parent.parent / "soar"
+
+# Load config at module level so CORS middleware can use cors_origins before lifespan runs
+_startup_config_path = os.environ.get("SOAR_CONFIG", "config.yaml")
+_startup_config = load_config(_startup_config_path)
 
 
 def seed_defaults(config):
@@ -129,7 +135,15 @@ async def lifespan(app: FastAPI):
     logger.add(config.logging.file, level=config.logging.level)
     logger.add(sys.stderr, level=config.logging.level)
 
+    if not config.auth.secret_key:
+        logger.warning("auth.secret_key is not set — authentication is DISABLED, all requests treated as admin")
+
     seed_defaults(config)
+
+    # Database
+    init_engine(config.database.url, config.database.pool_size, config.database.max_overflow)
+    await init_db()
+    app.state.db_session_factory = get_session_factory()
 
     queue = create_queue(config)
     job_store = JobStore(keep_completed=config.jobs.keep_completed)
@@ -198,12 +212,16 @@ class RateLimiter:
         return True
 
 
+# Use specific origins when credentials are involved (browsers reject "*" + credentials)
+_cors_origins = _startup_config.auth.cors_origins if _startup_config.auth.cors_origins else ["*"]
+_allow_credentials = bool(_startup_config.auth.cors_origins)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=_cors_origins,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type", "X-Webhook-Token"],
 )
 
 
@@ -221,13 +239,13 @@ async def limit_request_body(request: Request, call_next):
 
 
 rate_limiter = RateLimiter(max_requests=120, window=60.0)
+login_rate_limiter = RateLimiter(max_requests=5, window=60.0)
 
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     client_ip = request.client.host if request.client else "unknown"
 
-    # B5: if this client is a trusted proxy, use the forwarded IP for rate limiting
     config = getattr(request.app.state, "config", None)
     trusted_proxies = config.server.trusted_proxies if config else []
     if client_ip in trusted_proxies:
@@ -241,11 +259,19 @@ async def rate_limit_middleware(request: Request, call_next):
     # Skip rate limiting for localhost/test clients
     if client_ip in ("testclient", "127.0.0.1", "::1"):
         return await call_next(request)
+
+    # Stricter limit for login endpoint (brute-force protection)
+    if request.url.path == "/auth/login":
+        if not login_rate_limiter.is_allowed(client_ip):
+            return JSONResponse(status_code=429, content={"detail": "Too many login attempts"})
+
     if not rate_limiter.is_allowed(client_ip):
         return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
+
     return await call_next(request)
 
 
+app.include_router(auth_router)
 app.include_router(workflows_router)
 app.include_router(actions_router)
 app.include_router(connectors_router)
