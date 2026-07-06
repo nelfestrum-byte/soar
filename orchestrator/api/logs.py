@@ -1,16 +1,19 @@
 import asyncio
 import os
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 from sse_starlette.sse import EventSourceResponse
 
+from orchestrator.auth.dependencies import require_role
 from orchestrator.models.job import JobStatus
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
+_RW = ("analyst", "service", "admin")
 
-@router.get("/{job_id}")
+
+@router.get("/{job_id}", dependencies=[Depends(require_role(*_RW))])
 async def get_log(job_id: str, request: Request):
     job_store = request.app.state.job_store
     job = await job_store.get(job_id)
@@ -23,7 +26,7 @@ async def get_log(job_id: str, request: Request):
     return PlainTextResponse(content)
 
 
-@router.get("/{job_id}/stream")
+@router.get("/{job_id}/stream", dependencies=[Depends(require_role(*_RW))])
 async def stream_log(job_id: str, request: Request):
     job_store = request.app.state.job_store
     job = await job_store.get(job_id)

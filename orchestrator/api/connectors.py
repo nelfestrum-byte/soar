@@ -7,13 +7,18 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import yaml as pyyaml
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from orchestrator.api.validation import validate_name, validate_path_within
+from orchestrator.auth.dependencies import require_role
 from soar.tools.openapi import OpenAPIGenerator
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
+
+_RO = ("viewer", "analyst", "service", "admin")
+_RW = ("analyst", "admin")
+_ADMIN = ("admin",)
 
 
 class GenerateRequest(BaseModel):
@@ -52,7 +57,7 @@ def _parse_class_name(content: str) -> str:
     return match.group(1) if match else "Unknown"
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role(*_RO))])
 async def list_connectors(request: Request):
     config = request.app.state.config
     connectors_dir = config.soar.connectors_dir
@@ -83,7 +88,7 @@ async def list_connectors(request: Request):
     return sorted(result, key=lambda x: x["name"])
 
 
-@router.get("/template")
+@router.get("/template", dependencies=[Depends(require_role(*_RO))])
 async def get_template(name: str = "my_connector", class_name: str = "MyConnector"):
     if not class_name.endswith("Connector"):
         class_name = class_name + "Connector"
@@ -93,7 +98,7 @@ async def get_template(name: str = "my_connector", class_name: str = "MyConnecto
     }
 
 
-@router.post("/preview")
+@router.post("/preview", dependencies=[Depends(require_role(*_RW))])
 async def preview_spec(request: Request, body: PreviewRequest):
     # Parse spec
     try:
@@ -178,7 +183,7 @@ def _validate_external_url(url: str) -> None:
         raise HTTPException(status_code=400, detail="Could not resolve hostname") from e
 
 
-@router.get("/preview")
+@router.get("/preview", dependencies=[Depends(require_role(*_RW))])
 async def preview_spec_url(url: str):
     _validate_external_url(url)
     import httpx
@@ -195,7 +200,7 @@ async def preview_spec_url(url: str):
     return await preview_spec(Request, body)
 
 
-@router.post("/generate")
+@router.post("/generate", dependencies=[Depends(require_role(*_ADMIN))])
 async def generate_connector(request: Request, body: GenerateRequest):
     config = request.app.state.config
     connectors_dir = Path(config.soar.connectors_dir)
@@ -237,7 +242,7 @@ async def generate_connector(request: Request, body: GenerateRequest):
     return {"name": body.name, **result}
 
 
-@router.get("/{name}")
+@router.get("/{name}", dependencies=[Depends(require_role(*_RO))])
 async def get_connector(name: str, request: Request):
     validate_name(name)
     config = request.app.state.config
@@ -265,7 +270,7 @@ async def get_connector(name: str, request: Request):
     }
 
 
-@router.get("/{name}/code")
+@router.get("/{name}/code", dependencies=[Depends(require_role(*_RO))])
 async def get_connector_code(name: str, request: Request):
     validate_name(name)
     config = request.app.state.config
@@ -278,7 +283,7 @@ async def get_connector_code(name: str, request: Request):
     return {"name": name, "content": content}
 
 
-@router.put("/{name}/code")
+@router.put("/{name}/code", dependencies=[Depends(require_role(*_ADMIN))])
 async def save_connector_code(name: str, request: Request):
     validate_name(name)
     config = request.app.state.config
@@ -303,7 +308,7 @@ async def save_connector_code(name: str, request: Request):
     return {"status": "saved", "commit": commit_hash}
 
 
-@router.get("/{name}/config")
+@router.get("/{name}/config", dependencies=[Depends(require_role(*_RO))])
 async def get_connector_config(name: str, request: Request):
     validate_name(name)
     config = request.app.state.config
@@ -326,7 +331,7 @@ async def get_connector_config(name: str, request: Request):
     return {"name": name, "content": content}
 
 
-@router.put("/{name}/config")
+@router.put("/{name}/config", dependencies=[Depends(require_role(*_ADMIN))])
 async def save_connector_config(name: str, request: Request):
     validate_name(name)
     config = request.app.state.config
@@ -351,7 +356,7 @@ async def save_connector_config(name: str, request: Request):
     return {"status": "saved", "commit": commit_hash}
 
 
-@router.post("/{name}")
+@router.post("/{name}", dependencies=[Depends(require_role(*_ADMIN))])
 async def create_connector(name: str, request: Request, class_name: str = ""):
     validate_name(name)
     config = request.app.state.config
@@ -388,7 +393,7 @@ async def create_connector(name: str, request: Request, class_name: str = ""):
     return {"status": "created", "commit": commit_hash}
 
 
-@router.delete("/{name}")
+@router.delete("/{name}", dependencies=[Depends(require_role(*_ADMIN))])
 async def delete_connector(name: str, request: Request):
     validate_name(name)
     config = request.app.state.config

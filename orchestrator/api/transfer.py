@@ -6,12 +6,13 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from orchestrator.api.validation import validate_name
+from orchestrator.auth.dependencies import require_role
 
-router = APIRouter(prefix="/transfer", tags=["transfer"])
+router = APIRouter(prefix="/transfer", tags=["transfer"], dependencies=[Depends(require_role("admin"))])
 
 
 @router.post("/export")

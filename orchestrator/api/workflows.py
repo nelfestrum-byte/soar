@@ -1,8 +1,13 @@
 import os
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from orchestrator.api.validation import validate_name, validate_path_within
+from orchestrator.auth.dependencies import require_role
+
+_RO = ("viewer", "analyst", "service", "admin")
+_RW = ("analyst", "admin")
+_ADMIN = ("admin",)
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
@@ -58,7 +63,7 @@ TEMPLATES = {
 }
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role(*_RO))])
 async def list_workflows(request: Request):
     job_manager = request.app.state.job_manager
     metas = job_manager.list_metas()
@@ -80,7 +85,7 @@ async def list_workflows(request: Request):
     return result
 
 
-@router.get("/{name}")
+@router.get("/{name}", dependencies=[Depends(require_role(*_RO))])
 async def get_workflow(name: str, request: Request):
     job_manager = request.app.state.job_manager
     meta = job_manager.get_meta(name)
@@ -101,7 +106,7 @@ async def get_workflow(name: str, request: Request):
     return result
 
 
-@router.post("/{name}/enable")
+@router.post("/{name}/enable", dependencies=[Depends(require_role(*_RW))])
 async def enable_workflow(name: str, request: Request):
     job_manager = request.app.state.job_manager
     meta = job_manager.get_meta(name)
@@ -114,7 +119,7 @@ async def enable_workflow(name: str, request: Request):
     return {"status": "enabled", "name": name}
 
 
-@router.post("/{name}/disable")
+@router.post("/{name}/disable", dependencies=[Depends(require_role(*_RW))])
 async def disable_workflow(name: str, request: Request):
     job_manager = request.app.state.job_manager
     meta = job_manager.get_meta(name)
@@ -127,7 +132,7 @@ async def disable_workflow(name: str, request: Request):
     return {"status": "disabled", "name": name}
 
 
-@router.post("/reload")
+@router.post("/reload", dependencies=[Depends(require_role(*_RW))])
 async def reload_workflows(request: Request):
     from orchestrator.main import load_workflow_metas
     config = request.app.state.config
@@ -141,7 +146,7 @@ async def reload_workflows(request: Request):
     return {"status": "reloaded", "count": len(workflows)}
 
 
-@router.post("/scheduler/reload")
+@router.post("/scheduler/reload", dependencies=[Depends(require_role(*_RW))])
 async def reload_scheduler(request: Request):
     scheduler = request.app.state.scheduler
     job_manager = request.app.state.job_manager
@@ -149,7 +154,7 @@ async def reload_scheduler(request: Request):
     return {"status": "reloaded"}
 
 
-@router.get("/code/template")
+@router.get("/code/template", dependencies=[Depends(require_role(*_RO))])
 async def get_workflow_template(name: str = "MyWorkflow", wf_type: str = "scheduled", path: str = "my-endpoint"):
     template = TEMPLATES.get(wf_type, SCHEDULED_TEMPLATE)
     result = {"content": template.format(name=name, path=path)}
@@ -158,7 +163,7 @@ async def get_workflow_template(name: str = "MyWorkflow", wf_type: str = "schedu
     return result
 
 
-@router.get("/{name}/code")
+@router.get("/{name}/code", dependencies=[Depends(require_role(*_RO))])
 async def get_workflow_code(name: str, request: Request):
     validate_name(name)
     config = request.app.state.config
@@ -171,7 +176,7 @@ async def get_workflow_code(name: str, request: Request):
     return {"name": name, "content": content}
 
 
-@router.put("/{name}/code")
+@router.put("/{name}/code", dependencies=[Depends(require_role(*_ADMIN))])
 async def save_workflow_code(name: str, request: Request):
     validate_name(name)
     config = request.app.state.config
@@ -209,7 +214,7 @@ async def save_workflow_code(name: str, request: Request):
     return {"status": "saved", "commit": commit_hash}
 
 
-@router.delete("/{name}/code")
+@router.delete("/{name}/code", dependencies=[Depends(require_role(*_ADMIN))])
 async def delete_workflow_code(name: str, request: Request):
     validate_name(name)
     config = request.app.state.config

@@ -1,9 +1,13 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
+
+from orchestrator.auth.dependencies import require_role
 
 router = APIRouter(tags=["status"])
 
+_RO = ("viewer", "analyst", "service", "admin")
 
-@router.get("/status")
+
+@router.get("/status", dependencies=[Depends(require_role(*_RO))])
 async def get_status(request: Request):
     pool = request.app.state.pool
     job_store = request.app.state.job_store
