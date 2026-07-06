@@ -1,4 +1,4 @@
-# AGENTS.md — SOAR Project v0.4
+# AGENTS.md — SOAR Project v0.5 (feature/auth in progress)
 
 ## What is this
 
@@ -16,6 +16,11 @@ SOAR (Security Orchestration, Automation and Response) — система авт
 - loguru (логирование)
 - pytest + pytest-asyncio (тесты)
 - Redis (опциональный бэкенд очереди)
+- python-jose (JWT HS256)
+- bcrypt (password hashing, direct — не через passlib)
+- SQLAlchemy 2.0 async + asyncpg (auth DB layer)
+- Alembic (продакшн миграции)
+- aiosqlite (dev/test SQLite)
 - Vue 3 + Vite (UI)
 - Docker Compose (deploy)
 
@@ -76,6 +81,18 @@ orchestrator/
 │   └── git_manager.py         # Git операции через subprocess
 ├── store/
 │   └── job_store.py           # JobStore — in-memory хранение jobs
+├── auth/
+│   ├── __init__.py
+│   ├── models.py              # SQLAlchemy ORM: User, RefreshToken, ApiKey
+│   ├── schemas.py             # Pydantic v2: LoginRequest, TokenResponse, UserOut, ApiKeyOut, ApiKeyCreated
+│   ├── service.py             # JWT create/decode, bcrypt hash/verify, CRUD пользователей/ключей
+│   ├── dependencies.py        # get_current_user (lazy DB), require_role(), CurrentUser dataclass
+│   ├── router.py              # /auth/* endpoints (login, refresh, logout, me, keys)
+│   └── cli.py                 # python -m orchestrator.auth.cli create-user
+├── db/
+│   ├── __init__.py
+│   ├── base.py                # DeclarativeBase
+│   └── session.py             # init_engine, init_db (create_all), get_db, get_session_factory
 └── api/
     ├── workflows.py           # GET/POST enable/disable, reload + CRUD кода workflow
     ├── actions.py             # CRUD actions + templates
@@ -235,6 +252,17 @@ tests/
 |--------|------|-------------|
 | GET | /status | Воркеры, очередь, статистика |
 
+### Auth
+| Method | Path | Roles | Description |
+|--------|------|-------|-------------|
+| POST | /auth/login | — | Логин (username + password) → access_token + refresh_token |
+| POST | /auth/refresh | — | Ротация refresh_token → новый access_token |
+| POST | /auth/logout | любой | Отзыв refresh_token |
+| GET | /auth/me | любой | Текущий пользователь |
+| POST | /auth/keys | admin | Создать API-ключ (возвращается один раз) |
+| GET | /auth/keys | admin | Список API-ключей |
+| DELETE | /auth/keys/{key_id} | admin | Удалить API-ключ |
+
 ## Key patterns
 
 ### App state (orchestrator)
@@ -321,8 +349,21 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 - HTTP: `timeout=30` на все HTTP-запросы (prevents worker pool exhaustion)
 - Wazuh: пустые credentials по умолчанию, SSL verification включён
 
+### Authentication (orchestrator/auth/)
+- **Auth-disabled mode**: когда `auth.secret_key = ""` — `get_current_user` возвращает анонимного admin. Backward-совместимость с Docker-сетевым доверием и существующими тестами.
+- **JWT access tokens** (HS256, TTL 30min): payload `{sub, role, type:"user", exp}`
+- **Refresh tokens**: opaque UUID, TTL 7d, хранятся как `SHA-256(token)` в Postgres, ротируются при каждом `/auth/refresh`
+- **API keys**: формат `soar_<32-byte-hex>`, хранятся как `SHA-256(key)`, для M2M сервисных аккаунтов
+- **RBAC роли**: `admin`, `analyst`, `viewer`, `service`; каждый эндпоинт декорирован `Depends(require_role(...))`
+- **Lazy DB session**: `get_current_user` не принимает `Depends(get_db)` — создаёт сессию только когда нужна проверка API-ключа (через `request.app.state.db_session_factory`)
+- **bcrypt напрямую**: `import bcrypt` + `bcrypt.hashpw/checkpw` — passlib 1.7.4 несовместима с bcrypt≥5.0.0 (`__about__` был убран)
+- **CORS**: `allow_origins=config.auth.cors_origins` + `allow_credentials=True`; `allow_origins=["*"]` несовместим с `credentials=True` в браузерах
+- **Дефолтная DB**: `sqlite+aiosqlite:///./soar.db` (создаётся в рабочей директории). В продакшене — `postgresql+asyncpg://...` в `config.yaml`
+- **CLI создания пользователя**: `python -m orchestrator.auth.cli create-user --username admin --role admin`
+
 ### Rate limiting (orchestrator/main.py)
 - In-memory rate limiter: 120 req/60s per IP
+- Логин `/auth/login`: строже — 5 req/60s (брутфорс-защита)
 - Пропускает localhost/testclient для dev/тестов
 
 ### Request body limit
@@ -347,7 +388,7 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 - `GET /connectors/preview` — SSRF protection: блокировка internal/private IPs и localhost
 - `PUT /connectors/{name}/code` и `config` — UTF-8 validation + null byte check
 - Git log history: null-byte delimiter вместо `|` (prevents delimiter injection)
-- `CORSMiddleware(allow_credentials=False)` — security best practice
+- `CORSMiddleware(allow_credentials=True)` с конкретными origins из `config.auth.cors_origins` (не `"*"`)
 
 ## Known limitations
 
@@ -397,6 +438,12 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 | Воркеры | `orchestrator/core/worker.py`, `worker_pool.py` |
 | Планировщик | `orchestrator/core/scheduler.py` |
 | Runner | `soar/runner.py` — точка входа для subprocess |
+| Auth endpoints | `orchestrator/auth/router.py` — /auth/login, /auth/refresh, /auth/logout, /auth/me, /auth/keys |
+| Auth dependencies | `orchestrator/auth/dependencies.py` — get_current_user, require_role |
+| Auth models (ORM) | `orchestrator/auth/models.py` — User, RefreshToken, ApiKey |
+| Auth service | `orchestrator/auth/service.py` — JWT, bcrypt, CRUD |
+| DB session | `orchestrator/db/session.py` — init_engine, init_db, get_session_factory |
+| Создать пользователя | `python -m orchestrator.auth.cli create-user --username X --role admin` |
 | Конфиг | `orchestrator/config.py`, `orchestrator/config.yaml` |
 | UI | `ui/src/views/` — Status, Workflows, Jobs, Actions, Connectors |
 | Deploy | `deploy/stage/` — docker-compose.yml, Dockerfiles |
@@ -421,7 +468,9 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 - НЕ писать бизнес-логику в API роутах — только вызовы JobManager/GitManager
 - НЕ обращаться к очереди и приватным полям напрямую из роутов — только через публичные методы
 - Все пути через config, без хардкода
-- Авторизация не нужна до v0.8 — сервис доверяет локальной Docker-сети. В v0.8: API-ключи через Postgres (механизм к обсуждению)
+- НЕ добавлять `Depends(get_db)` как параметр в `get_current_user` — FastAPI вызовет его даже для JWT-запросов без DB. Создавать сессию лениво через `request.app.state.db_session_factory`
+- НЕ использовать passlib — несовместима с bcrypt≥5.0.0. Использовать `import bcrypt` напрямую
+- Auth включается только при `auth.secret_key != ""` в config. Без ключа — режим анонимного admin
 
 ## Token optimization
 
@@ -440,6 +489,6 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 - **v0.3** (2026-07-02) — Security hardening: 11 critical + 12 important fixes. SSRF protection, Zip Slip prevention, SQL/LDAP injection fixes, path traversal guards, rate limiting, subprocess lifecycle management
 - **v0.4** (2026-07-02) — BIG FIX: DELETE workflow state cleanup, webhook token in API responses, additional connector hardening. Rate limiting (120 req/60s), SSRF protection for OpenAPI preview, SSH WarningPolicy, WinRM SSL verification, Wazuh secure defaults, MySQL identifier validation, SMTP attachment existence check, subprocess config path resolution, workflow registry filename-based keys, Redis queue triggered_at serialization, worker cancel skip + finally cleanup, CORSMiddleware credentials=False
 - **v0.5** (2026-07-03) — Reliability + Bug fixes. ConcurrencyPolicy.QUEUE в Worker (busy-wait), `concurrency` в WorkflowJob и enqueue, `JobStore.recover_on_startup()`. Bug fixes (7): B1 cancel race, B2 MySQL backtick, B3 RedisQueue concurrency serialization, B4 result_data from log, B5 trusted_proxies rate limiter, B6 SSRF DNS resolve, B7 public API for private fields
+- **v0.5.1** (2026-07-06, feature/auth) — Authentication: JWT (HS256, access 30min + refresh 7d, rotation), API keys (M2M, `soar_<hex>`), RBAC (admin/analyst/viewer/service), bcrypt пароли, SQLAlchemy 2.0 async DB layer, CORS с credentials, login rate limiter (5/60s), backward-compat auth-disabled mode. 21 тест, 341/342 passed.
 - **v0.6** (planned) — Tooling: `CachedHttpClient` в `soar/tools/` (InMemory/Redis, TTL per-domain, request logging) для threat-intel actions; расширение `/status` in-memory метриками per-workflow (FP-rate, MTTR)
 - **v0.7** (planned) — Persistence: Postgres JobStore (обязательна для crash recovery и персистентных метрик). После этого — persistent статистика.
-- **v0.8** (planned) — Authentication: API-ключи через таблицу в Postgres (`api_keys`: name, hashed_key, permissions, created_at, expires_at). Конкретный механизм (Bearer token / X-API-Key) — к обсуждению. До реализации сервис доверяет Docker-сети.

@@ -7,3 +7,6 @@ orchestrator_state.yaml
 var/
 .coverage
 .mimocode/
+soar.db
+soar.db-shm
+soar.db-wal
