@@ -4,6 +4,20 @@ import yaml
 from pydantic import BaseModel
 
 
+class AuthConfig(BaseModel):
+    secret_key: str = ""
+    access_token_ttl: int = 1800
+    refresh_token_ttl: int = 604800
+    algorithm: str = "HS256"
+    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+
+
+class DatabaseConfig(BaseModel):
+    url: str = "sqlite+aiosqlite:///./soar.db"
+    pool_size: int = 10
+    max_overflow: int = 20
+
+
 class WorkersConfig(BaseModel):
     count: int = 4
     default_timeout: int = 300
@@ -51,6 +65,8 @@ class OrchestratorConfig(BaseModel):
     logging: LoggingConfig = LoggingConfig()
     jobs: JobsConfig = JobsConfig()
     server: ServerConfig = ServerConfig()
+    auth: AuthConfig = AuthConfig()
+    database: DatabaseConfig = DatabaseConfig()
 
 
 def load_config(path: str = "config.yaml") -> OrchestratorConfig:
