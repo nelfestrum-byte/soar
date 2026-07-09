@@ -1,10 +1,10 @@
-# AGENTS.md — SOAR Project v0.4
+# AGENTS.md — SOAR Project v0.5
 
 ## What is this
 
 SOAR (Security Orchestration, Automation and Response) — система автоматизации инцидентов. Три компонента:
 
-1. **`soar/`** — Python-пакет: enterprise-коннекторы (SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh, PostgreSQL/MySQL/MSSQL, Telegram, SMTP, VirusTotal, Abuse.ch, File, WinRM, SMB, Shodan, Fofa, Censys, MISP, RstCloud, Kaspersky OpenTip, URLhaus, crt.sh), actions, workflows, реестры
+1. **`soar/`** — Python-пакет: enterprise-коннекторы (SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh, PostgreSQL/MySQL/MSSQL, Telegram, SMTP, VirusTotal, Abuse.ch, File, WinRM, SMB, Shodan, Fofa, Censys, MISP, RstCloud, Kaspersky OpenTip, URLhaus, crt.sh, IRP), actions, workflows (в т.ч. IRP-интеграция с SOC Core), реестры
 2. **`orchestrator/`** — FastAPI сервис: очередь задач, воркеры, планировщик, git-версионирование
 3. **`ui/`** — Vue.js SPA: **заглушка для ручного тестирования, не часть продукта**. Основной API-доступ — напрямую на порту 8000 (orchestrator). UI нужен только для визуальной проверки workflows/actions/connectors в браузере
 
@@ -117,14 +117,23 @@ soar/
 │   ├── kaspersky_opentip/     # KasperskyOpenTipConnector — IP/domain/hash/URL checks
 │   ├── urlhaus/               # UrlhausConnector — URL/host/payload lookups
 │   ├── crtsh/                 # CrtshConnector — certificate/domain/identity search
-│   └── file/                  # FileConnector — write/read/append/delete файлы
+│   ├── file/                  # FileConnector — write/read/append/delete файлы
+│   └── irp/                   # IRPConnector — SOC Core Control Alert Inbox / incident lifecycle
 ├── actions/
 │   └── __init__.py            # ActionsRegistry — автообнаружение actions
 ├── workflows/
 │   ├── __init__.py            # WorkflowRegistry — автообнаружение workflows
-│   └── base.py                # BaseWorkflow, ScheduledWorkflow, WebhookWorkflow, ManualWorkflow
+│   ├── base.py                # BaseWorkflow, ScheduledWorkflow, WebhookWorkflow, ManualWorkflow
+│   ├── alert_triage.py         # AlertTriageWorkflow — pull ES → триаж → ingest в IRP (Фаза 2)
+│   ├── irp-events.py           # IrpEventsWorkflow — приёмник webhook событий IRP (Фаза 1)
+│   ├── irp_reconcile.py        # IrpReconcileWorkflow — сверка пропущенных webhook-событий
+│   └── respond_basic.py        # BasicResponseWorkflow — первый response-плейбук (без деструктива)
 ├── tools/
-│   └── openapi.py             # OpenAPI connector code generator
+│   ├── openapi.py              # OpenAPI connector code generator
+│   ├── watermark.py             # WatermarkStore/SeenStore — durable JSON-store (IRP-интеграция)
+│   ├── triage_policy.py         # TriagePolicyCache — политики триажа из SOC Core settings API
+│   ├── irp_settings.py          # load_irp_settings() — конфиг секции irp: из config.yaml
+│   └── irp_dispatch.py          # dispatch_alert() — общая диспетчеризация webhook/reconcile → response
 └── examples/
     └── nadproject_integration.py
 
@@ -349,6 +358,11 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 | Kaspersky OpenTip | `soar/connectors/kaspersky_opentip/` — IP/domain/hash/URL checks |
 | URLhaus | `soar/connectors/urlhaus/` — URL/host/payload lookups |
 | crt.sh | `soar/connectors/crtsh/` — certificate/domain/identity search |
+| IRP (SOC Core) | `soar/connectors/irp/` — ingest_alert, list_alerts, add_comment, transition_alert, response steps, heartbeat |
+| IRP-интеграция (workflows) | `soar/workflows/alert_triage.py`, `irp-events.py`, `irp_reconcile.py`, `respond_basic.py` — контракт `docs/integration/soc-core-integration-contract.md` |
+| IRP-интеграция (config) | `orchestrator/config.yaml` / `deploy/stage/config.yaml` — секция `irp:` (enabled, watermark_path, ...), читается через `soar/tools/irp_settings.py` |
+| Watermark / дедуп событий | `soar/tools/watermark.py` — WatermarkStore, SeenStore (durable JSON) |
+| Политики триажа | `soar/tools/triage_policy.py` — TriagePolicyCache (кэш из SOC Core settings API) |
 | Новый action | `soar/actions/`, один файл = одна функция |
 | Новый workflow | `soar/workflows/`, наследовать от `ScheduledWorkflow`/`WebhookWorkflow`/`ManualWorkflow` |
 | Шаблон workflow | `orchestrator/api/workflows.py` — TEMPLATES dict |
@@ -387,3 +401,4 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 - **v0.2** (2026-07-01) — Enterprise SOAR connectors: SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh, PostgreSQL/MySQL/MSSQL, Telegram, SMTP, VirusTotal, Abuse.ch, File
 - **v0.3** (2026-07-02) — Security hardening: 11 critical + 12 important fixes. SSRF protection, Zip Slip prevention, SQL/LDAP injection fixes, path traversal guards, rate limiting, subprocess lifecycle management
 - **v0.4** (2026-07-02) — BIG FIX: DELETE workflow state cleanup, webhook token in API responses, additional connector hardening. Rate limiting (120 req/60s), SSRF protection for OpenAPI preview, SSH WarningPolicy, WinRM SSL verification, Wazuh secure defaults, MySQL identifier validation, SMTP attachment existence check, subprocess config path resolution, workflow registry filename-based keys, Redis queue triggered_at serialization, worker cancel skip + finally cleanup, CORSMiddleware credentials=False
+- **v0.5** (2026-07-09) — IRP-интеграция (SOC Core Control): IRPConnector (`soar/connectors/irp/`) + четыре workflow поверх контракта `docs/integration/soc-core-integration-contract.md` — `alert_triage` (pull ES → триаж → ingest, чанк-реплей догона), `irp-events` (webhook-приёмник событий IRP), `irp_reconcile` (поллер-страховка), `respond_basic` (первый response-плейбук, без деструктива). Durable watermark/дедуп (`soar/tools/watermark.py`), кэш политик триажа из SOC Core settings API (`soar/tools/triage_policy.py`). Конфиг — секция `irp:` в `config.yaml`, `enabled: false` по умолчанию (shadow-режим обязателен до cutover)
