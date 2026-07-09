@@ -1,8 +1,9 @@
 import os
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
+from orchestrator.auth.dependencies import CurrentUser, get_current_user
 from orchestrator.config import OrchestratorConfig
 from orchestrator.core.job_manager import JobManager
 from orchestrator.core.queue.memory import InMemoryQueue
@@ -13,8 +14,15 @@ from orchestrator.main import app
 from orchestrator.store.job_store import JobStore
 
 
+def _mock_admin() -> CurrentUser:
+    return CurrentUser(id=1, role="admin", type="user", username="test_admin")
+
+
 @pytest.fixture(autouse=True)
 def setup_app_state(tmp_path):
+    # Bypass auth for existing tests: every request is treated as admin
+    app.dependency_overrides[get_current_user] = _mock_admin
+
     queue = InMemoryQueue()
     job_store = JobStore()
     runner = SubprocessRunner()
@@ -50,3 +58,7 @@ def setup_app_state(tmp_path):
     app.state.config = config
     app.state.job_store = job_store
     app.state.queue = queue
+
+    yield
+
+    app.dependency_overrides.pop(get_current_user, None)

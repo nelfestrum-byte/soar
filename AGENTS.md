@@ -1,4 +1,4 @@
-# AGENTS.md — SOAR Project v0.5
+# AGENTS.md — SOAR Project v0.5.2
 
 ## What is this
 
@@ -16,6 +16,11 @@ SOAR (Security Orchestration, Automation and Response) — система авт
 - loguru (логирование)
 - pytest + pytest-asyncio (тесты)
 - Redis (опциональный бэкенд очереди)
+- python-jose (JWT HS256)
+- bcrypt (password hashing, direct — не через passlib)
+- SQLAlchemy 2.0 async + asyncpg (auth DB layer)
+- Alembic (продакшн миграции)
+- aiosqlite (dev/test SQLite)
 - Vue 3 + Vite (UI)
 - Docker Compose (deploy)
 
@@ -76,6 +81,18 @@ orchestrator/
 │   └── git_manager.py         # Git операции через subprocess
 ├── store/
 │   └── job_store.py           # JobStore — in-memory хранение jobs
+├── auth/
+│   ├── __init__.py
+│   ├── models.py              # SQLAlchemy ORM: User, RefreshToken, ApiKey
+│   ├── schemas.py             # Pydantic v2: LoginRequest, TokenResponse, UserOut, ApiKeyOut, ApiKeyCreated
+│   ├── service.py             # JWT create/decode, bcrypt hash/verify, CRUD пользователей/ключей
+│   ├── dependencies.py        # get_current_user (lazy DB), require_role(), CurrentUser dataclass
+│   ├── router.py              # /auth/* endpoints (login, refresh, logout, me, keys)
+│   └── cli.py                 # python -m orchestrator.auth.cli create-user
+├── db/
+│   ├── __init__.py
+│   ├── base.py                # DeclarativeBase
+│   └── session.py             # init_engine, init_db (create_all), get_db, get_session_factory
 └── api/
     ├── workflows.py           # GET/POST enable/disable, reload + CRUD кода workflow
     ├── actions.py             # CRUD actions + templates
@@ -244,6 +261,17 @@ tests/
 |--------|------|-------------|
 | GET | /status | Воркеры, очередь, статистика |
 
+### Auth
+| Method | Path | Roles | Description |
+|--------|------|-------|-------------|
+| POST | /auth/login | — | Логин (username + password) → access_token + refresh_token |
+| POST | /auth/refresh | — | Ротация refresh_token → новый access_token |
+| POST | /auth/logout | любой | Отзыв refresh_token |
+| GET | /auth/me | любой | Текущий пользователь |
+| POST | /auth/keys | admin | Создать API-ключ (возвращается один раз) |
+| GET | /auth/keys | admin | Список API-ключей |
+| DELETE | /auth/keys/{key_id} | admin | Удалить API-ключ |
+
 ## Key patterns
 
 ### App state (orchestrator)
@@ -330,8 +358,21 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 - HTTP: `timeout=30` на все HTTP-запросы (prevents worker pool exhaustion)
 - Wazuh: пустые credentials по умолчанию, SSL verification включён
 
+### Authentication (orchestrator/auth/)
+- **Auth-disabled mode**: когда `auth.secret_key = ""` — `get_current_user` возвращает анонимного admin. Backward-совместимость с Docker-сетевым доверием и существующими тестами.
+- **JWT access tokens** (HS256, TTL 30min): payload `{sub, role, type:"user", exp}`
+- **Refresh tokens**: opaque UUID, TTL 7d, хранятся как `SHA-256(token)` в Postgres, ротируются при каждом `/auth/refresh`
+- **API keys**: формат `soar_<32-byte-hex>`, хранятся как `SHA-256(key)`, для M2M сервисных аккаунтов
+- **RBAC роли**: `admin`, `analyst`, `viewer`, `service`; каждый эндпоинт декорирован `Depends(require_role(...))`
+- **Lazy DB session**: `get_current_user` не принимает `Depends(get_db)` — создаёт сессию только когда нужна проверка API-ключа (через `request.app.state.db_session_factory`)
+- **bcrypt напрямую**: `import bcrypt` + `bcrypt.hashpw/checkpw` — passlib 1.7.4 несовместима с bcrypt≥5.0.0 (`__about__` был убран)
+- **CORS**: `allow_origins=config.auth.cors_origins` + `allow_credentials=True`; `allow_origins=["*"]` несовместим с `credentials=True` в браузерах
+- **Дефолтная DB**: `sqlite+aiosqlite:///./soar.db` (создаётся в рабочей директории). В продакшене — `postgresql+asyncpg://...` в `config.yaml`
+- **CLI создания пользователя**: `python -m orchestrator.auth.cli create-user --username admin --role admin`
+
 ### Rate limiting (orchestrator/main.py)
 - In-memory rate limiter: 120 req/60s per IP
+- Логин `/auth/login`: строже — 5 req/60s (брутфорс-защита)
 - Пропускает localhost/testclient для dev/тестов
 
 ### Request body limit
@@ -356,7 +397,7 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 - `GET /connectors/preview` — SSRF protection: блокировка internal/private IPs и localhost
 - `PUT /connectors/{name}/code` и `config` — UTF-8 validation + null byte check
 - Git log history: null-byte delimiter вместо `|` (prevents delimiter injection)
-- `CORSMiddleware(allow_credentials=False)` — security best practice
+- `CORSMiddleware(allow_credentials=True)` с конкретными origins из `config.auth.cors_origins` (не `"*"`)
 
 ## Known limitations
 
@@ -411,6 +452,12 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 | Воркеры | `orchestrator/core/worker.py`, `worker_pool.py` |
 | Планировщик | `orchestrator/core/scheduler.py` |
 | Runner | `soar/runner.py` — точка входа для subprocess |
+| Auth endpoints | `orchestrator/auth/router.py` — /auth/login, /auth/refresh, /auth/logout, /auth/me, /auth/keys |
+| Auth dependencies | `orchestrator/auth/dependencies.py` — get_current_user, require_role |
+| Auth models (ORM) | `orchestrator/auth/models.py` — User, RefreshToken, ApiKey |
+| Auth service | `orchestrator/auth/service.py` — JWT, bcrypt, CRUD |
+| DB session | `orchestrator/db/session.py` — init_engine, init_db, get_session_factory |
+| Создать пользователя | `python -m orchestrator.auth.cli create-user --username X --role admin` |
 | Конфиг | `orchestrator/config.py`, `orchestrator/config.yaml` |
 | UI | `ui/src/views/` — Status, Workflows, Jobs, Actions, Connectors |
 | Deploy | `deploy/stage/` — docker-compose.yml, Dockerfiles |
@@ -435,7 +482,9 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 - НЕ писать бизнес-логику в API роутах — только вызовы JobManager/GitManager
 - НЕ обращаться к очереди и приватным полям напрямую из роутов — только через публичные методы
 - Все пути через config, без хардкода
-- Авторизация не нужна до v0.8 — сервис доверяет локальной Docker-сети. В v0.8: API-ключи через Postgres (механизм к обсуждению)
+- НЕ добавлять `Depends(get_db)` как параметр в `get_current_user` — FastAPI вызовет его даже для JWT-запросов без DB. Создавать сессию лениво через `request.app.state.db_session_factory`
+- НЕ использовать passlib — несовместима с bcrypt≥5.0.0. Использовать `import bcrypt` напрямую
+- Auth включается только при `auth.secret_key != ""` в config. Без ключа — режим анонимного admin
 
 ## Token optimization
 

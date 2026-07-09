@@ -1,10 +1,15 @@
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from orchestrator.auth.dependencies import require_role
 from orchestrator.core.job_manager import WorkflowDisabledError
 from orchestrator.models.job import JobStatus
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+_RO = ("viewer", "analyst", "service", "admin")
+_RW = ("analyst", "service", "admin")
+_ANALYST = ("analyst", "admin")
 
 
 class JobRequest(BaseModel):
@@ -12,7 +17,7 @@ class JobRequest(BaseModel):
     context: dict = {}
 
 
-@router.post("", status_code=202)
+@router.post("", status_code=202, dependencies=[Depends(require_role(*_RW))])
 async def create_job(body: JobRequest, request: Request):
     job_manager = request.app.state.job_manager
     try:
@@ -30,7 +35,7 @@ async def create_job(body: JobRequest, request: Request):
     return job.to_dict()
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role(*_RO))])
 async def list_jobs(
     request: Request,
     workflow_name: str | None = None,
@@ -51,7 +56,7 @@ async def list_jobs(
     return [j.to_dict() for j in jobs]
 
 
-@router.get("/{job_id}")
+@router.get("/{job_id}", dependencies=[Depends(require_role(*_RO))])
 async def get_job(job_id: str, request: Request):
     job_store = request.app.state.job_store
     job = await job_store.get(job_id)
@@ -60,7 +65,7 @@ async def get_job(job_id: str, request: Request):
     return job.to_dict()
 
 
-@router.post("/{job_id}/cancel")
+@router.post("/{job_id}/cancel", dependencies=[Depends(require_role(*_ANALYST))])
 async def cancel_job(job_id: str, request: Request):
     job_manager = request.app.state.job_manager
     try:

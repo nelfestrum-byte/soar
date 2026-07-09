@@ -1,10 +1,14 @@
 import os
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from orchestrator.api.validation import validate_name, validate_path_within
+from orchestrator.auth.dependencies import require_role
 
 router = APIRouter(prefix="/actions", tags=["actions"])
+
+_RO = ("viewer", "analyst", "service", "admin")
+_ADMIN = ("admin",)
 
 ACTION_TEMPLATE = '''from soar.connectors import connectors
 
@@ -18,7 +22,7 @@ def {name}({params}):
 '''
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(require_role(*_RO))])
 async def list_actions(request: Request):
     config = request.app.state.config
     actions_dir = config.soar.actions_dir
@@ -35,12 +39,12 @@ async def list_actions(request: Request):
     return sorted(result)
 
 
-@router.get("/template")
+@router.get("/template", dependencies=[Depends(require_role(*_RO))])
 async def get_template(name: str = "my_action", description: str = "TODO", params: str = ""):
     return {"content": ACTION_TEMPLATE.format(name=name, description=description, params=params)}
 
 
-@router.get("/{name}/code")
+@router.get("/{name}/code", dependencies=[Depends(require_role(*_RO))])
 async def get_action_code(name: str, request: Request):
     validate_name(name)
     config = request.app.state.config
@@ -53,7 +57,7 @@ async def get_action_code(name: str, request: Request):
     return {"name": name, "content": content}
 
 
-@router.get("/{name}")
+@router.get("/{name}", dependencies=[Depends(require_role(*_RO))])
 async def get_action(name: str, request: Request):
     validate_name(name)
     config = request.app.state.config
@@ -66,7 +70,7 @@ async def get_action(name: str, request: Request):
     return {"name": name, "content": content}
 
 
-@router.put("/{name}")
+@router.put("/{name}", dependencies=[Depends(require_role(*_ADMIN))])
 async def save_action(name: str, request: Request):
     validate_name(name)
     config = request.app.state.config
@@ -95,7 +99,7 @@ async def save_action(name: str, request: Request):
     return {"status": "saved", "commit": commit_hash}
 
 
-@router.delete("/{name}")
+@router.delete("/{name}", dependencies=[Depends(require_role(*_ADMIN))])
 async def delete_action(name: str, request: Request):
     validate_name(name)
     config = request.app.state.config
