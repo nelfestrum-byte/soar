@@ -25,6 +25,9 @@ services:
       - soar-logs:/var/log/soar
     environment:
       - SOAR_CONFIG=/app/config.yaml
+      # Токен webhook IRP → SOAR (irp-events); согласован с SOC Core
+      # (SOAR_WEBHOOK_TOKEN в их config.json). Пусто = webhook закрыт (403).
+      - SOAR_WEBHOOK_TOKEN=${SOAR_WEBHOOK_TOKEN:-}
     depends_on:
       redis:
         condition: service_healthy

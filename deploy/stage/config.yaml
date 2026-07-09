@@ -26,3 +26,25 @@ logging:
 jobs:
   log_dir: /var/log/soar/jobs
   keep_completed: 100
+
+# Интеграция с SOC Core (IRP): durable-состояние живёт в /app/data (volume
+# soar-data) и переживает пересборку контейнера. Включать после настройки
+# коннектора irp_main и передачи SOAR_WEBHOOK_URL команде SOC Core.
+irp:
+  enabled: false
+  shadow: true
+  connector: irp_main
+  elastic_connector: elastic_main
+  alerts_index: .internal.alerts-*
+  watermark_path: /app/data/irp/watermark.json
+  seen_path: /app/data/irp/seen.json
+  seen_ttl: 86400
+  policy_endpoint: /api/v2/settings/triage
+  policy_cache_path: /app/data/irp/policy_cache.json
+  policy_ttl: 60
+  time_window_minutes: 10
+  overlap_minutes: 5
+  fetch_size: 1000
+  orchestrator_url: http://127.0.0.1:8000
+  response_workflow: respond_basic
+  min_response_severity: 3
