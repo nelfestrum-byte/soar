@@ -35,6 +35,7 @@ class SoarConfig(BaseModel):
     workflows_dir: str = "/app/data/workflows"
     connectors_dir: str = "/app/data/connectors"
     actions_dir: str = "/app/data/actions"
+    tools_dir: str = "soar/tools"
 
 
 class GitConfig(BaseModel):

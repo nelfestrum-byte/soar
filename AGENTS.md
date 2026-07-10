@@ -1,10 +1,10 @@
-# AGENTS.md — SOAR Project v0.5.2
+# AGENTS.md — SOAR Project v0.5.3
 
 ## What is this
 
 SOAR (Security Orchestration, Automation and Response) — система автоматизации инцидентов. Три компонента:
 
-1. **`soar/`** — Python-пакет: enterprise-коннекторы (SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh, PostgreSQL/MySQL/MSSQL, Telegram, SMTP, VirusTotal, Abuse.ch, File, WinRM, SMB, Shodan, Fofa, Censys, MISP, RstCloud, Kaspersky OpenTip, URLhaus, crt.sh, IRP), actions, workflows (в т.ч. IRP-интеграция с SOC Core), реестры
+1. **`soar/`** — Python-пакет: enterprise-коннекторы (SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh, PostgreSQL/MySQL/MSSQL, Telegram, SMTP, VirusTotal, Abuse.ch, File, WinRM, SMB, Shodan, Fofa, Censys, MISP, RstCloud, Kaspersky OpenTip, URLhaus, crt.sh), actions, workflows, реестры
 2. **`orchestrator/`** — FastAPI сервис: очередь задач, воркеры, планировщик, git-версионирование
 3. **`ui/`** — Vue.js SPA: **заглушка для ручного тестирования, не часть продукта**. Основной API-доступ — напрямую на порту 8000 (orchestrator). UI нужен только для визуальной проверки workflows/actions/connectors в браузере
 
@@ -102,6 +102,7 @@ orchestrator/
     ├── logs.py                # GET лог + SSE стрим
     ├── status.py              # GET /status — воркеры, очередь, статистика
     ├── transfer.py            # POST export/import — импорт/экспорт конфигурации
+    ├── tools.py               # GET /tools — read-only discovery (AST, без импорта) для soar/tools/
     └── validation.py          # validate_name, validate_path_within, SSRF validation
 
 soar/
@@ -134,23 +135,15 @@ soar/
 │   ├── kaspersky_opentip/     # KasperskyOpenTipConnector — IP/domain/hash/URL checks
 │   ├── urlhaus/               # UrlhausConnector — URL/host/payload lookups
 │   ├── crtsh/                 # CrtshConnector — certificate/domain/identity search
-│   ├── file/                  # FileConnector — write/read/append/delete файлы
-│   └── irp/                   # IRPConnector — SOC Core Control Alert Inbox / incident lifecycle
+│   └── file/                  # FileConnector — write/read/append/delete файлы
 ├── actions/
 │   └── __init__.py            # ActionsRegistry — автообнаружение actions
 ├── workflows/
 │   ├── __init__.py            # WorkflowRegistry — автообнаружение workflows
-│   ├── base.py                # BaseWorkflow, ScheduledWorkflow, WebhookWorkflow, ManualWorkflow
-│   ├── alert_triage.py         # AlertTriageWorkflow — pull ES → триаж → ingest в IRP (Фаза 2)
-│   ├── irp-events.py           # IrpEventsWorkflow — приёмник webhook событий IRP (Фаза 1)
-│   ├── irp_reconcile.py        # IrpReconcileWorkflow — сверка пропущенных webhook-событий
-│   └── respond_basic.py        # BasicResponseWorkflow — первый response-плейбук (без деструктива)
+│   └── base.py                # BaseWorkflow, ScheduledWorkflow, WebhookWorkflow, ManualWorkflow
 ├── tools/
-│   ├── openapi.py              # OpenAPI connector code generator
-│   ├── watermark.py             # WatermarkStore/SeenStore — durable JSON-store (IRP-интеграция)
-│   ├── triage_policy.py         # TriagePolicyCache — политики триажа из SOC Core settings API
-│   ├── irp_settings.py          # load_irp_settings() — конфиг секции irp: из config.yaml
-│   └── irp_dispatch.py          # dispatch_alert() — общая диспетчеризация webhook/reconcile → response
+│   ├── openapi.py              # OpenAPIGenerator — генератор коннектора из OpenAPI-спеки
+│   └── watermark.py             # WatermarkStore/SeenStore — durable курсор / TTL-дедуп (generic)
 └── examples/
     └── nadproject_integration.py
 
@@ -230,6 +223,13 @@ tests/
 | POST | /connectors/generate | Генерация коннектора из OpenAPI spec |
 | POST | /connectors/preview | Парсинг OpenAPI spec (POST, тело) |
 | GET | /connectors/preview | Парсинг OpenAPI spec (GET, URL) — SSRF-защищён |
+
+### Tools
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /tools | Список классов `soar/tools/` (name, module, summary) — AST, без импорта |
+| GET | /tools/{name} | Докстринг, сигнатура конструктора и публичных методов класса |
 
 ### Transfer
 | Method | Path | Description |
@@ -439,11 +439,7 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 | Kaspersky OpenTip | `soar/connectors/kaspersky_opentip/` — IP/domain/hash/URL checks |
 | URLhaus | `soar/connectors/urlhaus/` — URL/host/payload lookups |
 | crt.sh | `soar/connectors/crtsh/` — certificate/domain/identity search |
-| IRP (SOC Core) | `soar/connectors/irp/` — ingest_alert, list_alerts, add_comment, transition_alert, response steps, heartbeat |
-| IRP-интеграция (workflows) | `soar/workflows/alert_triage.py`, `irp-events.py`, `irp_reconcile.py`, `respond_basic.py` — контракт `docs/integration/soc-core-integration-contract.md` |
-| IRP-интеграция (config) | `orchestrator/config.yaml` / `deploy/stage/config.yaml` — секция `irp:` (enabled, watermark_path, ...), читается через `soar/tools/irp_settings.py` |
-| Watermark / дедуп событий | `soar/tools/watermark.py` — WatermarkStore, SeenStore (durable JSON) |
-| Политики триажа | `soar/tools/triage_policy.py` — TriagePolicyCache (кэш из SOC Core settings API) |
+| Watermark / дедуп событий | `soar/tools/watermark.py` — WatermarkStore, SeenStore (durable JSON, generic) |
 | Новый action | `soar/actions/`, один файл = одна функция |
 | Новый workflow | `soar/workflows/`, наследовать от `ScheduledWorkflow`/`WebhookWorkflow`/`ManualWorkflow` |
 | Шаблон workflow | `orchestrator/api/workflows.py` — TEMPLATES dict |
@@ -475,6 +471,61 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 
 **AGENTS.md отражает фактическое состояние** — обновляется после каждой итерации, не заранее.
 
+### Архитектурный принцип: движок vs поведение
+
+SOAR — движок (orchestrator: очередь/воркеры/планировщик + registries), а не
+набор зашитых интеграций. Поведение системы — что вызывается, с какими
+параметрами, по какой политике — обязано быть редактируемым через
+API (UI или LLM-агентом) **без передеплоя**. Три штатных места для поведения,
+у каждого есть API редактирования с git auto-commit:
+
+- **Интеграционные настройки** (endpoint-ы, пути, TTL, пороги, имена
+  connector/workflow) → `connectors/{name}/{name}.yml` (per-instance config,
+  `GET/PUT /connectors/{name}/config`). Не создавать отдельные
+  config-loader'ы, парсящие `SOAR_CONFIG` или произвольные секции
+  `orchestrator/config.yaml` в обход этого API
+- **Код, переиспользуемый между несколькими workflow** → `soar/actions/`
+  (`GET/PUT /actions/{name}`), не приватные модули в `soar/tools/`
+- **Сама логика workflow** → `soar/workflows/{name}.py`
+  (`GET/PUT /workflows/{name}/code`)
+
+Следствия:
+
+- `orchestrator/config.yaml` — только инфраструктура самого оркестратора
+  (`workers`, `queue`, `git`, `logging`, `soar.*_dir`, `server`). Никаких
+  интеграционных/бизнес-секций (endpoint-ы, пороги, имена workflow
+  конкретной интеграции) — у этого файла нет API-ручки, правка = ручной
+  доступ к серверу или редеплой
+- **`soar/tools/` vs `soar/actions/` — критерий класса.** `tools/` — это
+  сложный, но универсальный инфраструктурный код в виде класса, не
+  завязанный на конкретную интеграцию: тест — "будет ли класс полезен
+  второй, не связанной интеграции без изменения кода, только другими
+  параметрами конструктора?". Примеры: `OpenAPIGenerator` (генератор
+  коннектора из спеки — работает с любым OpenAPI), `WatermarkStore`/
+  `SeenStore` (durable курсор/TTL-дедуп — общий примитив для любого
+  polling/webhook-приёмника), `CachedHttpClient` (v0.6, план — TTL-кэш
+  HTTP per-domain для threat-intel actions)
+  `actions/` — всё простое и специфичное для одной интеграции: бизнес-
+  правила, decision-логика, магические значения (endpoint-пути, теги,
+  имена workflow) — даже если внутри action используется класс из
+  `tools/`. Пример: диспетчеризация события во внешнюю систему (кому
+  какой workflow триггерить, при каких условиях) — решение specific для
+  одной интеграции, не переиспользуется. Если модуль смешивает
+  универсальную механику с интеграционными дефолтами (TTL-кэш с
+  fallback — универсален, форма конкретной policy и её endpoint — нет)
+  — механику оставить в `tools/`, специфику вынести в `actions/`
+- **Каждый класс в `soar/tools/` обязан быть документирован и обнаружим
+  через read-only API** (`GET /tools`, `GET /tools/{name}`) — разработчик
+  триажа (человек или LLM-агент), пишущий action/workflow, должен узнать
+  о доступных примитивах и их сигнатурах не читая исходники. Источник
+  доки — module/class/method docstring + сигнатура конструктора и
+  публичных методов (интроспекция, не ручной дубль — иначе разъедется с
+  кодом). `/tools` — **без PUT/DELETE**: в отличие от `connectors/`,
+  `actions/`, `workflows/`, tools не является редактируемым через API
+  поведением, это часть движка — правки только кодом и релизом
+- Если новому коннектору/workflow нужен параметр — сначала спросить "где
+  он должен быть редактируем через API", а не "куда его дописать в yaml"
+
 ### Code rules
 
 - НЕ коммитить `orchestrator_state.yaml` — только `config.yaml` и код
@@ -505,5 +556,6 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 - **v0.5** (2026-07-03) — Reliability + Bug fixes. ConcurrencyPolicy.QUEUE в Worker (busy-wait), `concurrency` в WorkflowJob и enqueue, `JobStore.recover_on_startup()`. Bug fixes (7): B1 cancel race, B2 MySQL backtick, B3 RedisQueue concurrency serialization, B4 result_data from log, B5 trusted_proxies rate limiter, B6 SSRF DNS resolve, B7 public API for private fields
 - **v0.5.1** (2026-07-06, feature/auth) — Authentication: JWT (HS256, access 30min + refresh 7d, rotation), API keys (M2M, `soar_<hex>`), RBAC (admin/analyst/viewer/service), bcrypt пароли, SQLAlchemy 2.0 async DB layer, CORS с credentials, login rate limiter (5/60s), backward-compat auth-disabled mode. 21 тест, 341/342 passed.
 - **v0.5.2** (2026-07-09) — IRP-интеграция (SOC Core Control): IRPConnector (`soar/connectors/irp/`) + четыре workflow поверх контракта `docs/integration/soc-core-integration-contract.md` — `alert_triage` (pull ES → триаж → ingest, чанк-реплей догона), `irp-events` (webhook-приёмник событий IRP), `irp_reconcile` (поллер-страховка), `respond_basic` (первый response-плейбук, без деструктива). Durable watermark/дедуп (`soar/tools/watermark.py`), кэш политик триажа из SOC Core settings API (`soar/tools/triage_policy.py`). Конфиг — секция `irp:` в `config.yaml`, `enabled: false` по умолчанию (shadow-режим обязателен до cutover)
+- **v0.5.3** (2026-07-10) — Откат IRP-интеграции (v0.5.2): удалён `IRPConnector`, четыре workflow (`alert_triage`, `irp-events`, `irp_reconcile`, `respond_basic`), `soar/tools/{irp_settings,irp_dispatch,triage_policy}.py`, секция `irp:` в обоих `config.yaml`. Причина: бизнес-логика и настройки интеграции обходили API-редактируемые поверхности (см. "Архитектурный принцип: движок vs поведение"); решено не чинить точечно, а строить следующую интеграцию через API (см. v0.6). Контракт (`docs/integration/soc-core-integration-contract.md`) сохранён как референс. Добавлен read-only `GET /tools`/`GET /tools/{name}` (AST-интроспекция `soar/tools/`, без импорта модулей) — обнаружимость оставшихся generic-примитивов (`OpenAPIGenerator`, `WatermarkStore`/`SeenStore`) для того, кто будет строить интеграции дальше
 - **v0.6** (planned) — Tooling: `CachedHttpClient` в `soar/tools/` (InMemory/Redis, TTL per-domain, request logging) для threat-intel actions; расширение `/status` in-memory метриками per-workflow (FP-rate, MTTR)
 - **v0.7** (planned) — Persistence: Postgres JobStore (обязательна для crash recovery и персистентных метрик). После этого — persistent статистика.

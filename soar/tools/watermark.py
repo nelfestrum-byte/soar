@@ -1,9 +1,8 @@
-"""Durable file-backed stores for the IRP integration workflows.
+"""Durable file-backed stores for polling/webhook workflows.
 
 JobStore of the orchestrator is in-memory and workflows run as subprocesses,
 so progress marks must survive both restarts and process boundaries. A JSON
-file with atomic replace (tmp + os.replace) is enough — no new dependencies
-(contract §4.3: watermark moves only after a successful ingest).
+file with atomic replace (tmp + os.replace) is enough — no new dependencies.
 """
 
 import json
@@ -16,8 +15,8 @@ from soar.logger import get_logger
 class WatermarkStore:
     """Key → ISO-8601 UTC timestamp of the last processed event.
 
-    Keys in use: ``siem_alerts`` (triage pull), ``irp_reconcile`` (poller).
-    One store, different keys — a single file per deployment.
+    One store, many independent keys (e.g. one per poller/pull cycle) —
+    a single file per deployment.
     """
 
     def __init__(self, path: str):
@@ -55,11 +54,12 @@ class WatermarkStore:
 
 
 class SeenStore:
-    """Durable "already seen" marks with TTL — dedup between the webhook
-    receiver and the reconciliation poller (keys ``irp_seen:{alert_id}``).
+    """Durable "already seen" marks with TTL — dedup between two delivery
+    paths for the same event (e.g. a webhook receiver and a reconciliation
+    poller covering the same source).
 
-    IRP's own Redis dedup keys are not available to us by contract, and the
-    orchestrator Redis is optional — a file keeps the guarantee everywhere.
+    The orchestrator Redis backend is optional — a file keeps the dedup
+    guarantee available regardless of deployment.
     """
 
     def __init__(self, path: str, ttl: int = 86400):

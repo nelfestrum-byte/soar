@@ -26,27 +26,3 @@ jobs:
 
 server:
   trusted_proxies: []  # set to ["127.0.0.1"] when running behind nginx in same container
-
-# Интеграция с SOC Core (IRP) — docs/integration/soc-core-integration-contract.md
-# Читается workflow'ами (soar/tools/irp_settings.py), не оркестратором.
-# enabled: false → irp-workflows (alert_triage, irp_reconcile, irp-events)
-# завершаются no-op'ом; включать после настройки коннектора irp_main
-# (soar/connectors/irp/irp.yml по образцу irp.example.yml).
-irp:
-  enabled: false
-  shadow: true                  # тег soar:shadow до cutover (контракт §4.4)
-  connector: irp_main
-  elastic_connector: elastic_main
-  alerts_index: .internal.alerts-*
-  watermark_path: /app/data/irp/watermark.json   # durable, на volume
-  seen_path: /app/data/irp/seen.json
-  seen_ttl: 86400
-  policy_endpoint: /api/v2/settings/triage       # уточнить у SOC Core (Д-3)
-  policy_cache_path: /app/data/irp/policy_cache.json
-  policy_ttl: 60
-  time_window_minutes: 10
-  overlap_minutes: 5
-  fetch_size: 1000
-  orchestrator_url: http://127.0.0.1:8000
-  response_workflow: respond_basic
-  min_response_severity: 3

@@ -32,10 +32,12 @@ def setup_app_state(tmp_path):
     config.soar.workflows_dir = str(tmp_path / "workflows")
     config.soar.actions_dir = str(tmp_path / "actions")
     config.soar.connectors_dir = str(tmp_path / "connectors")
+    config.soar.tools_dir = str(tmp_path / "tools")
 
     os.makedirs(config.soar.workflows_dir, exist_ok=True)
     os.makedirs(config.soar.actions_dir, exist_ok=True)
     os.makedirs(config.soar.connectors_dir, exist_ok=True)
+    os.makedirs(config.soar.tools_dir, exist_ok=True)
 
     job_manager = JobManager(
         queue=queue,

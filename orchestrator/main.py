@@ -17,6 +17,7 @@ from orchestrator.api import (
     jobs_router,
     logs_router,
     status_router,
+    tools_router,
     webhooks_router,
     workflows_router,
 )
@@ -280,3 +281,4 @@ app.include_router(webhooks_router)
 app.include_router(logs_router)
 app.include_router(status_router)
 app.include_router(transfer_router)
+app.include_router(tools_router)
