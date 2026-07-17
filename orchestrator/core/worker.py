@@ -8,7 +8,7 @@ from orchestrator.core.queue.base import AbstractJobQueue
 from orchestrator.core.subprocess_runner import SubprocessRunner
 from orchestrator.models import ConcurrencyPolicy
 from orchestrator.models.job import JobStatus, WorkflowJob
-from orchestrator.store.job_store import JobStore
+from orchestrator.store.base import AbstractJobStore
 
 
 class Worker:
@@ -17,7 +17,7 @@ class Worker:
         worker_id: int,
         queue: AbstractJobQueue,
         runner: SubprocessRunner,
-        job_store: JobStore,
+        job_store: AbstractJobStore,
         default_timeout: int,
     ):
         self.worker_id = worker_id

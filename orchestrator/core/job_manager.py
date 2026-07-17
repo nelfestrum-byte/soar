@@ -9,7 +9,7 @@ from orchestrator.core.subprocess_runner import SubprocessRunner
 from orchestrator.models import ConcurrencyPolicy
 from orchestrator.models.job import JobStatus, WorkflowJob
 from orchestrator.models.workflow_meta import WorkflowMeta
-from orchestrator.store.job_store import JobStore
+from orchestrator.store.base import AbstractJobStore
 
 
 class JobAlreadyRunningError(Exception):
@@ -24,7 +24,7 @@ class JobManager:
     def __init__(
         self,
         queue: AbstractJobQueue,
-        job_store: JobStore,
+        job_store: AbstractJobStore,
         runner: SubprocessRunner,
         log_dir: str,
         workflow_registry=None,

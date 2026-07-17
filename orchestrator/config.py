@@ -1,7 +1,8 @@
+import re
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class AuthConfig(BaseModel):
@@ -12,10 +13,23 @@ class AuthConfig(BaseModel):
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
 
+_TABLE_PREFIX_RE = re.compile(r"^[a-zA-Z0-9_]*$")
+
+
 class DatabaseConfig(BaseModel):
     url: str = "sqlite+aiosqlite:///./soar.db"
     pool_size: int = 10
     max_overflow: int = 20
+    table_prefix: str = ""
+
+    @field_validator("table_prefix")
+    @classmethod
+    def _validate_table_prefix(cls, v: str) -> str:
+        if not _TABLE_PREFIX_RE.match(v):
+            raise ValueError(
+                "table_prefix must match ^[a-zA-Z0-9_]*$ (it feeds SQL table identifiers)"
+            )
+        return v
 
 
 class WorkersConfig(BaseModel):
@@ -52,6 +66,7 @@ class LoggingConfig(BaseModel):
 class JobsConfig(BaseModel):
     log_dir: str = "/var/log/soar/jobs"
     keep_completed: int = 1000
+    persistence: str = "memory"  # memory | sql
 
 
 class ServerConfig(BaseModel):

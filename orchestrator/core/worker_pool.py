@@ -5,7 +5,7 @@ from loguru import logger
 from orchestrator.core.queue.base import AbstractJobQueue
 from orchestrator.core.subprocess_runner import SubprocessRunner
 from orchestrator.core.worker import Worker
-from orchestrator.store.job_store import JobStore
+from orchestrator.store.base import AbstractJobStore
 
 
 class WorkerPool:
@@ -14,7 +14,7 @@ class WorkerPool:
         count: int,
         queue: AbstractJobQueue,
         runner: SubprocessRunner,
-        job_store: JobStore,
+        job_store: AbstractJobStore,
         default_timeout: int,
     ):
         self._workers: list[Worker] = [

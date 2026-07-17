@@ -8,6 +8,8 @@ WORKDIR /app
 
 COPY soar/ /app/soar/
 COPY orchestrator/ /app/orchestrator/
+COPY alembic/ /app/alembic/
+COPY alembic.ini /app/alembic.ini
 
 RUN pip install --no-cache-dir \
     -r /app/orchestrator/requirements.txt \

@@ -26,3 +26,8 @@ logging:
 jobs:
   log_dir: /var/log/soar/jobs
   keep_completed: 100
+  persistence: sql  # memory | sql — sql persists job history in `database` across restarts
+
+database:
+  url: postgresql+asyncpg://soar:soar@postgres:5432/soar
+  table_prefix: "stage_"  # avoids table collisions if this Postgres DB is shared with other SOAR instances

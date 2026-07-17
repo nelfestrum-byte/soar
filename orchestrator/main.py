@@ -5,13 +5,23 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import yaml
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from loguru import logger
+# Config must load — and the table prefix must be applied — before any module below
+# imports orchestrator.auth.models / orchestrator.store.models: __tablename__ is fixed
+# at class-definition (import) time (see orchestrator/db/base.py::configure_table_prefix).
+from orchestrator.config import load_config  # noqa: E402
+from orchestrator.db.base import configure_table_prefix  # noqa: E402
 
-from orchestrator.api import (
+_startup_config_path = os.environ.get("SOAR_CONFIG", "config.yaml")
+_startup_config = load_config(_startup_config_path)
+configure_table_prefix(_startup_config.database.table_prefix)
+
+import yaml  # noqa: E402
+from fastapi import FastAPI, Request  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
+from loguru import logger  # noqa: E402
+
+from orchestrator.api import (  # noqa: E402
     actions_router,
     connectors_router,
     jobs_router,
@@ -21,26 +31,23 @@ from orchestrator.api import (
     webhooks_router,
     workflows_router,
 )
-from orchestrator.api.transfer import router as transfer_router
-from orchestrator.auth.router import router as auth_router
-from orchestrator.config import load_config
-from orchestrator.core.git_manager import GitManager
-from orchestrator.core.job_manager import JobManager
-from orchestrator.core.queue.memory import InMemoryQueue
-from orchestrator.core.queue.redis_queue import RedisQueue
-from orchestrator.core.scheduler import OrchestratorScheduler
-from orchestrator.core.subprocess_runner import SubprocessRunner
-from orchestrator.core.worker_pool import WorkerPool
-from orchestrator.db.session import get_session_factory, init_db, init_engine
-from orchestrator.models import ConcurrencyPolicy
-from orchestrator.models.workflow_meta import WorkflowMeta
-from orchestrator.store.job_store import JobStore
+from orchestrator.api.transfer import router as transfer_router  # noqa: E402
+from orchestrator.auth.router import router as auth_router  # noqa: E402
+from orchestrator.core.git_manager import GitManager  # noqa: E402
+from orchestrator.core.job_manager import JobManager  # noqa: E402
+from orchestrator.core.queue.memory import InMemoryQueue  # noqa: E402
+from orchestrator.core.queue.redis_queue import RedisQueue  # noqa: E402
+from orchestrator.core.scheduler import OrchestratorScheduler  # noqa: E402
+from orchestrator.core.subprocess_runner import SubprocessRunner  # noqa: E402
+from orchestrator.core.worker_pool import WorkerPool  # noqa: E402
+from orchestrator.db.session import get_session_factory, init_db, init_engine  # noqa: E402
+from orchestrator.models import ConcurrencyPolicy  # noqa: E402
+from orchestrator.models.workflow_meta import WorkflowMeta  # noqa: E402
+from orchestrator.store.base import AbstractJobStore  # noqa: E402
+from orchestrator.store.job_store import InMemoryJobStore  # noqa: E402
+from orchestrator.store.sql_job_store import SQLJobStore  # noqa: E402
 
 _SOAR_PKG = Path(__file__).resolve().parent.parent / "soar"
-
-# Load config at module level so CORS middleware can use cors_origins before lifespan runs
-_startup_config_path = os.environ.get("SOAR_CONFIG", "config.yaml")
-_startup_config = load_config(_startup_config_path)
 
 
 def seed_defaults(config):
@@ -77,6 +84,12 @@ def create_queue(config):
             pop_timeout=config.queue.redis_pop_timeout,
         )
     return InMemoryQueue()
+
+
+def create_job_store(config) -> AbstractJobStore:
+    if config.jobs.persistence == "sql":
+        return SQLJobStore(get_session_factory())
+    return InMemoryJobStore(keep_completed=config.jobs.keep_completed)
 
 
 def load_workflow_metas(config) -> list[WorkflowMeta]:
@@ -147,7 +160,7 @@ async def lifespan(app: FastAPI):
     app.state.db_session_factory = get_session_factory()
 
     queue = create_queue(config)
-    job_store = JobStore(keep_completed=config.jobs.keep_completed)
+    job_store = create_job_store(config)
     runner = SubprocessRunner()
     git = GitManager(
         repo_path=config.git.workflows_repo,

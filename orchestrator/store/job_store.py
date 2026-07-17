@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from orchestrator.models.job import JobStatus, WorkflowJob
-
-
 from loguru import logger
 
+from orchestrator.models.job import JobStatus, WorkflowJob
+from orchestrator.store.base import AbstractJobStore
 
-class JobStore:
+
+class InMemoryJobStore(AbstractJobStore):
     def __init__(self, keep_completed: int = 1000):
         self._jobs: dict[str, WorkflowJob] = {}
         self._keep_completed = keep_completed
@@ -96,3 +96,6 @@ class JobStore:
             to_remove = completed[: len(completed) - self._keep_completed]
             for job in to_remove:
                 self._jobs.pop(job.id, None)
+
+
+JobStore = InMemoryJobStore
