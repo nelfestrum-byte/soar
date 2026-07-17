@@ -1,18 +1,41 @@
 <template>
   <div id="app">
-    <nav>
+    <nav v-if="route.path !== '/login'">
       <router-link to="/" class="brand">SOAR</router-link>
       <router-link to="/">Status</router-link>
       <router-link to="/workflows">Workflows</router-link>
       <router-link to="/jobs">Jobs</router-link>
       <router-link to="/actions">Actions</router-link>
       <router-link to="/connectors">Connectors</router-link>
+      <router-link to="/tools">Tools</router-link>
       <router-link to="/generate">Generate</router-link>
       <router-link to="/settings">Settings</router-link>
+      <router-link v-if="auth.role === 'admin'" to="/api-keys">API Keys</router-link>
+      <div style="flex:1;"></div>
+      <span v-if="auth.checked && auth.authenticated" class="user-badge">
+        {{ auth.username }} <span class="role">({{ auth.role }})</span>
+      </span>
+      <button v-if="auth.checked && auth.authenticated && !auth.noAuthMode"
+              class="btn btn-logout" @click="doLogout">Logout</button>
     </nav>
     <main><router-view /></main>
   </div>
 </template>
+
+<script setup>
+import { useRoute, useRouter } from 'vue-router'
+import { auth, resetAuth } from './store/auth.js'
+import { api } from './api.js'
+
+const route = useRoute()
+const router = useRouter()
+
+async function doLogout() {
+  await api.logout()
+  resetAuth()
+  router.push('/login')
+}
+</script>
 
 <style>
 nav {
@@ -21,6 +44,9 @@ nav {
 nav a { color: #aaa; text-decoration: none; padding: 12px 16px; font-size: 14px; }
 nav a:hover, nav a.router-link-active { color: #fff; }
 nav .brand { color: #4fc3f7; font-weight: 700; font-size: 18px; margin-right: 16px; }
+nav .user-badge { color: #ccc; font-size: 13px; margin-right: 8px; }
+nav .user-badge .role { color: #4fc3f7; }
+.btn-logout { background: #333; color: #fff; }
 main { max-width: 1200px; margin: 20px auto; padding: 0 20px; }
 .card { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
 h2 { font-size: 16px; margin-bottom: 12px; }

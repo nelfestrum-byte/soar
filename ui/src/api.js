@@ -1,13 +1,66 @@
 const BASE = '/api'
+const ACCESS_KEY = 'soar_access_token'
+const REFRESH_KEY = 'soar_refresh_token'
 
-async function request(path, options = {}) {
+const getAccessToken = () => localStorage.getItem(ACCESS_KEY) || ''
+const getRefreshToken = () => localStorage.getItem(REFRESH_KEY) || ''
+
+function setTokens(access, refresh) {
+  if (access) localStorage.setItem(ACCESS_KEY, access)
+  if (refresh) localStorage.setItem(REFRESH_KEY, refresh)
+}
+
+function clearTokens() {
+  localStorage.removeItem(ACCESS_KEY)
+  localStorage.removeItem(REFRESH_KEY)
+}
+
+function authHeaders() {
+  const token = getAccessToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+let onUnauthorized = null
+export function setUnauthorizedHandler(fn) {
+  onUnauthorized = fn
+}
+
+async function tryRefresh() {
+  const refresh_token = getRefreshToken()
+  if (!refresh_token) return false
+  try {
+    const res = await fetch(`${BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token }),
+    })
+    if (!res.ok) { clearTokens(); return false }
+    const data = await res.json()
+    setTokens(data.access_token, data.refresh_token)
+    return true
+  } catch {
+    clearTokens()
+    return false
+  }
+}
+
+async function request(path, options = {}, allowRetry = true) {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
+    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...options.headers },
   })
+
+  if (res.status === 401 && allowRetry && path !== '/auth/login' && path !== '/auth/refresh') {
+    if (await tryRefresh()) return request(path, options, false)
+    clearTokens()
+    if (onUnauthorized) onUnauthorized()
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail || 'Request failed')
+    const e = new Error(err.detail || 'Request failed')
+    e.status = res.status
+    throw e
   }
   return res.json()
 }
@@ -54,7 +107,7 @@ export const api = {
   generateConnector: (spec, name) =>
     request('/connectors/generate', { method: 'POST', body: JSON.stringify({ spec, name }) }),
   exportEntities: async () => {
-    const res = await fetch(`${BASE}/transfer/export`, { method: 'POST' })
+    const res = await fetch(`${BASE}/transfer/export`, { method: 'POST', headers: authHeaders() })
     if (!res.ok) throw new Error('Export failed')
     return res.blob()
   },
@@ -63,6 +116,7 @@ export const api = {
     formData.append('file', file)
     const res = await fetch(`${BASE}/transfer/import?force=${force}`, {
       method: 'POST',
+      headers: authHeaders(),
       body: formData,
     })
     if (!res.ok) {
@@ -71,4 +125,36 @@ export const api = {
     }
     return res.json()
   },
+
+  getTools: () => request('/tools'),
+  getTool: (name) => request(`/tools/${name}`),
+
+  login: async (username, password) => {
+    const data = await request('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    })
+    setTokens(data.access_token, data.refresh_token)
+    return data
+  },
+  logout: async () => {
+    const refresh_token = getRefreshToken()
+    clearTokens()
+    if (refresh_token) {
+      try {
+        await fetch(`${BASE}/auth/logout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token }),
+        })
+      } catch {
+        // best-effort — tokens are already cleared client-side
+      }
+    }
+  },
+  me: () => request('/auth/me'),
+  listApiKeys: () => request('/auth/keys'),
+  createApiKey: (name, role, expires_at = null) =>
+    request('/auth/keys', { method: 'POST', body: JSON.stringify({ name, role, expires_at }) }),
+  deleteApiKey: (id) => request(`/auth/keys/${id}`, { method: 'DELETE' }),
 }

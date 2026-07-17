@@ -10,9 +10,8 @@ COPY soar/ /app/soar/
 COPY orchestrator/ /app/orchestrator/
 
 RUN pip install --no-cache-dir \
-    fastapi uvicorn pyyaml loguru pydantic python-multipart \
-    apscheduler sse-starlette redis elasticsearch vt-py \
-    requests
+    -r /app/orchestrator/requirements.txt \
+    elasticsearch vt-py requests
 
 RUN mkdir -p /app/data /app/data/workflows /app/data/actions /app/data/connectors /var/log/soar/jobs && \
     find /app/soar/workflows -maxdepth 1 -name '*.py' ! -name '__init__.py' ! -name 'base.py' -exec cp -n {} /app/data/workflows/ \; 2>/dev/null || true && \
