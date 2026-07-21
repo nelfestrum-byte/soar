@@ -1,8 +1,21 @@
 import json
+
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
+from orchestrator.audit.models import AuditLog
 from orchestrator.main import app
+
+
+async def _audit_rows(resource_type: str, resource_id: str) -> list[AuditLog]:
+    async with app.state.db_session_factory() as session:
+        result = await session.execute(
+            select(AuditLog).where(
+                AuditLog.resource_type == resource_type, AuditLog.resource_id == resource_id
+            )
+        )
+        return list(result.scalars())
 
 
 SAMPLE_SPEC = {
@@ -159,6 +172,36 @@ async def test_generate_connector():
         data = r.json()
         assert data["name"] == "gen_test"
         assert len(data["files"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_connector_lifecycle_writes_audit_rows():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/audited_conn")
+        await c.put("/connectors/audited_conn/code", content=b"# code")
+        await c.put("/connectors/audited_conn/config", content=b"instances: {}")
+        await c.delete("/connectors/audited_conn")
+
+    rows = await _audit_rows("connector", "audited_conn")
+    actions = {row.action for row in rows}
+    assert actions == {
+        "connector.create", "connector.update_code", "connector.update_config", "connector.delete",
+    }
+
+
+@pytest.mark.asyncio
+async def test_generate_connector_writes_audit_row():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post(
+            "/connectors/generate",
+            json={"spec": json.dumps(SAMPLE_SPEC), "name": "audited_gen"},
+        )
+
+    rows = await _audit_rows("connector", "audited_gen")
+    assert len(rows) == 1
+    assert rows[0].action == "connector.generate"
 
 
 @pytest.mark.asyncio

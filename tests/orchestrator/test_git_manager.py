@@ -40,6 +40,37 @@ async def test_git_manager_commit(git_repo):
 
 
 @pytest.mark.asyncio
+async def test_git_manager_commit_author_override(git_repo):
+    gm = GitManager(repo_path=git_repo, author_name="Test", author_email="test@test.com")
+    await gm.ensure_repo()
+
+    with open(os.path.join(git_repo, "new_file.txt"), "w") as f:
+        f.write("new content")
+
+    await gm.commit(
+        "new_file.txt", "Add new file",
+        author_name="alice", author_email="alice@soar.local",
+    )
+
+    history = await gm.history("new_file.txt")
+    assert history[0].author == "alice"
+
+
+@pytest.mark.asyncio
+async def test_git_manager_commit_without_override_keeps_default_author(git_repo):
+    gm = GitManager(repo_path=git_repo, author_name="Test", author_email="test@test.com")
+    await gm.ensure_repo()
+
+    with open(os.path.join(git_repo, "new_file.txt"), "w") as f:
+        f.write("new content")
+
+    await gm.commit("new_file.txt", "Add new file")
+
+    history = await gm.history("new_file.txt")
+    assert history[0].author == "Test"
+
+
+@pytest.mark.asyncio
 async def test_git_manager_commit_nothing(git_repo):
     gm = GitManager(repo_path=git_repo, author_name="Test", author_email="test@test.com")
     await gm.ensure_repo()

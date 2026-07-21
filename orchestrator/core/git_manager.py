@@ -50,18 +50,24 @@ class GitManager:
             )
             logger.info("Initialized git repository")
 
-    async def commit(self, filepath: str, message: str) -> str:
+    async def commit(
+        self, filepath: str, message: str,
+        author_name: str | None = None, author_email: str | None = None,
+    ) -> str:
+        name = author_name or self.author_name
+        email = author_email or self.author_email
+
         await self._run("add", "--", filepath)
         env = {
             **os.environ,
-            "GIT_AUTHOR_NAME": self.author_name,
-            "GIT_AUTHOR_EMAIL": self.author_email,
-            "GIT_COMMITTER_NAME": self.author_name,
-            "GIT_COMMITTER_EMAIL": self.author_email,
+            "GIT_AUTHOR_NAME": name,
+            "GIT_AUTHOR_EMAIL": email,
+            "GIT_COMMITTER_NAME": name,
+            "GIT_COMMITTER_EMAIL": email,
         }
         proc = await asyncio.create_subprocess_exec(
             "git", "commit", "-m", message,
-            f"--author={self.author_name} <{self.author_email}>",
+            f"--author={name} <{email}>",
             cwd=self.repo_path,
             env=env,
             stdout=asyncio.subprocess.PIPE,

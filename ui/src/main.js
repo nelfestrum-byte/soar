@@ -14,6 +14,7 @@ const routes = [
   { path: '/generate', component: () => import('./views/Generate.vue') },
   { path: '/settings', component: () => import('./views/Settings.vue') },
   { path: '/api-keys', component: () => import('./views/ApiKeys.vue') },
+  { path: '/audit-log', component: () => import('./views/AuditLog.vue') },
   { path: '/login', component: () => import('./views/Login.vue') },
   { path: '/logs/:id', component: () => import('./views/Logs.vue') },
 ]

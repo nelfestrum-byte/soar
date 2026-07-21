@@ -1,6 +1,7 @@
 import os
 import shutil
 import time
+import uuid
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -31,10 +32,12 @@ from orchestrator.api import (  # noqa: E402
     webhooks_router,
     workflows_router,
 )
+from orchestrator.api.audit import router as audit_router  # noqa: E402
 from orchestrator.api.transfer import router as transfer_router  # noqa: E402
 from orchestrator.auth.router import router as auth_router  # noqa: E402
 from orchestrator.core.git_manager import GitManager  # noqa: E402
 from orchestrator.core.job_manager import JobManager  # noqa: E402
+from orchestrator.core.net import resolve_client_ip  # noqa: E402
 from orchestrator.core.queue.memory import InMemoryQueue  # noqa: E402
 from orchestrator.core.queue.redis_queue import RedisQueue  # noqa: E402
 from orchestrator.core.scheduler import OrchestratorScheduler  # noqa: E402
@@ -48,6 +51,7 @@ from orchestrator.store.job_store import InMemoryJobStore  # noqa: E402
 from orchestrator.store.sql_job_store import SQLJobStore  # noqa: E402
 
 _SOAR_PKG = Path(__file__).resolve().parent.parent / "soar"
+_LOG_FORMAT = "{time:YYYY-MM-DD HH:mm:ss} | {level} | {name} | {message} | {extra}"
 
 
 def seed_defaults(config):
@@ -146,8 +150,8 @@ async def lifespan(app: FastAPI):
 
     import sys
     logger.remove()
-    logger.add(config.logging.file, level=config.logging.level)
-    logger.add(sys.stderr, level=config.logging.level)
+    logger.add(config.logging.file, level=config.logging.level, format=_LOG_FORMAT)
+    logger.add(sys.stderr, level=config.logging.level, format=_LOG_FORMAT)
 
     if not config.auth.secret_key:
         logger.warning("auth.secret_key is not set — authentication is DISABLED, all requests treated as admin")
@@ -258,17 +262,7 @@ login_rate_limiter = RateLimiter(max_requests=5, window=60.0)
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    client_ip = request.client.host if request.client else "unknown"
-
-    config = getattr(request.app.state, "config", None)
-    trusted_proxies = config.server.trusted_proxies if config else []
-    if client_ip in trusted_proxies:
-        forwarded_ip = (
-            request.headers.get("X-Real-IP")
-            or (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
-        )
-        if forwarded_ip:
-            client_ip = forwarded_ip
+    client_ip = resolve_client_ip(request)
 
     # Skip rate limiting for localhost/test clients
     if client_ip in ("testclient", "127.0.0.1", "::1"):
@@ -277,12 +271,39 @@ async def rate_limit_middleware(request: Request, call_next):
     # Stricter limit for login endpoint (brute-force protection)
     if request.url.path == "/auth/login":
         if not login_rate_limiter.is_allowed(client_ip):
+            logger.bind(client_ip=client_ip).warning("auth.login_rate_limited")
             return JSONResponse(status_code=429, content={"detail": "Too many login attempts"})
 
     if not rate_limiter.is_allowed(client_ip):
+        logger.bind(client_ip=client_ip, path=request.url.path).warning("rate_limited")
         return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
 
     return await call_next(request)
+
+
+@app.middleware("http")
+async def access_log_middleware(request: Request, call_next):
+    """Registered last so it ends up the outermost layer — this is what lets
+    it log/tag 413 and 429 responses raised by the middlewares above, not
+    just responses that reach the router."""
+    request_id = uuid.uuid4().hex[:16]
+    request.state.request_id = request_id
+    start = time.monotonic()
+
+    with logger.contextualize(request_id=request_id):
+        response = await call_next(request)
+        duration_ms = round((time.monotonic() - start) * 1000, 1)
+        logger.bind(
+            method=request.method,
+            path=request.url.path,
+            status=response.status_code,
+            duration_ms=duration_ms,
+            client_ip=resolve_client_ip(request),
+            user_id=getattr(request.state, "user_id", None),
+        ).info("request")
+
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 
 app.include_router(auth_router)
@@ -295,3 +316,4 @@ app.include_router(logs_router)
 app.include_router(status_router)
 app.include_router(transfer_router)
 app.include_router(tools_router)
+app.include_router(audit_router)

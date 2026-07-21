@@ -1,8 +1,9 @@
 """B5: rate limiter should use X-Real-IP when client is a trusted proxy."""
 import time
+from unittest.mock import MagicMock
+
 import pytest
 from httpx import ASGITransport, AsyncClient
-from unittest.mock import MagicMock
 
 from orchestrator.config import OrchestratorConfig, ServerConfig
 from orchestrator.core.job_manager import JobManager
@@ -10,7 +11,7 @@ from orchestrator.core.queue.memory import InMemoryQueue
 from orchestrator.core.scheduler import OrchestratorScheduler
 from orchestrator.core.subprocess_runner import SubprocessRunner
 from orchestrator.core.worker_pool import WorkerPool
-from orchestrator.main import app, RateLimiter
+from orchestrator.main import app
 from orchestrator.store.job_store import JobStore
 
 

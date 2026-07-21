@@ -8,7 +8,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from orchestrator.auth.dependencies import CurrentUser, get_current_user
+from orchestrator.auth.dependencies import get_current_user
 from orchestrator.auth.models import ApiKey, RefreshToken, User  # noqa: F401 — registers tables
 from orchestrator.auth.service import create_user
 from orchestrator.config import AuthConfig, OrchestratorConfig
@@ -289,6 +289,30 @@ async def test_delete_key(auth_client, admin_user):
 
     r = await auth_client.get("/status", headers={"Authorization": f"Bearer {api_key}"})
     assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_create_and_delete_key_writes_audit_rows(auth_client, admin_user, db_session):
+    from sqlalchemy import select
+
+    from orchestrator.audit.models import AuditLog
+
+    token = await _login(auth_client, "admin", "adminpass")
+    cr = await auth_client.post("/auth/keys", json={"name": "audited-key", "role": "service"},
+                                headers={"Authorization": f"Bearer {token}"})
+    key_id = cr.json()["id"]
+
+    await auth_client.delete(f"/auth/keys/{key_id}", headers={"Authorization": f"Bearer {token}"})
+
+    result = await db_session.execute(
+        select(AuditLog).where(AuditLog.resource_type == "apikey", AuditLog.resource_id == str(key_id))
+    )
+    rows = list(result.scalars())
+    actions = {row.action for row in rows}
+    assert actions == {"apikey.create", "apikey.delete"}
+    # JWT-derived CurrentUser carries id+role, not username (see auth/dependencies.py) —
+    # actor_name falls back to the numeric id.
+    assert all(row.actor_name == str(admin_user.id) for row in rows)
 
 
 @pytest.mark.asyncio

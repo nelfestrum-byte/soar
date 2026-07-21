@@ -1,8 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from orchestrator.auth.dependencies import require_role
+from orchestrator.audit import service as audit_service
+from orchestrator.auth.dependencies import CurrentUser, require_role
 from orchestrator.core.job_manager import WorkflowDisabledError
+from orchestrator.db.session import get_db
 from orchestrator.models.job import JobStatus
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -65,11 +68,19 @@ async def get_job(job_id: str, request: Request):
     return job.to_dict()
 
 
-@router.post("/{job_id}/cancel", dependencies=[Depends(require_role(*_ANALYST))])
-async def cancel_job(job_id: str, request: Request):
+@router.post("/{job_id}/cancel")
+async def cancel_job(
+    job_id: str, request: Request,
+    user: CurrentUser = Depends(require_role(*_ANALYST)),
+    db: AsyncSession = Depends(get_db),
+):
     job_manager = request.app.state.job_manager
     try:
         job = await job_manager.cancel(job_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
+    await audit_service.record(
+        db, user=user, action="job.cancel", resource_type="job",
+        resource_id=job_id, request=request,
+    )
     return job.to_dict()

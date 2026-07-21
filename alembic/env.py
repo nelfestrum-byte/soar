@@ -27,6 +27,7 @@ configure_table_prefix(_soar_config.database.table_prefix)
 
 # Table prefix must be applied before these are imported — __tablename__ is fixed
 # at class-definition time (see orchestrator/db/base.py::configure_table_prefix).
+from orchestrator.audit import models as _audit_models  # noqa: E402,F401
 from orchestrator.auth import models as _auth_models  # noqa: E402,F401
 from orchestrator.db.base import Base  # noqa: E402
 from orchestrator.store import models as _store_models  # noqa: E402,F401

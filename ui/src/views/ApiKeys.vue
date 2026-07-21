@@ -44,7 +44,11 @@
           </td>
           <td>{{ k.last_used_at ? new Date(k.last_used_at).toLocaleString() : '—' }}</td>
           <td>{{ k.expires_at ? new Date(k.expires_at).toLocaleString() : '—' }}</td>
-          <td><button class="btn btn-danger" style="font-size:11px;" @click="removeKey(k.id)">Delete</button></td>
+          <td>
+            <router-link class="btn" style="font-size:11px; text-decoration:none;"
+                         :to="{ path: '/audit-log', query: { resource_type: 'apikey', resource_id: String(k.id) } }">Audit</router-link>
+            <button class="btn btn-danger" style="font-size:11px;" @click="removeKey(k.id)">Delete</button>
+          </td>
         </tr>
       </table>
       <div v-else class="loading">No API keys yet</div>

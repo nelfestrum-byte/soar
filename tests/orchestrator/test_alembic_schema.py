@@ -16,6 +16,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, inspect
 
 # Import models so Base.metadata is fully populated for comparison.
+from orchestrator.audit import models as _audit_models  # noqa: F401
 from orchestrator.auth import models as _auth_models  # noqa: F401
 from orchestrator.db.base import Base
 from orchestrator.store import models as _store_models  # noqa: F401

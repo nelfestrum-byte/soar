@@ -152,13 +152,152 @@ jobs:
 | `algorithm` | `HS256` | Алгоритм JWT |
 | `cors_origins` | `["http://localhost:3000", "http://localhost:5173"]` | Разрешённые origins (обязательны при `allow_credentials=True`, `"*"` не подходит) |
 
-Создание пользователя:
+#### Пользователи
+
+Создание — только через CLI (нет API-эндпоинта):
 
 ```bash
 python -m orchestrator.auth.cli create-user --username admin --role admin
+# без --password — интерактивный запрос (getpass)
 ```
 
+CLI подключается к БД через переменную окружения `SOAR_DB_URL`, а **не**
+через `config.yaml` — по умолчанию `sqlite+aiosqlite:///./soar.db`. На
+стенде (Postgres) нужно явно передать ту же БД, что в
+[`deploy/stage/config.yaml`](deploy/stage/config.yaml):
+
+```bash
+docker compose exec -e SOAR_DB_URL=postgresql+asyncpg://soar:soar@postgres:5432/soar \
+  orchestrator python -m orchestrator.auth.cli create-user --username admin --role admin
+```
+
+> **Известное ограничение:** CLI не применяет `database.table_prefix`
+> (`configure_table_prefix()` вызывается только при старте сервиса в
+> `orchestrator/main.py`, CLI его не вызывает). На стенде
+> (`table_prefix: "stage_"`) команда выше создаст пользователя в
+> неprefix-таблице `users`, которую запущенный сервис не видит (он читает
+> `stage_users`). Пока не доработано — единственный рабочий способ завести
+> пользователя на стенде — вставить строку вручную через `psql` в таблицу
+> `stage_users` (хеш пароля — `orchestrator.auth.service.hash_password()`).
+
+Удаление / деактивация пользователя — **не реализовано**: нет ни CLI
+subcommand, ни API-эндпоинта (`orchestrator/auth/router.py` содержит только
+`/auth/keys`, эндпоинтов `/auth/users` нет). У `User` есть поле `is_active`
+и оно проверяется при логине, но выставить его в `false` сейчас можно
+только прямым `UPDATE` в БД.
+
+#### API-ключи (M2M)
+
+Только через API, нужна роль `admin` (JWT залогиненного admin'а в
+заголовке `Authorization: Bearer <access_token>`):
+
+```bash
+# создать — ключ возвращается один раз, повторно не показывается
+curl -X POST http://localhost:8000/auth/keys \
+  -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "soc-core-backend", "role": "service"}'
+
+# список — без самого ключа, только id/name/prefix/role/last_used_at
+curl http://localhost:8000/auth/keys -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# удалить
+curl -X DELETE http://localhost:8000/auth/keys/<id> -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+Опционально `expires_at` (ISO 8601) в теле `POST /auth/keys` — TTL ключа.
+
+#### Аутентификация (логин / refresh / logout)
+
+```bash
+# логин — access_token (TTL access_token_ttl) + refresh_token (TTL refresh_token_ttl)
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "..."}'
+
+# все дальнейшие запросы — Bearer access_token
+curl http://localhost:8000/jobs -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# access_token истёк (401) — обменять refresh_token на новую пару
+# (ротация: старый refresh_token отзывается сразу)
+curl -X POST http://localhost:8000/auth/refresh \
+  -H "Content-Type: application/json" -d '{"refresh_token": "..."}'
+
+# logout — отозвать refresh_token
+curl -X POST http://localhost:8000/auth/logout \
+  -H "Content-Type: application/json" -d '{"refresh_token": "..."}'
+
+# кто я
+curl http://localhost:8000/auth/me -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+M2M-клиенты используют API-ключ напрямую в `Authorization: Bearer soar_<hex>`
+— без `/auth/login` и без refresh (ключ статический, живёт до `expires_at`
+или ручного удаления через `DELETE /auth/keys/{id}`).
+
+UI (`ui/`) делает то же самое автоматически — см. `ui/src/api.js` /
+`ui/src/store/auth.js`: форма логина, авто-refresh при 401, logout.
+
 Роли: `admin`, `analyst`, `viewer`, `service`. Подробности — [AGENTS.md → Authentication](AGENTS.md#authentication-orchestratorauth).
+
+## Логи — где что смотреть
+
+В проекте три независимых источника логов — эксплуатационный, per-job и
+audit trail. Они не взаимозаменяемы: у каждого свой смысл, своё хранилище
+и свой способ доступа.
+
+| Что | Где хранится | Как посмотреть | Кто видит |
+|---|---|---|---|
+| **Access-лог** (запросы к API) | Файл `config.logging.file` (+ stderr) | `docker compose exec orchestrator tail -f /var/log/soar/orchestrator.log` | Только с доступом к контейнеру — через API не отдаётся |
+| **Job-лог** (вывод конкретного запуска workflow) | Файл в `jobs.log_dir`, один на job | `GET /logs/{job_id}` или `GET /logs/{job_id}/stream` (SSE); в UI — кнопка **Log** на странице Jobs | Роли `analyst`/`service`/`admin` |
+| **Audit trail** (кто/что/когда изменил) | Таблица `audit_log` в БД (`database.url`) | `GET /audit-log`; в UI — раздел **Audit Log** в навигации | Только `admin` |
+
+### Access-лог
+
+Одна строка на запрос: `method`, `path`, `status`, `duration_ms`,
+`client_ip`, `user_id`, плюс сквозной `request_id` (тот же, что в заголовке
+ответа `X-Request-ID`) — по нему можно склеить access-лог с любым другим
+логом, случившимся в рамках того же запроса. Туда же попадают
+security-события, которые раньше проходили молча: неудачные попытки
+аутентификации (401/403), срабатывание rate-limit (429), невалидный
+`X-Webhook-Token`.
+
+```bash
+docker compose -f deploy/stage/docker-compose.yml exec orchestrator \
+  tail -f /var/log/soar/orchestrator.log
+```
+
+Тела запросов и заголовок `Authorization`/`X-Webhook-Token` в этот лог
+никогда не пишутся.
+
+### Job-лог
+
+Вывод конкретного запуска workflow (stdout subprocess'а). Доступен через
+API и в UI — на странице **Jobs** у завершённого/выполняющегося job'а есть
+кнопка **Log**, которая ведёт на `/logs/:id` (живой tail через SSE, пока
+job не завершится).
+
+### Audit trail
+
+Кто именно вызвал мутирующий эндпоинт (создание/изменение/удаление
+workflow, action, connector, API-ключа, отмена job'а) — записывается в
+БД, читается через `GET /audit-log` (`admin`-only, с фильтрами по
+`resource_type`, `resource_id`, `action`, `actor_name`, `since`/`until`,
+пагинация `limit`/`offset`).
+
+> **Важно:** без фильтров `GET /audit-log` возвращает записи **по всем
+> типам ресурсов сразу** (workflows, actions, connectors, api-keys, jobs),
+> отсортированные по времени — это не журнал одного конкретного workflow,
+> а общий поток. Чтобы увидеть историю только одного ресурса —
+> `?resource_type=workflow&resource_id=<name>`.
+
+В UI это решено так: раздел **Audit Log** в навигации (виден только
+`admin`) показывает общий поток с формой фильтров; а на страницах
+**Workflows** / **Actions** / **Connectors** / **Jobs** / **API Keys** у
+каждой строки есть кнопка **Audit**, которая ведёт на `/audit-log` уже
+предзаполненным фильтром `resource_type`+`resource_id` для этой конкретной
+записи — так что "все workflow в кучу" видно только на общей странице, а
+из конкретного workflow/action/connector можно попасть сразу в его
+собственную историю.
 
 ## Способы деплоя
 

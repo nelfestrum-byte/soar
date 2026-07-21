@@ -129,6 +129,11 @@ export const api = {
   getTools: () => request('/tools'),
   getTool: (name) => request(`/tools/${name}`),
 
+  getAuditLog: (params = {}) => {
+    const qs = new URLSearchParams(params).toString()
+    return request(`/audit-log${qs ? '?' + qs : ''}`)
+  },
+
   login: async (username, password) => {
     const data = await request('/auth/login', {
       method: 'POST',

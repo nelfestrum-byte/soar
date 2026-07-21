@@ -32,6 +32,8 @@
             <td style="white-space:nowrap;">
               <button class="btn btn-primary" style="font-size:11px;" @click="editCode(c.name)">Edit</button>
               <button class="btn btn-success" style="font-size:11px;" @click="editConfig(c.name)">Setup</button>
+              <router-link v-if="auth.role === 'admin'" class="btn" style="font-size:11px; text-decoration:none;"
+                           :to="{ path: '/audit-log', query: { resource_type: 'connector', resource_id: c.name } }">Audit</router-link>
               <button class="btn btn-danger" style="font-size:11px;" @click="removeConnector(c.name)">Delete</button>
             </td>
           </tr>
@@ -78,6 +80,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { api } from '../api.js'
+import { auth } from '../store/auth.js'
 
 const connectors = ref([])
 const loading = ref(true)

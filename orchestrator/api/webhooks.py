@@ -1,6 +1,9 @@
 import secrets
 
 from fastapi import APIRouter, HTTPException, Request
+from loguru import logger
+
+from orchestrator.core.net import resolve_client_ip
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
@@ -18,6 +21,9 @@ async def handle_webhook(workflow_name: str, request: Request):
 
     token = request.headers.get("X-Webhook-Token", "")
     if not meta.token or not secrets.compare_digest(token, meta.token):
+        logger.bind(workflow_name=workflow_name, client_ip=resolve_client_ip(request)).warning(
+            "webhook.invalid_token"
+        )
         raise HTTPException(status_code=403, detail="Invalid token")
 
     if not meta.enabled:

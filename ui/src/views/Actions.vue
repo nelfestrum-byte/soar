@@ -25,6 +25,8 @@
                style="display:flex; align-items:center; gap:8px; padding:8px; border-bottom:1px solid #eee;"
                :style="{background: selected===name ? '#e3f2fd' : ''}">
             <span style="flex:1; cursor:pointer; font-family:monospace;" @click="loadAction(name)">{{ name }}.py</span>
+            <router-link v-if="auth.role === 'admin'" class="btn" style="font-size:11px; text-decoration:none;"
+                         :to="{ path: '/audit-log', query: { resource_type: 'action', resource_id: name } }">Audit</router-link>
             <button class="btn btn-danger" style="font-size:11px;" @click="removeAction(name)">Delete</button>
           </div>
         </div>
@@ -53,6 +55,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { api } from '../api.js'
+import { auth } from '../store/auth.js'
 
 const actions = ref([])
 const loading = ref(true)

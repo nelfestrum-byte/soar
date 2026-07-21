@@ -28,6 +28,8 @@
           <td>{{ job.duration_seconds ? job.duration_seconds.toFixed(1)+'s' : '—' }}</td>
           <td>
             <router-link v-if="job.log_path" :to="'/logs/'+job.id" class="btn btn-primary" style="text-decoration:none;">Log</router-link>
+            <router-link v-if="auth.role === 'admin'" class="btn" style="text-decoration:none;"
+                         :to="{ path: '/audit-log', query: { resource_type: 'job', resource_id: job.id } }">Audit</router-link>
             <button v-if="job.status==='pending'||job.status==='running'" class="btn btn-danger" @click="cancel(job)">Cancel</button>
           </td>
         </tr>
@@ -40,6 +42,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { api } from '../api.js'
+import { auth } from '../store/auth.js'
 
 const jobs = ref([])
 const loading = ref(true)

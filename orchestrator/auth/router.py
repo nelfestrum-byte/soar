@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from orchestrator.audit import service as audit_service
 from orchestrator.auth.dependencies import CurrentUser, get_current_user, require_role
+from orchestrator.auth.models import ApiKey
 from orchestrator.auth.schemas import (
     ApiKeyCreate,
     ApiKeyCreated,
@@ -21,8 +24,6 @@ from orchestrator.auth.service import (
     update_last_login,
 )
 from orchestrator.db.session import get_db
-from sqlalchemy import select, delete
-from orchestrator.auth.models import ApiKey
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -83,10 +84,18 @@ async def me(request: Request, db: AsyncSession = Depends(get_db), user: Current
     return UserOut.model_validate(db_user)
 
 
-@router.post("/keys", response_model=ApiKeyCreated, dependencies=[Depends(require_role("admin"))])
-async def create_key(body: ApiKeyCreate, db: AsyncSession = Depends(get_db)):
+@router.post("/keys", response_model=ApiKeyCreated)
+async def create_key(
+    body: ApiKeyCreate, request: Request,
+    user: CurrentUser = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
     key_obj, raw = await create_api_key(db, body.name, body.role, body.expires_at)
     base = ApiKeyOut.model_validate(key_obj)
+    await audit_service.record(
+        db, user=user, action="apikey.create", resource_type="apikey",
+        resource_id=str(key_obj.id), request=request, detail={"name": body.name, "role": body.role},
+    )
     return ApiKeyCreated(**base.model_dump(), key=raw)
 
 
@@ -96,12 +105,20 @@ async def list_keys(db: AsyncSession = Depends(get_db)):
     return [ApiKeyOut.model_validate(k) for k in result.scalars()]
 
 
-@router.delete("/keys/{key_id}", dependencies=[Depends(require_role("admin"))])
-async def delete_key(key_id: int, db: AsyncSession = Depends(get_db)):
+@router.delete("/keys/{key_id}")
+async def delete_key(
+    key_id: int, request: Request,
+    user: CurrentUser = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(ApiKey).where(ApiKey.id == key_id))
     key = result.scalar_one_or_none()
     if not key:
         raise HTTPException(status_code=404, detail="API key not found")
     await db.execute(delete(ApiKey).where(ApiKey.id == key_id))
     await db.commit()
+    await audit_service.record(
+        db, user=user, action="apikey.delete", resource_type="apikey",
+        resource_id=str(key_id), request=request, detail={"name": key.name},
+    )
     return {"detail": "Deleted"}

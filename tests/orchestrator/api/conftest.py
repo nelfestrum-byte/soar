@@ -1,7 +1,8 @@
 import os
+from unittest.mock import AsyncMock
 
 import pytest
-from unittest.mock import AsyncMock
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from orchestrator.auth.dependencies import CurrentUser, get_current_user
 from orchestrator.config import OrchestratorConfig
@@ -10,8 +11,12 @@ from orchestrator.core.queue.memory import InMemoryQueue
 from orchestrator.core.scheduler import OrchestratorScheduler
 from orchestrator.core.subprocess_runner import SubprocessRunner
 from orchestrator.core.worker_pool import WorkerPool
+from orchestrator.db.base import Base
+from orchestrator.db.session import get_db
 from orchestrator.main import app
 from orchestrator.store.job_store import JobStore
+
+_DB_URL = "sqlite+aiosqlite:///:memory:"
 
 
 def _mock_admin() -> CurrentUser:
@@ -19,9 +24,22 @@ def _mock_admin() -> CurrentUser:
 
 
 @pytest.fixture(autouse=True)
-def setup_app_state(tmp_path):
+async def setup_app_state(tmp_path):
     # Bypass auth for existing tests: every request is treated as admin
     app.dependency_overrides[get_current_user] = _mock_admin
+
+    # In-memory DB so routes that write audit_log rows (Depends(get_db)) work
+    # without needing a full auth setup — mirrors test_auth_api.py's db_engine.
+    engine = create_async_engine(_DB_URL, connect_args={"check_same_thread": False})
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    db_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _get_db():
+        async with db_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = _get_db
 
     queue = InMemoryQueue()
     job_store = JobStore()
@@ -60,7 +78,12 @@ def setup_app_state(tmp_path):
     app.state.config = config
     app.state.job_store = job_store
     app.state.queue = queue
+    app.state.db_session_factory = db_factory
 
     yield
 
     app.dependency_overrides.pop(get_current_user, None)
+    app.dependency_overrides.pop(get_db, None)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()

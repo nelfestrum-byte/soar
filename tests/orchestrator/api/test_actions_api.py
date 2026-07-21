@@ -1,7 +1,19 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
+from orchestrator.audit.models import AuditLog
 from orchestrator.main import app
+
+
+async def _audit_rows(resource_type: str, resource_id: str) -> list[AuditLog]:
+    async with app.state.db_session_factory() as session:
+        result = await session.execute(
+            select(AuditLog).where(
+                AuditLog.resource_type == resource_type, AuditLog.resource_id == resource_id
+            )
+        )
+        return list(result.scalars())
 
 
 @pytest.mark.asyncio
@@ -83,3 +95,15 @@ async def test_delete_action():
         r = await c.delete("/actions/to_delete")
         assert r.status_code == 200
         assert r.json()["status"] == "deleted"
+
+
+@pytest.mark.asyncio
+async def test_save_delete_action_writes_audit_rows():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.put("/actions/audited_action", content=b"# test action")
+        await c.delete("/actions/audited_action")
+
+    rows = await _audit_rows("action", "audited_action")
+    actions = {row.action for row in rows}
+    assert actions == {"action.update", "action.delete"}

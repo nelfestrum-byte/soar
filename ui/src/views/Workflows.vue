@@ -44,6 +44,8 @@
               </template>
               <button class="btn btn-primary" style="font-size:11px;" @click="editWorkflow(wf.name)">Edit</button>
               <button v-if="wf.type === 'manual'" class="btn btn-success" style="font-size:11px;" @click="showRun(wf.className)">Run</button>
+              <router-link v-if="auth.role === 'admin'" class="btn" style="font-size:11px; text-decoration:none;"
+                           :to="{ path: '/audit-log', query: { resource_type: 'workflow', resource_id: wf.name } }">Audit</router-link>
               <button class="btn btn-danger" style="font-size:11px;" @click="removeWorkflow(wf.name)">Delete</button>
             </td>
           </tr>
@@ -91,6 +93,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { api } from '../api.js'
+import { auth } from '../store/auth.js'
 
 const fileWorkflows = ref([])
 const metaMap = ref({})

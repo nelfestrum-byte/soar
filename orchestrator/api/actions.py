@@ -1,9 +1,12 @@
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from orchestrator.api.validation import validate_name, validate_path_within
-from orchestrator.auth.dependencies import require_role
+from orchestrator.audit import service as audit_service
+from orchestrator.auth.dependencies import CurrentUser, require_role
+from orchestrator.db.session import get_db
 
 router = APIRouter(prefix="/actions", tags=["actions"])
 
@@ -70,8 +73,12 @@ async def get_action(name: str, request: Request):
     return {"name": name, "content": content}
 
 
-@router.put("/{name}", dependencies=[Depends(require_role(*_ADMIN))])
-async def save_action(name: str, request: Request):
+@router.put("/{name}")
+async def save_action(
+    name: str, request: Request,
+    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
     validate_name(name)
     config = request.app.state.config
     filepath = os.path.join(config.soar.actions_dir, f"{name}.py")
@@ -92,15 +99,27 @@ async def save_action(name: str, request: Request):
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(code)
     git = request.app.state.git
+    author_name, author_email = audit_service.git_author(user)
     try:
-        commit_hash = await git.commit(f"actions/{name}.py", f"Update action {name}")
+        commit_hash = await git.commit(
+            f"actions/{name}.py", f"Update action {name}",
+            author_name=author_name, author_email=author_email,
+        )
     except RuntimeError as e:
         return {"status": "saved", "commit": "", "warning": str(e)}
+    await audit_service.record(
+        db, user=user, action="action.update", resource_type="action",
+        resource_id=name, request=request, detail={"commit": commit_hash},
+    )
     return {"status": "saved", "commit": commit_hash}
 
 
-@router.delete("/{name}", dependencies=[Depends(require_role(*_ADMIN))])
-async def delete_action(name: str, request: Request):
+@router.delete("/{name}")
+async def delete_action(
+    name: str, request: Request,
+    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
     validate_name(name)
     config = request.app.state.config
     filepath = os.path.join(config.soar.actions_dir, f"{name}.py")
@@ -109,8 +128,16 @@ async def delete_action(name: str, request: Request):
         raise HTTPException(status_code=404, detail="Action not found")
     os.remove(filepath)
     git = request.app.state.git
+    author_name, author_email = audit_service.git_author(user)
     try:
-        commit_hash = await git.commit(f"actions/{name}.py", f"Delete action {name}")
+        commit_hash = await git.commit(
+            f"actions/{name}.py", f"Delete action {name}",
+            author_name=author_name, author_email=author_email,
+        )
     except RuntimeError as e:
         return {"status": "deleted", "commit": "", "warning": str(e)}
+    await audit_service.record(
+        db, user=user, action="action.delete", resource_type="action",
+        resource_id=name, request=request, detail={"commit": commit_hash},
+    )
     return {"status": "deleted", "commit": commit_hash}

@@ -1,9 +1,12 @@
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from orchestrator.api.validation import validate_name, validate_path_within
-from orchestrator.auth.dependencies import require_role
+from orchestrator.audit import service as audit_service
+from orchestrator.auth.dependencies import CurrentUser, require_role
+from orchestrator.db.session import get_db
 
 _RO = ("viewer", "analyst", "service", "admin")
 _RW = ("analyst", "admin")
@@ -106,8 +109,12 @@ async def get_workflow(name: str, request: Request):
     return result
 
 
-@router.post("/{name}/enable", dependencies=[Depends(require_role(*_RW))])
-async def enable_workflow(name: str, request: Request):
+@router.post("/{name}/enable")
+async def enable_workflow(
+    name: str, request: Request,
+    user: CurrentUser = Depends(require_role(*_RW)),
+    db: AsyncSession = Depends(get_db),
+):
     job_manager = request.app.state.job_manager
     meta = job_manager.get_meta(name)
     if not meta:
@@ -116,11 +123,19 @@ async def enable_workflow(name: str, request: Request):
     _save_state(request.app.state.config, job_manager.list_metas())
     scheduler = request.app.state.scheduler
     await scheduler.reload(job_manager.list_metas())
+    await audit_service.record(
+        db, user=user, action="workflow.enable",
+        resource_type="workflow", resource_id=name, request=request,
+    )
     return {"status": "enabled", "name": name}
 
 
-@router.post("/{name}/disable", dependencies=[Depends(require_role(*_RW))])
-async def disable_workflow(name: str, request: Request):
+@router.post("/{name}/disable")
+async def disable_workflow(
+    name: str, request: Request,
+    user: CurrentUser = Depends(require_role(*_RW)),
+    db: AsyncSession = Depends(get_db),
+):
     job_manager = request.app.state.job_manager
     meta = job_manager.get_meta(name)
     if not meta:
@@ -129,6 +144,10 @@ async def disable_workflow(name: str, request: Request):
     _save_state(request.app.state.config, job_manager.list_metas())
     scheduler = request.app.state.scheduler
     await scheduler.reload(job_manager.list_metas())
+    await audit_service.record(
+        db, user=user, action="workflow.disable",
+        resource_type="workflow", resource_id=name, request=request,
+    )
     return {"status": "disabled", "name": name}
 
 
@@ -176,8 +195,12 @@ async def get_workflow_code(name: str, request: Request):
     return {"name": name, "content": content}
 
 
-@router.put("/{name}/code", dependencies=[Depends(require_role(*_ADMIN))])
-async def save_workflow_code(name: str, request: Request):
+@router.put("/{name}/code")
+async def save_workflow_code(
+    name: str, request: Request,
+    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
     validate_name(name)
     config = request.app.state.config
     filepath = os.path.join(config.soar.workflows_dir, f"{name}.py")
@@ -199,8 +222,12 @@ async def save_workflow_code(name: str, request: Request):
         f.write(code)
 
     git = request.app.state.git
+    author_name, author_email = audit_service.git_author(user)
     try:
-        commit_hash = await git.commit(f"workflows/{name}.py", f"Update workflow {name}")
+        commit_hash = await git.commit(
+            f"workflows/{name}.py", f"Update workflow {name}",
+            author_name=author_name, author_email=author_email,
+        )
     except RuntimeError as e:
         return {"status": "saved", "commit": "", "warning": str(e)}
 
@@ -211,11 +238,20 @@ async def save_workflow_code(name: str, request: Request):
     job_manager.set_metas(workflows)
     await scheduler.reload(workflows)
 
+    await audit_service.record(
+        db, user=user, action="workflow.update", resource_type="workflow",
+        resource_id=name, request=request, detail={"commit": commit_hash},
+    )
+
     return {"status": "saved", "commit": commit_hash}
 
 
-@router.delete("/{name}/code", dependencies=[Depends(require_role(*_ADMIN))])
-async def delete_workflow_code(name: str, request: Request):
+@router.delete("/{name}/code")
+async def delete_workflow_code(
+    name: str, request: Request,
+    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
     validate_name(name)
     config = request.app.state.config
     filepath = os.path.join(config.soar.workflows_dir, f"{name}.py")
@@ -227,8 +263,12 @@ async def delete_workflow_code(name: str, request: Request):
     _remove_from_state(config, name)
 
     git = request.app.state.git
+    author_name, author_email = audit_service.git_author(user)
     try:
-        commit_hash = await git.commit(f"workflows/{name}.py", f"Delete workflow {name}")
+        commit_hash = await git.commit(
+            f"workflows/{name}.py", f"Delete workflow {name}",
+            author_name=author_name, author_email=author_email,
+        )
     except RuntimeError as e:
         return {"status": "deleted", "commit": "", "warning": str(e)}
 
@@ -238,6 +278,11 @@ async def delete_workflow_code(name: str, request: Request):
     workflows = load_workflow_metas(config)
     job_manager.set_metas(workflows)
     await scheduler.reload(workflows)
+
+    await audit_service.record(
+        db, user=user, action="workflow.delete", resource_type="workflow",
+        resource_id=name, request=request, detail={"commit": commit_hash},
+    )
 
     return {"status": "deleted", "commit": commit_hash}
 

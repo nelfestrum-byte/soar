@@ -9,9 +9,12 @@ from urllib.parse import urlparse
 import yaml as pyyaml
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from orchestrator.api.validation import validate_name, validate_path_within
-from orchestrator.auth.dependencies import require_role
+from orchestrator.audit import service as audit_service
+from orchestrator.auth.dependencies import CurrentUser, require_role
+from orchestrator.db.session import get_db
 from soar.tools.openapi import OpenAPIGenerator
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
@@ -200,8 +203,12 @@ async def preview_spec_url(url: str):
     return await preview_spec(Request, body)
 
 
-@router.post("/generate", dependencies=[Depends(require_role(*_ADMIN))])
-async def generate_connector(request: Request, body: GenerateRequest):
+@router.post("/generate")
+async def generate_connector(
+    request: Request, body: GenerateRequest,
+    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
     config = request.app.state.config
     connectors_dir = Path(config.soar.connectors_dir)
 
@@ -226,9 +233,13 @@ async def generate_connector(request: Request, body: GenerateRequest):
 
     # Git auto-commit
     git = request.app.state.git
+    author_name, author_email = audit_service.git_author(user)
     try:
         for f in result["files"]:
-            await git.commit(f, f"Generated connector: {body.name}")
+            await git.commit(
+                f, f"Generated connector: {body.name}",
+                author_name=author_name, author_email=author_email,
+            )
     except RuntimeError:
         pass
 
@@ -238,6 +249,11 @@ async def generate_connector(request: Request, body: GenerateRequest):
     workflows = load_workflow_metas(config)
     job_manager.set_metas(workflows)
     await scheduler.reload(workflows)
+
+    await audit_service.record(
+        db, user=user, action="connector.generate", resource_type="connector",
+        resource_id=body.name, request=request, detail={"files": result["files"]},
+    )
 
     return {"name": body.name, **result}
 
@@ -283,8 +299,12 @@ async def get_connector_code(name: str, request: Request):
     return {"name": name, "content": content}
 
 
-@router.put("/{name}/code", dependencies=[Depends(require_role(*_ADMIN))])
-async def save_connector_code(name: str, request: Request):
+@router.put("/{name}/code")
+async def save_connector_code(
+    name: str, request: Request,
+    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
     validate_name(name)
     config = request.app.state.config
     dirpath = os.path.join(config.soar.connectors_dir, name)
@@ -301,10 +321,18 @@ async def save_connector_code(name: str, request: Request):
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(content)
     git = request.app.state.git
+    author_name, author_email = audit_service.git_author(user)
     try:
-        commit_hash = await git.commit(f"connectors/{name}/{name}.py", f"Update connector {name}")
+        commit_hash = await git.commit(
+            f"connectors/{name}/{name}.py", f"Update connector {name}",
+            author_name=author_name, author_email=author_email,
+        )
     except RuntimeError as e:
         return {"status": "saved", "commit": "", "warning": str(e)}
+    await audit_service.record(
+        db, user=user, action="connector.update_code", resource_type="connector",
+        resource_id=name, request=request, detail={"commit": commit_hash},
+    )
     return {"status": "saved", "commit": commit_hash}
 
 
@@ -331,8 +359,12 @@ async def get_connector_config(name: str, request: Request):
     return {"name": name, "content": content}
 
 
-@router.put("/{name}/config", dependencies=[Depends(require_role(*_ADMIN))])
-async def save_connector_config(name: str, request: Request):
+@router.put("/{name}/config")
+async def save_connector_config(
+    name: str, request: Request,
+    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
     validate_name(name)
     config = request.app.state.config
     dirpath = os.path.join(config.soar.connectors_dir, name)
@@ -349,15 +381,27 @@ async def save_connector_config(name: str, request: Request):
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(content)
     git = request.app.state.git
+    author_name, author_email = audit_service.git_author(user)
     try:
-        commit_hash = await git.commit(f"connectors/{name}/{name}.yml", f"Update config {name}")
+        commit_hash = await git.commit(
+            f"connectors/{name}/{name}.yml", f"Update config {name}",
+            author_name=author_name, author_email=author_email,
+        )
     except RuntimeError as e:
         return {"status": "saved", "commit": "", "warning": str(e)}
+    await audit_service.record(
+        db, user=user, action="connector.update_config", resource_type="connector",
+        resource_id=name, request=request, detail={"commit": commit_hash},
+    )
     return {"status": "saved", "commit": commit_hash}
 
 
-@router.post("/{name}", dependencies=[Depends(require_role(*_ADMIN))])
-async def create_connector(name: str, request: Request, class_name: str = ""):
+@router.post("/{name}")
+async def create_connector(
+    name: str, request: Request, class_name: str = "",
+    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
     validate_name(name)
     config = request.app.state.config
     dirpath = os.path.join(config.soar.connectors_dir, name)
@@ -386,15 +430,27 @@ async def create_connector(name: str, request: Request, class_name: str = ""):
         f.write("")
 
     git = request.app.state.git
+    author_name, author_email = audit_service.git_author(user)
     try:
-        commit_hash = await git.commit(f"connectors/{name}/", f"Create connector {name}")
+        commit_hash = await git.commit(
+            f"connectors/{name}/", f"Create connector {name}",
+            author_name=author_name, author_email=author_email,
+        )
     except RuntimeError as e:
         return {"status": "created", "commit": "", "warning": str(e)}
+    await audit_service.record(
+        db, user=user, action="connector.create", resource_type="connector",
+        resource_id=name, request=request, detail={"commit": commit_hash},
+    )
     return {"status": "created", "commit": commit_hash}
 
 
-@router.delete("/{name}", dependencies=[Depends(require_role(*_ADMIN))])
-async def delete_connector(name: str, request: Request):
+@router.delete("/{name}")
+async def delete_connector(
+    name: str, request: Request,
+    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
     validate_name(name)
     config = request.app.state.config
     dirpath = os.path.join(config.soar.connectors_dir, name)
@@ -404,8 +460,16 @@ async def delete_connector(name: str, request: Request):
     import shutil
     shutil.rmtree(dirpath)
     git = request.app.state.git
+    author_name, author_email = audit_service.git_author(user)
     try:
-        commit_hash = await git.commit(f"connectors/{name}/", f"Delete connector {name}")
+        commit_hash = await git.commit(
+            f"connectors/{name}/", f"Delete connector {name}",
+            author_name=author_name, author_email=author_email,
+        )
     except RuntimeError as e:
         return {"status": "deleted", "commit": "", "warning": str(e)}
+    await audit_service.record(
+        db, user=user, action="connector.delete", resource_type="connector",
+        resource_id=name, request=request, detail={"commit": commit_hash},
+    )
     return {"status": "deleted", "commit": commit_hash}
