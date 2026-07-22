@@ -154,37 +154,64 @@ jobs:
 
 #### Пользователи
 
-Создание — только через CLI (нет API-эндпоинта):
+**Бутстрап первого admin'а — только через CLI** (пока не существует ни
+одного пользователя, вызывать API просто некому — им нужен уже
+залогиненный admin). CLI сам читает `SOAR_CONFIG`/`config.yaml` — то же
+самое, чем пользуется сервис — так что `database.url` и
+`database.table_prefix` всегда совпадают с тем, что реально запущено:
 
 ```bash
 python -m orchestrator.auth.cli create-user --username admin --role admin
 # без --password — интерактивный запрос (getpass)
 ```
 
-CLI подключается к БД через переменную окружения `SOAR_DB_URL`, а **не**
-через `config.yaml` — по умолчанию `sqlite+aiosqlite:///./soar.db`. На
-стенде (Postgres) нужно явно передать ту же БД, что в
-[`deploy/stage/config.yaml`](deploy/stage/config.yaml):
+На стенде — та же команда внутри контейнера, `SOAR_CONFIG` уже указывает
+на [`deploy/stage/config.yaml`](deploy/stage/config.yaml) (Postgres +
+`table_prefix: "stage_"`) через переменную окружения самого контейнера:
 
 ```bash
-docker compose exec -e SOAR_DB_URL=postgresql+asyncpg://soar:soar@postgres:5432/soar \
-  orchestrator python -m orchestrator.auth.cli create-user --username admin --role admin
+docker compose exec orchestrator python -m orchestrator.auth.cli create-user --username admin --role admin
 ```
 
-> **Известное ограничение:** CLI не применяет `database.table_prefix`
-> (`configure_table_prefix()` вызывается только при старте сервиса в
-> `orchestrator/main.py`, CLI его не вызывает). На стенде
-> (`table_prefix: "stage_"`) команда выше создаст пользователя в
-> неprefix-таблице `users`, которую запущенный сервис не видит (он читает
-> `stage_users`). Пока не доработано — единственный рабочий способ завести
-> пользователя на стенде — вставить строку вручную через `psql` в таблицу
-> `stage_users` (хеш пароля — `orchestrator.auth.service.hash_password()`).
+CLI также умеет `deactivate-user`/`activate-user --username X` — тот же
+soft-delete, что и ниже, для случаев без доступа к UI/API.
 
-Удаление / деактивация пользователя — **не реализовано**: нет ни CLI
-subcommand, ни API-эндпоинта (`orchestrator/auth/router.py` содержит только
-`/auth/keys`, эндпоинтов `/auth/users` нет). У `User` есть поле `is_active`
-и оно проверяется при логине, но выставить его в `false` сейчас можно
-только прямым `UPDATE` в БД.
+**Дальнейшее управление — через API/UI** (`admin`-only, `Authorization:
+Bearer <access_token>`), UI-страница — `/users` (пункт «Users» в навбаре,
+виден только `admin`):
+
+```bash
+# создать
+curl -X POST http://localhost:8000/auth/users \
+  -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"username": "alice", "password": "at-least-8-chars", "role": "analyst"}'
+
+# список — без password_hash
+curl http://localhost:8000/auth/users -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# изменить роль / деактивировать / сбросить пароль — один и тот же PATCH,
+# поля независимы и все опциональны
+curl -X PATCH http://localhost:8000/auth/users/<id> \
+  -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"role": "admin"}'
+curl -X PATCH http://localhost:8000/auth/users/<id> \
+  -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"is_active": false}'
+curl -X PATCH http://localhost:8000/auth/users/<id> \
+  -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" \
+  -d '{"password": "new-password-here"}'
+```
+
+Жёсткого удаления нет — только soft-delete через `is_active` (уже
+проверяется при логине). `PATCH` на **свой собственный** аккаунт с
+`is_active: false` возвращает `409` — админ не может случайно
+заблокировать сам себя; деактивировать себя может только *другой* admin.
+Деактивация блокирует новые `/auth/login`, но уже выданный access-токен
+остаётся валиден до истечения `access_token_ttl` (до 30 мин по умолчанию)
+— JWT self-contained и не перепроверяется по БД на каждый запрос. Уже
+выданные refresh-токены тоже не отзываются автоматически. Все
+create/update пишутся в audit log (`GET /audit-log?resource_type=user`) —
+пароль в `detail` никогда не попадает, только флаг `password_reset: true`.
 
 #### API-ключи (M2M)
 

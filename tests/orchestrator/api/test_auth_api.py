@@ -119,6 +119,15 @@ async def test_login_unknown_user(auth_client):
     assert r.status_code == 401
 
 
+@pytest.mark.asyncio
+async def test_login_deactivated_user(auth_client, admin_user, db_session):
+    from orchestrator.auth.service import set_user_active
+
+    await set_user_active(db_session, "admin", False)
+    r = await auth_client.post("/auth/login", json={"username": "admin", "password": "adminpass"})
+    assert r.status_code == 401
+
+
 # ── me ──────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -185,6 +194,17 @@ async def test_logout_revokes_refresh(auth_client, admin_user):
     await auth_client.post("/auth/logout", json={"refresh_token": rt})
     r2 = await auth_client.post("/auth/refresh", json={"refresh_token": rt})
     assert r2.status_code == 401
+
+
+# ── health ──────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_health_requires_no_auth(auth_client):
+    # Docker/orchestrator healthchecks can't hold credentials — /health must
+    # stay reachable even with auth fully enabled, unlike /status.
+    r = await auth_client.get("/health")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
 
 
 # ── RBAC ────────────────────────────────────────────────────────────────
@@ -321,3 +341,132 @@ async def test_viewer_cannot_create_key(auth_client, admin_user, viewer_user):
     r = await auth_client.post("/auth/keys", json={"name": "x", "role": "service"},
                                headers={"Authorization": f"Bearer {viewer_token}"})
     assert r.status_code == 403
+
+
+# ── user management ─────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_admin_can_create_user(auth_client, admin_user):
+    token = await _login(auth_client, "admin", "adminpass")
+    r = await auth_client.post("/auth/users",
+                               json={"username": "carol", "password": "carolpass1", "role": "viewer"},
+                               headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["username"] == "carol"
+    assert data["role"] == "viewer"
+    assert "password" not in data
+    assert "password_hash" not in data
+
+
+@pytest.mark.asyncio
+async def test_viewer_cannot_create_user(auth_client, admin_user, viewer_user):
+    token = await _login(auth_client, "viewer", "viewerpass")
+    r = await auth_client.post("/auth/users",
+                               json={"username": "carol", "password": "carolpass1", "role": "viewer"},
+                               headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_analyst_cannot_list_users(auth_client, admin_user, analyst_user):
+    token = await _login(auth_client, "analyst", "analystpass")
+    r = await auth_client.get("/auth/users", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_can_list_users(auth_client, admin_user, viewer_user):
+    token = await _login(auth_client, "admin", "adminpass")
+    r = await auth_client.get("/auth/users", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    usernames = {u["username"] for u in r.json()}
+    assert {"admin", "viewer"} <= usernames
+
+
+@pytest.mark.asyncio
+async def test_admin_can_change_user_role(auth_client, admin_user, viewer_user):
+    token = await _login(auth_client, "admin", "adminpass")
+    r = await auth_client.patch(f"/auth/users/{viewer_user.id}", json={"role": "analyst"},
+                                headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    assert r.json()["role"] == "analyst"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_deactivate_other_user(auth_client, admin_user, viewer_user):
+    token = await _login(auth_client, "admin", "adminpass")
+    r = await auth_client.patch(f"/auth/users/{viewer_user.id}", json={"is_active": False},
+                                headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    assert r.json()["is_active"] is False
+
+    r2 = await auth_client.post("/auth/login", json={"username": "viewer", "password": "viewerpass"})
+    assert r2.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_admin_can_reset_user_password(auth_client, admin_user, viewer_user):
+    token = await _login(auth_client, "admin", "adminpass")
+    r = await auth_client.patch(f"/auth/users/{viewer_user.id}", json={"password": "newpassword1"},
+                                headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+
+    r_old = await auth_client.post("/auth/login", json={"username": "viewer", "password": "viewerpass"})
+    assert r_old.status_code == 401
+    r_new = await auth_client.post("/auth/login", json={"username": "viewer", "password": "newpassword1"})
+    assert r_new.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_admin_cannot_deactivate_self(auth_client, admin_user):
+    token = await _login(auth_client, "admin", "adminpass")
+    r = await auth_client.patch(f"/auth/users/{admin_user.id}", json={"is_active": False},
+                                headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 409
+
+    r2 = await auth_client.post("/auth/login", json={"username": "admin", "password": "adminpass"})
+    assert r2.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_update_unknown_user_404(auth_client, admin_user):
+    token = await _login(auth_client, "admin", "adminpass")
+    r = await auth_client.patch("/auth/users/999999", json={"role": "admin"},
+                                headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_viewer_cannot_update_user(auth_client, admin_user, viewer_user, analyst_user):
+    token = await _login(auth_client, "viewer", "viewerpass")
+    r = await auth_client.patch(f"/auth/users/{analyst_user.id}", json={"role": "admin"},
+                                headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_create_and_update_user_writes_audit_rows(auth_client, admin_user, viewer_user, db_session):
+    from sqlalchemy import select
+
+    from orchestrator.audit.models import AuditLog
+
+    token = await _login(auth_client, "admin", "adminpass")
+    cr = await auth_client.post("/auth/users",
+                                json={"username": "dave", "password": "davepass1", "role": "viewer"},
+                                headers={"Authorization": f"Bearer {token}"})
+    user_id = cr.json()["id"]
+
+    await auth_client.patch(f"/auth/users/{user_id}", json={"password": "newdavepass"},
+                            headers={"Authorization": f"Bearer {token}"})
+
+    result = await db_session.execute(
+        select(AuditLog).where(AuditLog.resource_type == "user", AuditLog.resource_id == str(user_id))
+    )
+    rows = list(result.scalars())
+    actions = {row.action for row in rows}
+    assert actions == {"user.create", "user.update"}
+
+    update_row = next(r for r in rows if r.action == "user.update")
+    assert update_row.detail.get("password_reset") is True
+    assert "newdavepass" not in str(update_row.detail)

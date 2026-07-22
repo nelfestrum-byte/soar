@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from orchestrator.audit import service as audit_service
@@ -12,16 +13,21 @@ from orchestrator.auth.schemas import (
     LoginRequest,
     RefreshRequest,
     TokenResponse,
+    UserCreate,
     UserOut,
+    UserUpdate,
 )
 from orchestrator.auth.service import (
     authenticate_user,
     create_access_token,
     create_api_key,
     create_refresh_token,
+    create_user,
+    list_users,
     revoke_refresh_token,
     rotate_refresh_token,
     update_last_login,
+    update_user,
 )
 from orchestrator.db.session import get_db
 
@@ -122,3 +128,57 @@ async def delete_key(
         resource_id=str(key_id), request=request, detail={"name": key.name},
     )
     return {"detail": "Deleted"}
+
+
+@router.post("/users", response_model=UserOut)
+async def create_user_endpoint(
+    body: UserCreate, request: Request,
+    user: CurrentUser = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        new_user = await create_user(db, body.username, body.password, body.role)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Username already exists") from None
+    await audit_service.record(
+        db, user=user, action="user.create", resource_type="user",
+        resource_id=str(new_user.id), request=request,
+        detail={"username": body.username, "role": body.role},
+    )
+    return UserOut.model_validate(new_user)
+
+
+@router.get("/users", response_model=list[UserOut], dependencies=[Depends(require_role("admin"))])
+async def list_users_endpoint(db: AsyncSession = Depends(get_db)):
+    return [UserOut.model_validate(u) for u in await list_users(db)]
+
+
+@router.patch("/users/{user_id}", response_model=UserOut)
+async def update_user_endpoint(
+    user_id: int, body: UserUpdate, request: Request,
+    user: CurrentUser = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
+    if user_id == user.id and body.is_active is False:
+        raise HTTPException(status_code=409, detail="Cannot deactivate your own account")
+
+    try:
+        updated = await update_user(
+            db, user_id, role=body.role, is_active=body.is_active, password=body.password,
+        )
+    except LookupError:
+        raise HTTPException(status_code=404, detail="User not found") from None
+
+    detail: dict = {}
+    if body.role is not None:
+        detail["role"] = body.role
+    if body.is_active is not None:
+        detail["is_active"] = body.is_active
+    if body.password is not None:
+        detail["password_reset"] = True
+    await audit_service.record(
+        db, user=user, action="user.update", resource_type="user",
+        resource_id=str(user_id), request=request, detail=detail,
+    )
+    return UserOut.model_validate(updated)

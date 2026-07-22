@@ -92,9 +92,16 @@ docker compose up -d --scale orchestrator=1
 
 ## Health Check
 
-Check Redis connectivity:
+`GET /health` is unauthenticated (liveness probe — used by the Docker
+healthcheck itself, since it can't hold credentials):
 ```bash
-curl http://localhost:8000/status
+curl http://localhost:8000/health
+```
+
+`GET /status` has the actual detail (queue/workers/jobs) but requires auth
+once `auth.secret_key` is set:
+```bash
+curl http://localhost:8000/status -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
 ## Data

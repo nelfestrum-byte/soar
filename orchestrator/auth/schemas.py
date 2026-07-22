@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from orchestrator.auth.service import ROLES
 
 
 class LoginRequest(BaseModel):
@@ -27,6 +29,32 @@ class UserOut(BaseModel):
     last_login_at: datetime | None
 
     model_config = {"from_attributes": True}
+
+
+class UserCreate(BaseModel):
+    username: str = Field(..., min_length=1, max_length=64)
+    password: str = Field(..., min_length=8)
+    role: str = Field(default="analyst")
+
+    @field_validator("role")
+    @classmethod
+    def _validate_role(cls, v: str) -> str:
+        if v not in ROLES:
+            raise ValueError(f"role must be one of {sorted(ROLES)}")
+        return v
+
+
+class UserUpdate(BaseModel):
+    role: str | None = None
+    is_active: bool | None = None
+    password: str | None = Field(default=None, min_length=8)
+
+    @field_validator("role")
+    @classmethod
+    def _validate_role(cls, v: str | None) -> str | None:
+        if v is not None and v not in ROLES:
+            raise ValueError(f"role must be one of {sorted(ROLES)}")
+        return v
 
 
 class ApiKeyCreate(BaseModel):

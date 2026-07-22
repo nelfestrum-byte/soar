@@ -158,6 +158,11 @@ export const api = {
     }
   },
   me: () => request('/auth/me'),
+  listUsers: () => request('/auth/users'),
+  createUser: (username, password, role) =>
+    request('/auth/users', { method: 'POST', body: JSON.stringify({ username, password, role }) }),
+  updateUser: (id, patch) =>
+    request(`/auth/users/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   listApiKeys: () => request('/auth/keys'),
   createApiKey: (name, role, expires_at = null) =>
     request('/auth/keys', { method: 'POST', body: JSON.stringify({ name, role, expires_at }) }),

@@ -7,6 +7,13 @@ router = APIRouter(tags=["status"])
 _RO = ("viewer", "analyst", "service", "admin")
 
 
+@router.get("/health")
+async def health():
+    """Unauthenticated liveness probe — Docker/orchestrator healthchecks can't hold
+    credentials, so this must stay separate from /status (which requires auth)."""
+    return {"status": "ok"}
+
+
 @router.get("/status", dependencies=[Depends(require_role(*_RO))])
 async def get_status(request: Request):
     pool = request.app.state.pool

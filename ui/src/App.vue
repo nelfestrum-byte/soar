@@ -10,6 +10,7 @@
       <router-link to="/tools">Tools</router-link>
       <router-link to="/generate">Generate</router-link>
       <router-link to="/settings">Settings</router-link>
+      <router-link v-if="auth.role === 'admin'" to="/users">Users</router-link>
       <router-link v-if="auth.role === 'admin'" to="/api-keys">API Keys</router-link>
       <router-link v-if="auth.role === 'admin'" to="/audit-log">Audit Log</router-link>
       <div style="flex:1;"></div>

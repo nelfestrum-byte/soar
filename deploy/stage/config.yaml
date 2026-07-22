@@ -31,3 +31,6 @@ jobs:
 database:
   url: postgresql+asyncpg://soar:soar@postgres:5432/soar
   table_prefix: "stage_"  # avoids table collisions if this Postgres DB is shared with other SOAR instances
+
+auth:
+  secret_key: "9904b7877c04ea347ee937488601b0158e433cfb4b78932e06c8920f6e3b7dcc"  # stage-only test secret — do not reuse for prod
