@@ -10,7 +10,7 @@ from pathlib import Path
 from .compose import compose_argv
 from .runner import run
 
-_ROLES = ("admin", "analyst", "viewer", "service")
+_ROLES = ("admin", "analyst", "viewer", "service", "agent")
 _CLI_ARGV = ["exec", "orchestrator", "python", "-m", "orchestrator.auth.cli"]
 
 
