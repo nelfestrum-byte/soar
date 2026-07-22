@@ -1,0 +1,32 @@
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -r soar && useradd -r -g soar -d /app -s /sbin/nologin soar
+
+WORKDIR /app
+
+COPY soar/ /app/soar/
+COPY orchestrator/ /app/orchestrator/
+COPY alembic/ /app/alembic/
+COPY alembic.ini /app/alembic.ini
+
+RUN pip install --no-cache-dir \
+    -r /app/orchestrator/requirements.txt \
+    elasticsearch vt-py requests
+
+RUN mkdir -p /app/data /app/data/workflows /app/data/actions /app/data/connectors /var/log/soar/jobs && \
+    find /app/soar/workflows -maxdepth 1 -name '*.py' ! -name '__init__.py' ! -name 'base.py' -exec cp -n {} /app/data/workflows/ \; 2>/dev/null || true && \
+    find /app/soar/actions -maxdepth 1 -name '*.py' ! -name '__init__.py' -exec cp -n {} /app/data/actions/ \; 2>/dev/null || true && \
+    find /app/soar/connectors -maxdepth 1 -mindepth 1 -type d ! -name '__pycache__' ! -name '_*' -exec cp -rn {} /app/data/connectors/ \; 2>/dev/null || true && \
+    find /app/data/connectors -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
+    chown -R soar:soar /app /var/log/soar
+
+ENV PYTHONUNBUFFERED=1
+ENV SOAR_CONFIG=/app/config.yaml
+
+EXPOSE 8000
+
+USER soar
+
+CMD ["uvicorn", "orchestrator.main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "/app"]

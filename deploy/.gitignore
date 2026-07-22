@@ -3,3 +3,7 @@ __pycache__/
 *.pyo
 .env
 *.log
+prod/config.yaml
+prod/.env
+*.tar.gz
+/prod/build/

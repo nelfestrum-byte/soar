@@ -1,0 +1,72 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: soar-redis
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: soar-postgres
+    environment:
+      - POSTGRES_DB=soar
+      - POSTGRES_USER=soar
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?run soarctl init first}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U soar"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  orchestrator:
+    image: soar-orchestrator:${SOAR_VERSION:?run soarctl init first}
+    container_name: soar-orchestrator
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - soar-data:/app/data
+      - soar-logs:/var/log/soar
+    environment:
+      - SOAR_CONFIG=/app/config.yaml
+      - SOAR_WEBHOOK_TOKEN=${SOAR_WEBHOOK_TOKEN:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  ui:
+    image: soar-ui:${SOAR_VERSION:?run soarctl init first}
+    container_name: soar-ui
+    ports:
+      - "3000:80"
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  soar-data:
+    name: soar-data
+  soar-logs:
+    name: soar-logs
+  redis-data:
+    name: soar-redis-data
+  postgres-data:
+    name: soar-postgres-data

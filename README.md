@@ -369,7 +369,64 @@ make migrate
 Остальные команды (`up`/`down`/`logs`/`restart`/`status`) — [`deploy/stage/Makefile`](deploy/stage/Makefile),
 подробнее — [`deploy/stage/README.md`](deploy/stage/README.md).
 
-### 3. Production вне Docker Compose
+**Апгрейд стенда при изменении кода.** Код копируется в образ на этапе
+сборки (`COPY soar/ /app/soar/` в `Dockerfile.orchestrator`), а не
+монтируется живьём — значит любое изменение требует пересборки:
+
+```bash
+cd deploy/stage
+docker compose up --build -d   # пересобрать образ(ы) + пересоздать изменившиеся контейнеры
+
+# если релиз принёс новую Alembic-миграцию — та же дилемма stamp/upgrade:
+make migrate-stamp-initial   # миграция только добавляет новую таблицу (create_all() уже создал её при старте)
+make migrate                 # миграция меняет существующую таблицу (create_all() тут не поможет)
+```
+
+Порядок важен: `migrate` делает `docker compose exec orchestrator ...` —
+запускать его нужно **после** пересборки/пересоздания контейнера, иначе
+команда попадёт в ещё старый контейнер со старыми миграциями. `postgres`/
+`redis` не пересоздаются, если их образы не менялись — job-история и
+пользователи переживают апгрейд.
+
+### 3. Production-дистрибуция — `soarctl` (`deploy/prod/`)
+
+Отдельный профиль для распространения инстанса за пределы одной машины
+разработки — в первую очередь для air-gapped окружений: без реестра
+образов, сборка на машине с интернетом, перенос одного самодостаточного
+файла, установка офлайн.
+
+```bash
+# 1. Машина с интернетом — собрать бандл (образы + compose + сам soarctl)
+python deploy/soarctl package --version 0.9.0 --output soar-bundle-0.9.0.tar.gz
+# перенести файл на целевую машину (USB/scp — вне зоны ответственности soarctl)
+
+# 2. Целевая машина (офлайн с этого момента)
+python soarctl install soar-bundle-0.9.0.tar.gz --dir soar-prod && cd soar-prod
+python soarctl doctor            # preflight: docker, порты, место на диске
+python soarctl init              # генерирует .env (секреты) + config.yaml — один раз
+python soarctl up
+python soarctl migrate --fresh   # первый деплой — см. ту же дилемму stamp/upgrade выше
+python soarctl users create --username admin --role admin
+```
+
+Апгрейд на новую версию — **тот же instance dir**, тот же порядок
+`install → up → migrate`:
+
+```bash
+python soarctl install soar-bundle-0.9.1.tar.gz --dir soar-prod   # обновит только SOAR_VERSION в .env
+python soarctl up                                                  # пересоздаст только orchestrator/ui
+python soarctl migrate --fresh   # или --upgrade — только если релиз принёс миграцию
+```
+
+`install` на уже инициализированном инстансе трогает только `SOAR_VERSION`
+— `AUTH_SECRET_KEY`/`POSTGRES_PASSWORD` не перегенерируются (иначе апгрейд
+заблокировал бы доступ к собственной БД). День-2 операции —
+`soarctl status`/`logs`/`backup create`/`backup restore --confirm`/`down`.
+Один инстанс на вызов — мультиинстансность вне scope (см. [AGENTS.md → Known Limitations #9](AGENTS.md#known-limitations)).
+Подробнее — [`deploy/prod/README.md`](deploy/prod/README.md) и
+[`docs/compose/specs/2026-07-22-deploy-cli-design.md`](docs/compose/specs/2026-07-22-deploy-cli-design.md).
+
+### 4. Production вне Docker Compose
 
 Тот же образ/код, свой `config.yaml` с реальными `database.url` (managed
 Postgres), `queue.backend: redis` (managed Redis), `auth.secret_key`

@@ -1,0 +1,36 @@
+workers:
+  count: 2
+  default_timeout: 300
+
+queue:
+  backend: redis
+  redis_url: redis://redis:6379/0
+  redis_max_connections: 10
+  redis_push_timeout: 5.0
+  redis_pop_timeout: 1.0
+
+soar:
+  workflows_dir: /app/data/workflows
+  connectors_dir: /app/data/connectors
+  actions_dir: /app/data/actions
+
+git:
+  workflows_repo: /app/data
+  author_name: SOAR Orchestrator
+  author_email: soar@local
+
+logging:
+  level: INFO
+  file: /var/log/soar/orchestrator.log
+
+jobs:
+  log_dir: /var/log/soar/jobs
+  keep_completed: 100
+  persistence: sql  # memory | sql — sql persists job history in `database` across restarts
+
+database:
+  url: postgresql+asyncpg://soar:${POSTGRES_PASSWORD}@postgres:5432/soar
+  table_prefix: ""  # single-instance deploy — no table_prefix needed, see AGENTS.md Known Limitations #9
+
+auth:
+  secret_key: "${AUTH_SECRET_KEY}"

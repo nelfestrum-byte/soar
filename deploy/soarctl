@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""SOAR deploy/lifecycle CLI entrypoint.
+
+Kept as a thin shim on purpose: works both from a full source checkout
+(deploy/soarctl next to deploy/soarctl_lib/, imported as a bare top-level
+package here) and from an installed bundle (soarctl + soarctl_lib/ copied
+into the instance directory together, same relative layout) — see
+docs/compose/specs/2026-07-22-deploy-cli-design.md.
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from soarctl_lib.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    main()
