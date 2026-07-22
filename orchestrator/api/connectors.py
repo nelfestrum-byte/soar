@@ -20,6 +20,7 @@ from orchestrator.api.validation import (
 from orchestrator.audit import service as audit_service
 from orchestrator.auth.dependencies import CurrentUser, require_role
 from orchestrator.core import history
+from orchestrator.core.introspect import _summary, parse_classes
 from orchestrator.db.session import get_db
 from soar.tools.openapi import OpenAPIGenerator
 
@@ -70,6 +71,16 @@ def _parse_class_name(content: str) -> str:
     return match.group(1) if match else "Unknown"
 
 
+def _describe_connector_summary(py_file: str, class_name: str) -> str:
+    try:
+        for cls in parse_classes(Path(py_file)):
+            if cls["name"] == class_name:
+                return _summary(cls["docstring"])
+    except (SyntaxError, OSError):
+        pass
+    return ""
+
+
 @router.get("", dependencies=[Depends(require_role(*_RO))])
 async def list_connectors(request: Request):
     config = request.app.state.config
@@ -86,17 +97,20 @@ async def list_connectors(request: Request):
             has_code = os.path.exists(py_file)
             has_config = os.path.exists(yml_file)
             class_name = ""
+            summary = ""
             if has_code:
                 try:
                     with open(py_file) as f:
                         class_name = _parse_class_name(f.read())
                 except Exception:
                     pass
+                summary = _describe_connector_summary(py_file, class_name)
             result.append({
                 "name": entry.name,
                 "class_name": class_name,
                 "has_code": has_code,
                 "has_config": has_config,
+                "summary": summary,
             })
     return sorted(result, key=lambda x: x["name"])
 
@@ -268,6 +282,22 @@ async def generate_connector(
     return {"name": body.name, **result}
 
 
+@router.get("/{name}/describe", dependencies=[Depends(require_role(*_RO))])
+async def describe_connector(name: str, request: Request):
+    validate_name(name)
+    config = request.app.state.config
+    filepath = os.path.join(config.soar.connectors_dir, name, f"{name}.py")
+    validate_path_within(config.soar.connectors_dir, filepath)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Connector not found")
+    classes = parse_classes(Path(filepath))
+    class_name = _parse_class_name(Path(filepath).read_text(encoding="utf-8"))
+    for cls in classes:
+        if cls["name"] == class_name:
+            return {**cls, "module": name}
+    raise HTTPException(status_code=404, detail=f"No class '{class_name}' found in {name}.py")
+
+
 @router.get("/{name}", dependencies=[Depends(require_role(*_RO))])
 async def get_connector(name: str, request: Request):
     validate_name(name)
@@ -282,17 +312,20 @@ async def get_connector(name: str, request: Request):
     has_code = os.path.exists(py_file)
     has_config = os.path.exists(yml_file)
     class_name = ""
+    summary = ""
     if has_code:
         try:
             with open(py_file) as f:
                 class_name = _parse_class_name(f.read())
         except Exception:
             pass
+        summary = _describe_connector_summary(py_file, class_name)
     return {
         "name": name,
         "class_name": class_name,
         "has_code": has_code,
         "has_config": has_config,
+        "summary": summary,
     }
 
 

@@ -21,13 +21,16 @@
     <template v-else>
       <div class="card">
         <div v-if="actions.length">
-          <div v-for="name in actions" :key="name"
+          <div v-for="action in actions" :key="action.name"
                style="display:flex; align-items:center; gap:8px; padding:8px; border-bottom:1px solid #eee;"
-               :style="{background: selected===name ? '#e3f2fd' : ''}">
-            <span style="flex:1; cursor:pointer; font-family:monospace;" @click="loadAction(name)">{{ name }}.py</span>
+               :style="{background: selected===action.name ? '#e3f2fd' : ''}">
+            <span style="flex:1; cursor:pointer;" @click="loadAction(action.name)">
+              <span style="font-family:monospace;">{{ action.name }}.py</span>
+              <span v-if="action.summary" style="color:#888; font-size:12px; margin-left:8px;">{{ action.summary }}</span>
+            </span>
             <router-link v-if="auth.role === 'admin'" class="btn" style="font-size:11px; text-decoration:none;"
-                         :to="{ path: '/audit-log', query: { resource_type: 'action', resource_id: name } }">Audit</router-link>
-            <button class="btn btn-danger" style="font-size:11px;" @click="removeAction(name)">Delete</button>
+                         :to="{ path: '/audit-log', query: { resource_type: 'action', resource_id: action.name } }">Audit</router-link>
+            <button class="btn btn-danger" style="font-size:11px;" @click="removeAction(action.name)">Delete</button>
           </div>
         </div>
         <div v-else class="loading">No actions yet</div>

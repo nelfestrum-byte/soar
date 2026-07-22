@@ -92,6 +92,7 @@ async def list_workflows(request: Request):
             "path": m.path,
             "timeout": m.timeout,
             "concurrency": m.concurrency.value,
+            "docstring": m.docstring,
         }
         if hasattr(m, "token") and m.token:
             item["token"] = m.token
@@ -114,6 +115,7 @@ async def get_workflow(name: str, request: Request):
         "path": meta.path,
         "timeout": meta.timeout,
         "concurrency": meta.concurrency.value,
+        "docstring": meta.docstring,
     }
     if hasattr(meta, "token") and meta.token:
         result["token"] = meta.token

@@ -112,6 +112,29 @@ async def test_workflow_code_invalid_name():
         assert r.status_code in (400, 403, 404)
 
 
+DOCUMENTED_WF_CODE = (
+    "from soar.workflows.base import ManualWorkflow\n\n\n"
+    "class DocumentedWorkflow(ManualWorkflow):\n"
+    '    """Explains what this workflow does."""\n\n'
+    "    def run(self, context):\n        return {}\n"
+).encode()
+
+
+@pytest.mark.asyncio
+async def test_list_and_get_workflow_include_docstring():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.put("/workflows/documented_wf/code", content=DOCUMENTED_WF_CODE)
+
+        r = await c.get("/workflows/documented_wf")
+        assert r.status_code == 200
+        assert r.json()["docstring"] == "Explains what this workflow does."
+
+        r = await c.get("/workflows")
+        item = next(w for w in r.json() if w["name"] == "documented_wf")
+        assert item["docstring"] == "Explains what this workflow does."
+
+
 @pytest.mark.asyncio
 async def test_save_workflow_code():
     transport = ASGITransport(app=app)

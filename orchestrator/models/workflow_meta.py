@@ -15,3 +15,4 @@ class WorkflowMeta:
     timeout: int | None = None
     concurrency: ConcurrencyPolicy = ConcurrencyPolicy.FORBID
     file_path: str = ""
+    docstring: str = ""

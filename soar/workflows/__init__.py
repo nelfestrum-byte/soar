@@ -85,6 +85,7 @@ class WorkflowRegistry:
         result = []
         for name, cls in self._workflows.items():
             meta = {"name": name, "type": cls.workflow_type}
+            meta["docstring"] = cls.__doc__ or ""
             if hasattr(cls, "schedule"):
                 meta["schedule"] = cls.schedule
             if hasattr(cls, "interval"):
