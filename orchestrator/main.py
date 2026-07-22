@@ -26,6 +26,7 @@ from orchestrator.api import (  # noqa: E402
     connectors_router,
     jobs_router,
     logs_router,
+    prompts_router,
     status_router,
     tools_router,
     webhooks_router,
@@ -121,6 +122,7 @@ def load_workflow_metas(config) -> list[WorkflowMeta]:
                 path=wf_info.get("path"),
                 token=token,
                 concurrency=ConcurrencyPolicy.ALLOW if wf_type == "webhook" else ConcurrencyPolicy.FORBID,
+                docstring=wf_info.get("docstring", ""),
             )
             soar_metas.append(meta)
     except ImportError:
@@ -313,4 +315,5 @@ app.include_router(logs_router)
 app.include_router(status_router)
 app.include_router(transfer_router)
 app.include_router(tools_router)
+app.include_router(prompts_router)
 app.include_router(audit_router)

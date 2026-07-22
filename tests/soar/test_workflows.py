@@ -80,3 +80,30 @@ def test_base_workflow_run_not_implemented():
     wf = ManualWorkflow()
     with pytest.raises(NotImplementedError):
         wf.run({})
+
+
+def test_workflow_registry_list_includes_docstring(tmp_path):
+    from soar.workflows import WorkflowRegistry
+
+    with_doc = tmp_path / "with_doc.py"
+    with_doc.write_text(
+        "from soar.workflows.base import ManualWorkflow\n\n\n"
+        "class WithDoc(ManualWorkflow):\n"
+        '    """Explains what this workflow does."""\n\n'
+        "    def run(self, context):\n        return {}\n",
+        encoding="utf-8",
+    )
+    without_doc = tmp_path / "without_doc.py"
+    without_doc.write_text(
+        "from soar.workflows.base import ManualWorkflow\n\n\n"
+        "class WithoutDoc(ManualWorkflow):\n"
+        "    def run(self, context):\n        return {}\n",
+        encoding="utf-8",
+    )
+
+    registry = WorkflowRegistry()
+    registry.init(external_dir=str(tmp_path))
+    metas = {m["name"]: m for m in registry.list()}
+
+    assert metas["with_doc"]["docstring"] == "Explains what this workflow does."
+    assert metas["without_doc"]["docstring"] == ""
