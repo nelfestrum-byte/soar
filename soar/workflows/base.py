@@ -1,3 +1,4 @@
+import traceback as _traceback
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -12,6 +13,7 @@ class WorkflowResult:
     finished_at: datetime
     duration_seconds: float
     error: Exception | None = None
+    traceback: str | None = None
     data: dict | None = None
 
 
@@ -55,6 +57,7 @@ class BaseWorkflow:
                 finished_at=finished_at,
                 duration_seconds=duration,
                 error=e,
+                traceback=_traceback.format_exc(),
             )
 
 

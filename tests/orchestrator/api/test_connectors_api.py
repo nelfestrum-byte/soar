@@ -5,7 +5,16 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from orchestrator.audit.models import AuditLog
+from orchestrator.auth.dependencies import CurrentUser, get_current_user
+from orchestrator.core.git_manager import GitManager
 from orchestrator.main import app
+
+VALID_CONNECTOR_CODE = (
+    "from soar.connectors.base import BaseConnector\n\n\n"
+    "class MyConnector(BaseConnector):\n"
+    "    def _connect_impl(self):\n        self._connected = True\n\n"
+    "    def disconnect(self):\n        self._connected = False\n"
+).encode()
 
 
 async def _audit_rows(resource_type: str, resource_id: str) -> list[AuditLog]:
@@ -103,9 +112,18 @@ async def test_save_connector_code():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         await c.post("/connectors/save_conn")
-        r = await c.put("/connectors/save_conn/code", content=b"# connector code")
+        r = await c.put("/connectors/save_conn/code", content=VALID_CONNECTOR_CODE)
         assert r.status_code == 200
         assert r.json()["status"] == "saved"
+
+
+@pytest.mark.asyncio
+async def test_save_connector_code_invalid():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/bad_code_conn")
+        r = await c.put("/connectors/bad_code_conn/code", content=b"class NotAConnector:\n    pass\n")
+        assert r.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -179,7 +197,7 @@ async def test_connector_lifecycle_writes_audit_rows():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         await c.post("/connectors/audited_conn")
-        await c.put("/connectors/audited_conn/code", content=b"# code")
+        await c.put("/connectors/audited_conn/code", content=VALID_CONNECTOR_CODE)
         await c.put("/connectors/audited_conn/config", content=b"instances: {}")
         await c.delete("/connectors/audited_conn")
 
@@ -285,3 +303,115 @@ async def test_preview_invalid_spec():
             json={"spec": "not valid"},
         )
         assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_connector_code_history_diff_restore(tmp_path):
+    (tmp_path / ".gitkeep").write_text("")
+    real_git = GitManager(repo_path=str(tmp_path), author_name="Test", author_email="test@test.com")
+    await real_git.ensure_repo()
+    app.state.git = real_git
+
+    v1 = VALID_CONNECTOR_CODE
+    v2 = VALID_CONNECTOR_CODE + b"\n# v2\n"
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/hist_conn")
+        r1 = await c.put("/connectors/hist_conn/code", content=v1)
+        first_commit = r1.json()["commit"]
+        await c.put("/connectors/hist_conn/code", content=v2)
+
+        r = await c.get("/connectors/hist_conn/code/history")
+        assert r.status_code == 200
+        entries = r.json()
+        assert len(entries) >= 2
+
+        r = await c.get(f"/connectors/hist_conn/code/history/{first_commit}")
+        assert r.status_code == 200
+        assert r.json()["content"] == v1.decode()
+
+        r = await c.get(f"/connectors/hist_conn/code/diff?a={first_commit}&b={entries[0]['hash']}")
+        assert r.status_code == 200
+        assert "diff" in r.json()
+
+        r = await c.post("/connectors/hist_conn/code/restore", json={"commit": first_commit})
+        assert r.status_code == 200
+
+        r = await c.get("/connectors/hist_conn/code")
+        assert r.json()["content"] == v1.decode()
+
+    rows = await _audit_rows("connector", "hist_conn")
+    actions = {row.action for row in rows}
+    assert "connector.restore_code" in actions
+
+
+@pytest.mark.asyncio
+async def test_connector_config_history_diff_restore(tmp_path):
+    (tmp_path / ".gitkeep").write_text("")
+    real_git = GitManager(repo_path=str(tmp_path), author_name="Test", author_email="test@test.com")
+    await real_git.ensure_repo()
+    app.state.git = real_git
+
+    v1 = b"instances:\n  a: {}\n"
+    v2 = b"instances:\n  a: {}\n  b: {}\n"
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/hist_conf_conn")
+        r1 = await c.put("/connectors/hist_conf_conn/config", content=v1)
+        first_commit = r1.json()["commit"]
+        await c.put("/connectors/hist_conf_conn/config", content=v2)
+
+        r = await c.get("/connectors/hist_conf_conn/config/history")
+        assert r.status_code == 200
+        entries = r.json()
+        assert len(entries) >= 2
+
+        r = await c.get(f"/connectors/hist_conf_conn/config/history/{first_commit}")
+        assert r.status_code == 200
+        assert r.json()["content"] == v1.decode()
+
+        r = await c.get(
+            f"/connectors/hist_conf_conn/config/diff?a={first_commit}&b={entries[0]['hash']}"
+        )
+        assert r.status_code == 200
+        assert "diff" in r.json()
+
+        r = await c.post("/connectors/hist_conf_conn/config/restore", json={"commit": first_commit})
+        assert r.status_code == 200
+
+        r = await c.get("/connectors/hist_conf_conn/config")
+        assert r.json()["content"] == v1.decode()
+
+    rows = await _audit_rows("connector", "hist_conf_conn")
+    actions = {row.action for row in rows}
+    assert "connector.restore_config" in actions
+
+
+@pytest.mark.asyncio
+async def test_connector_restore_requires_admin(tmp_path):
+    (tmp_path / ".gitkeep").write_text("")
+    real_git = GitManager(repo_path=str(tmp_path), author_name="Test", author_email="test@test.com")
+    await real_git.ensure_repo()
+    app.state.git = real_git
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/rbac_conn")
+        r1 = await c.put("/connectors/rbac_conn/code", content=VALID_CONNECTOR_CODE)
+        first_commit = r1.json()["commit"]
+
+        def _viewer():
+            return CurrentUser(id=2, role="viewer", type="user", username="test_viewer")
+
+        app.dependency_overrides[get_current_user] = _viewer
+        try:
+            r = await c.get("/connectors/rbac_conn/code/history")
+            assert r.status_code == 200
+            r = await c.post("/connectors/rbac_conn/code/restore", json={"commit": first_commit})
+            assert r.status_code == 403
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+                id=1, role="admin", type="user", username="test_admin"
+            )

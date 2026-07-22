@@ -241,9 +241,13 @@ tests/
 | POST | /workflows/reload | Перечитать файлы и обновить job_manager |
 | POST | /workflows/scheduler/reload | Пересоздать jobs планировщика из текущих metas |
 | GET | /workflows/{name}/code | Получить код workflow |
-| PUT | /workflows/{name}/code | Сохранить код workflow |
+| PUT | /workflows/{name}/code | Сохранить код workflow — 422 если код не парсится или не содержит класс-наследник `BaseWorkflow`/`ScheduledWorkflow`/`WebhookWorkflow`/`ManualWorkflow` (`validate_workflow_code`) |
 | DELETE | /workflows/{name}/code | Удалить файл workflow |
 | GET | /workflows/code/template | Шаблон workflow |
+| GET | /workflows/{name}/code/history | История коммитов файла |
+| GET | /workflows/{name}/code/history/{commit} | Содержимое файла на конкретном коммите |
+| GET | /workflows/{name}/code/diff?a=&b= | Diff между двумя коммитами |
+| POST | /workflows/{name}/code/restore `{"commit": "..."}` | Откат на коммит (admin), коммитится от актора, триггерит reload |
 
 ### Actions
 | Method | Path | Description |
@@ -252,8 +256,12 @@ tests/
 | GET | /actions/template | Шаблон boilerplate |
 | GET | /actions/{name} | Получить код |
 | GET | /actions/{name}/code | Получить код (алиас) |
-| PUT | /actions/{name} | Сохранить код |
+| PUT | /actions/{name} | Сохранить код — 422 если код не парсится или нет функции с именем `name` (`validate_action_code`) |
 | DELETE | /actions/{name} | Удалить action |
+| GET | /actions/{name}/history | История коммитов файла |
+| GET | /actions/{name}/history/{commit} | Содержимое файла на конкретном коммите |
+| GET | /actions/{name}/diff?a=&b= | Diff между двумя коммитами |
+| POST | /actions/{name}/restore `{"commit": "..."}` | Откат на коммит (admin), без reload |
 
 ### Connectors
 | Method | Path | Description |
@@ -264,12 +272,18 @@ tests/
 | POST | /connectors/{name} | Создать коннектор |
 | DELETE | /connectors/{name} | Удалить коннектор |
 | GET | /connectors/{name}/code | Получить код .py |
-| PUT | /connectors/{name}/code | Сохранить код .py |
+| PUT | /connectors/{name}/code | Сохранить код .py — 422 если код не парсится или нет класса-наследника `BaseConnector` (`validate_connector_code`) |
 | GET | /connectors/{name}/config | Получить конфиг .yml |
 | PUT | /connectors/{name}/config | Сохранить конфиг .yml |
 | POST | /connectors/generate | Генерация коннектора из OpenAPI spec |
 | POST | /connectors/preview | Парсинг OpenAPI spec (POST, тело) |
 | GET | /connectors/preview | Парсинг OpenAPI spec (GET, URL) — SSRF-защищён |
+| GET | /connectors/{name}/code/history[/{commit}] | История/версия `.py` |
+| GET | /connectors/{name}/code/diff?a=&b= | Diff `.py` между коммитами |
+| POST | /connectors/{name}/code/restore `{"commit": "..."}` | Откат `.py` на коммит (admin), без reload |
+| GET | /connectors/{name}/config/history[/{commit}] | История/версия `.yml` |
+| GET | /connectors/{name}/config/diff?a=&b= | Diff `.yml` между коммитами |
+| POST | /connectors/{name}/config/restore `{"commit": "..."}` | Откат `.yml` на коммит (admin) |
 
 ### Tools
 
@@ -348,7 +362,19 @@ pool = request.app.state.pool
 Любое изменение файла через API автоматически коммитится в git. `GitManager.commit()`
 принимает опциональные `author_name`/`author_email` — мутирующие роуты передают
 реального пользователя (`audit.service.git_author(user)`), иначе используется
-дефолт из `config.git.author_name/author_email`.
+дефолт из `config.git.author_name/author_email`. `GitManager.restore()` принимает
+те же kwargs (используется history/restore ручками, см. таблицы API выше) —
+откат тоже коммитится от актора, не от дефолта.
+
+### История/diff/restore (orchestrator/core/history.py)
+Тонкие обёртки (`list_history`/`get_version`/`diff_versions`/`restore_version`)
+над уже существующими методами `GitManager` — общий модуль, чтобы не дублировать
+одну и ту же обвязку в трёх роутерах (workflows/actions/connectors). Read-ручки
+на существующих `_RO`-ролях, restore — на `_ADMIN`, каждый restore пишет
+`AuditLog`-запись через `audit.service.record()`. Restore workflow-кода
+дополнительно триггерит тот же reload, что `PUT .../code`
+(`load_workflow_metas` + `job_manager.set_metas` + `scheduler.reload`); restore
+action/connector — без reload, как и текущие `PUT`.
 
 ### Request logging / correlation id (orchestrator/main.py)
 `access_log_middleware` — последний зарегистрированный `@app.middleware("http")`
@@ -395,6 +421,12 @@ Entry point for subprocess workflow execution. Called by `SubprocessRunner`.
 ```json
 {"success": true, "data": {...}, "error": null}
 ```
+
+На неудаче `"error"` — полный traceback (`WorkflowResult.traceback`), не
+`str(exception)`. `main()` оборачивает весь вызов `workflows.execute()` в
+try/except — ошибка **до** входа в `run()` (workflow не найден, упал
+конструктор) тоже даёт эту же структурированную JSON-строку, а не
+неперехваченное исключение без финальной строки в логе.
 
 **Exit codes:** `0` = success, `1` = failure (stdout JSON still required)
 
@@ -509,6 +541,8 @@ alembic upgrade head                               # применить мигр
 ### Input validation (orchestrator/api/validation.py)
 - `validate_name(name)` — regex `^[a-zA-Z0-9_\-]+$`, блокирует path traversal и shell metacharacters
 - `validate_path_within(base, target)` — `normpath + startswith`, предотвращает directory escape
+- `validate_commit(commit)` — regex `^[0-9a-f]{4,40}$`, используется history/diff/restore ручками
+- `validate_workflow_code`/`validate_action_code`/`validate_connector_code` — `ast.parse` (без импорта, тот же принцип что `GET /tools`) на синтаксис + наличие ожидаемой точки входа; вызывается в `PUT`-обработчиках перед записью файла, 422 при провале
 - SSRF protection — блокировка RFC 1918, link-local, localhost, cloud metadata IPs + DNS resolve (socket.getaddrinfo) + follow_redirects=False
 
 ### Connector security (soar/connectors/)
@@ -737,3 +771,4 @@ API (UI или LLM-агентом) **без передеплоя**. Три шт�
 - **v0.8** (2026-07-18) — API request logging + audit trail. `access_log_middleware` (`orchestrator/main.py`, зарегистрирован последним → самый внешний слой) — `request_id`/`X-Request-ID` на каждый запрос, структурированная строка лога (method/path/status/duration_ms/client_ip/user_id) через `logger.contextualize`. Ранее молчаливые отказы (401/403 в auth, 429 rate-limit, невалидный webhook-токен) теперь пишут `logger.warning`. Новая таблица `audit_log` (`orchestrator/audit/`, та же БД что auth/job-история, миграция `alembic/versions/3067dea7c75b_add_audit_log_table.py`) — 14 мутирующих роутов (workflows/actions/connectors CRUD, api-key create/delete, job cancel) пишут туда явно через `audit.service.record()`, читается через `GET /audit-log` (admin-only, фильтры + пагинация). `GitManager.commit()` принимает `author_name`/`author_email` override — git-коммиты через API теперь атрибутируются реальному пользователю, а не фиксированному `config.git.author_name`. UI (`ui/src/views/AuditLog.vue`) — раздел **Audit Log** в навигации (admin-only) с фильтрами, плюс кнопка **Audit** на строках Workflows/Actions/Connectors/Jobs/ApiKeys, ведущая на предзаполненный фильтр по конкретному ресурсу (без фильтра `GET /audit-log` отдаёт все типы ресурсов вперемешку — это осознанный дизайн, не баг). Стенд `deploy/stage` пересобран и провалидирован end-to-end: `alembic_version` на `3067dea7c75b (head)`, `GET /status`/`GET /audit-log` живые (см. Known Limitations #6/#7 для двух ограничений, найденных при проверке — JWT-акторы без username в audit-записях, и edge-case в `GitManager` с untracked-файлами, из-за которого audit-запись иногда пропускается).
 - **v0.9** (2026-07-21/22) — Auth CLI fix + полный user lifecycle через API/UI; auth реально включена на стенде. `orchestrator/auth/cli.py` больше не читает отдельную `SOAR_DB_URL` — резолвит `database.url`/`table_prefix` из `SOAR_CONFIG` (как `main.py`), вызывает `configure_table_prefix()` до импорта моделей; баг чинился потому, что на стенде (`table_prefix: "stage_"`) `create-user` тихо писал в непрефиксованную `users`, которую сервис не читает. Добавлены CLI `deactivate-user`/`activate-user` (soft-delete через `User.is_active`). Новый публичный `GET /health` (без auth, liveness-проба для Docker healthcheck — `GET /status` теперь требует роль, healthcheck на `/status` ронял контейнер в unhealthy сразу после включения auth). `deploy/stage/config.yaml` получил `auth.secret_key` — auth на стенде больше не выключена (был анонимный admin). Новое: `/auth/users` (`POST`/`GET`/`PATCH {id}`, admin-only, зеркалит `/auth/keys`) — создание, список, смена role/is_active/password одним `PATCH`, self-lockout guard (409 на попытку деактивировать себя), audit-записи `user.create`/`user.update` (пароль никогда не в `detail`). UI: `ui/src/views/Users.vue`, пункт «Users» в навбаре (admin-only). CLI остаётся для bootstrap первого admin'а. Известное ограничение — Known Limitations #8 (нет защиты от деактивации/разжалования последнего admin'а). Проверено end-to-end на пересобранном стенде: полный цикл create/list/role-change/deactivate/reactivate/password-reset через `curl`, self-lockout, `GET /audit-log`.
 - **v0.10** (2026-07-22) — Deploy CLI (`soarctl`) для распространения/установки/управления инстансом под air-gap. Два слоя: host-layer `deploy/soarctl` (тонкий argparse-shim, stdlib-only) + `deploy/soarctl_lib/` (package/install/init/up/down/restart/status/logs/migrate/users/backup/doctor — каждый модуль строит argv и вызывает единственную точку `runner.run()`). Дистрибуция без реестра образов: `soarctl package` собирает `soar-orchestrator`/`soar-ui` + пуллит `redis:7-alpine`/`postgres:16-alpine`, `docker save` всех четырёх в один tar вместе с compose-файлом/config-темплейтом/самим `soarctl` — `soarctl install` только `docker load` + распаковка, без единого сетевого вызова. Новый деплой-профиль `deploy/prod/` (параллельно `deploy/stage/`, которая не тронута) — `image:` вместо `build:`, `config.yaml` bind-mount (не запекается в образ, в отличие от stage), секреты (`AUTH_SECRET_KEY`/`POSTGRES_PASSWORD`/`SOAR_WEBHOOK_TOKEN`) генерируются `soarctl init` (`secrets.token_hex`) в `.env`/`config.yaml`, ни один не коммитится. `soarctl migrate --fresh|--upgrade` — два явных алиаса на `alembic stamp|upgrade head`, без авто-детекта (см. Known Limitations, дуальность `create_all()`/Alembic остаётся нерешённой). `soarctl backup create/restore` — БД (`pg_dump`/`psql` через `compose exec`) + `soar-data` volume (через alpine-контейнер, tar по stdin/stdout, без bind-mount временной директории — ломается на Windows из-за конфликта буквы диска с `host:container` `-v`-синтаксисом) одним архивом; `restore` требует явного `confirm=True`. `soarctl install` на уже `init`-нутом инстансе только обновляет `SOAR_VERSION` в `.env`, не трогая секреты (иначе апгрейд ломает доступ к своей же Postgres). Мультиинстансность явно вне scope — Known Limitations #9. 70 новых тестов (`tests/deploy/`, все на моках `subprocess`), полный набор + `ruff check` без регрессий. Проверено end-to-end на реальном Docker дважды: (1) `package` (реальный `docker build`/`pull`/`save`) → `install` (реальный `docker load`) → `init` → `doctor` → `up` (все 4 контейнера healthy) → `migrate --fresh` → `users create --admin` → логин через `/auth/login` реально сработал → `backup create` (архив содержит рабочий `db.sql` + `soar-data.tar.gz`) → `down`; поймал и починил реальный баг — `shutil.copytree()` тащил `soarctl_lib/__pycache__` в бандл, добавлен regression-тест. (2) Upgrade-сценарий (`v1` → `v2` поверх того же инстанса): `install` обновляет только `SOAR_VERSION` в `.env`, секреты (`AUTH_SECRET_KEY`/`POSTGRES_PASSWORD`/`SOAR_WEBHOOK_TOKEN`) не трогает; `up` пересоздаёт только `orchestrator`/`ui` (сменился тег), `postgres`/`redis` не перезапускаются; admin, созданный на v1, успешно логинится после апгрейда на v2 — Postgres-данные переживают апгрейд. Этой проверкой найден и исправлен баг в `deploy/prod/README.md`: шаг `migrate` был перед `up`, но `migrate` делает `docker compose exec orchestrator ...` в **текущем** (ещё старом) контейнере — правильный порядок `install → up → migrate`. Спек/план: `docs/compose/specs/2026-07-22-deploy-cli-design.md`, `docs/compose/plans/2026-07-22-deploy-cli.md`, отчёт: `docs/compose/reports/deploy-cli.md`.
+- **v0.11** (2026-07-22) — Agent Dev-Loop Этап 1 (`UPGRADE.md`, закрывает P1/P2/P8/P9): замыкает цикл «агент написал код → узнал результат → откатился при ошибке» без чтения серверных логов/файловой системы. **P1** — `orchestrator/api/validation.py::validate_workflow_code/validate_action_code/validate_connector_code` (`ast.parse`, без импорта) перед записью файла в `PUT /workflows/{name}/code`, `/actions/{name}`, `/connectors/{name}/code` — 422 с текстом ошибки вместо тихого `{"status": "saved"}`, если код не парсится или не содержит ожидаемую точку входа. **P2** — `WorkflowResult.traceback` (`soar/workflows/base.py`), `soar/runner.py::main()` кладёт полный `traceback.format_exc()` в то же поле `"error"` результата (не новый ключ), и оборачивает весь вызов `workflows.execute()` в try/except — ошибка до входа в `run()` (workflow не найден, упал конструктор) тоже даёт структурированную JSON-строку, не голый crash subprocess. **P8** — `orchestrator/core/history.py` (общая обёртка над уже существовавшими `GitManager.history/get_content/diff/restore`, устраняет тройное дублирование) + `GET/GET/GET/POST .../history[/{commit}]`, `.../diff`, `.../restore` на workflows (code), actions, connectors (code и config отдельно) — read на `_RO`, restore на `_ADMIN` с `AuditLog`-записью; `GitManager.restore()` теперь принимает `author_name`/`author_email` как `commit()`. **P9** — `orchestrator/core/workflow_state.py` (новый единственный читатель/писатель `orchestrator_state.yaml`, заменяет инлайновое чтение в `main.py` и `_save_state`/`_remove_from_state` в `workflows.py`), формат состояния сменился со строки (`"enabled"`/`"disabled"`) на объект (`{enabled, token}`, обратно совместим со старым форматом и bool); `load_workflow_metas` предпочитает сохранённый webhook-токен токену из свежего импорта класса — повторное сохранение кода того же webhook-workflow больше не меняет его токен. 53 новых/расширенных теста, полный набор проходит без регрессий (за вычетом преэкзистентных сбоев — отсутствующие опциональные зависимости коннекторов, живой Redis, один пред-существующий провал в `test_openapi.py`, не связанные с этой веткой). Спек/план/отчёт: `docs/compose/specs/2026-07-22-agent-devloop-stage1-design.md`, `docs/compose/plans/2026-07-22-agent-devloop-stage1.md`, `docs/compose/reports/agent-devloop-stage1.md`.

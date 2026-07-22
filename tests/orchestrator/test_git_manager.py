@@ -80,6 +80,30 @@ async def test_git_manager_commit_nothing(git_repo):
 
 
 @pytest.mark.asyncio
+async def test_git_manager_restore_with_author_override(git_repo):
+    gm = GitManager(repo_path=git_repo, author_name="Test", author_email="test@test.com")
+    await gm.ensure_repo()
+
+    with open(os.path.join(git_repo, "test.txt"), "w") as f:
+        f.write("changed")
+    await gm.commit("test.txt", "Change content")
+
+    history = await gm.history("test.txt")
+    original_commit = history[-1].hash
+
+    await gm.restore(
+        "test.txt", original_commit,
+        author_name="alice", author_email="alice@soar.local",
+    )
+
+    with open(os.path.join(git_repo, "test.txt")) as f:
+        assert f.read() == "initial"
+
+    history = await gm.history("test.txt")
+    assert history[0].author == "alice"
+
+
+@pytest.mark.asyncio
 async def test_git_manager_history(git_repo):
     gm = GitManager(repo_path=git_repo, author_name="Test", author_email="test@test.com")
     await gm.ensure_repo()

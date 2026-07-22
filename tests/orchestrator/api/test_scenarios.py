@@ -89,12 +89,16 @@ async def test_scenario_4_connector_crud_lifecycle():
         assert "test_crud" in names
 
         # Update code
-        r = await c.put("/connectors/test_crud/code", content=b"# updated")
+        updated_code = (
+            b"from soar.connectors.base import BaseConnector\n\n\n"
+            b"class TestCrudConnector(BaseConnector):\n    pass\n"
+        )
+        r = await c.put("/connectors/test_crud/code", content=updated_code)
         assert r.status_code == 200
 
         # Read code
         r = await c.get("/connectors/test_crud/code")
-        assert r.json()["content"] == "# updated"
+        assert r.json()["content"] == updated_code.decode()
 
         # Update config
         r = await c.put("/connectors/test_crud/config", content=b"instances:\n  test: {}")

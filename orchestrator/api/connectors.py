@@ -11,9 +11,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from orchestrator.api.validation import validate_name, validate_path_within
+from orchestrator.api.validation import (
+    validate_commit,
+    validate_connector_code,
+    validate_name,
+    validate_path_within,
+)
 from orchestrator.audit import service as audit_service
 from orchestrator.auth.dependencies import CurrentUser, require_role
+from orchestrator.core import history
 from orchestrator.db.session import get_db
 from soar.tools.openapi import OpenAPIGenerator
 
@@ -32,6 +38,10 @@ class GenerateRequest(BaseModel):
 
 class PreviewRequest(BaseModel):
     spec: str
+
+
+class RestoreRequest(BaseModel):
+    commit: str
 
 CONNECTOR_TEMPLATE = '''from soar.connectors.base import BaseConnector
 
@@ -299,6 +309,52 @@ async def get_connector_code(name: str, request: Request):
     return {"name": name, "content": content}
 
 
+@router.get("/{name}/code/history", dependencies=[Depends(require_role(*_RO))])
+async def get_connector_code_history(name: str, request: Request):
+    validate_name(name)
+    git = request.app.state.git
+    return await history.list_history(git, f"connectors/{name}/{name}.py")
+
+
+@router.get("/{name}/code/history/{commit}", dependencies=[Depends(require_role(*_RO))])
+async def get_connector_code_version(name: str, commit: str, request: Request):
+    validate_name(name)
+    validate_commit(commit)
+    git = request.app.state.git
+    content = await history.get_version(git, f"connectors/{name}/{name}.py", commit)
+    return {"content": content}
+
+
+@router.get("/{name}/code/diff", dependencies=[Depends(require_role(*_RO))])
+async def get_connector_code_diff(name: str, request: Request, a: str, b: str):
+    validate_name(name)
+    validate_commit(a)
+    validate_commit(b)
+    git = request.app.state.git
+    diff = await history.diff_versions(git, f"connectors/{name}/{name}.py", a, b)
+    return {"diff": diff}
+
+
+@router.post("/{name}/code/restore")
+async def restore_connector_code(
+    name: str, request: Request, body: RestoreRequest,
+    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
+    validate_name(name)
+    validate_commit(body.commit)
+    git = request.app.state.git
+    author_name, author_email = audit_service.git_author(user)
+    await history.restore_version(
+        git, f"connectors/{name}/{name}.py", body.commit, author_name, author_email,
+    )
+    await audit_service.record(
+        db, user=user, action="connector.restore_code", resource_type="connector",
+        resource_id=name, request=request, detail={"commit": body.commit},
+    )
+    return {"status": "restored", "commit": body.commit}
+
+
 @router.put("/{name}/code")
 async def save_connector_code(
     name: str, request: Request,
@@ -318,6 +374,7 @@ async def save_connector_code(
         raise HTTPException(status_code=400, detail="Content must be valid UTF-8")
     if "\x00" in content:
         raise HTTPException(status_code=400, detail="Content must not contain null bytes")
+    validate_connector_code(content)
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(content)
     git = request.app.state.git
@@ -357,6 +414,52 @@ async def get_connector_config(name: str, request: Request):
     with open(filepath) as f:
         content = f.read()
     return {"name": name, "content": content}
+
+
+@router.get("/{name}/config/history", dependencies=[Depends(require_role(*_RO))])
+async def get_connector_config_history(name: str, request: Request):
+    validate_name(name)
+    git = request.app.state.git
+    return await history.list_history(git, f"connectors/{name}/{name}.yml")
+
+
+@router.get("/{name}/config/history/{commit}", dependencies=[Depends(require_role(*_RO))])
+async def get_connector_config_version(name: str, commit: str, request: Request):
+    validate_name(name)
+    validate_commit(commit)
+    git = request.app.state.git
+    content = await history.get_version(git, f"connectors/{name}/{name}.yml", commit)
+    return {"content": content}
+
+
+@router.get("/{name}/config/diff", dependencies=[Depends(require_role(*_RO))])
+async def get_connector_config_diff(name: str, request: Request, a: str, b: str):
+    validate_name(name)
+    validate_commit(a)
+    validate_commit(b)
+    git = request.app.state.git
+    diff = await history.diff_versions(git, f"connectors/{name}/{name}.yml", a, b)
+    return {"diff": diff}
+
+
+@router.post("/{name}/config/restore")
+async def restore_connector_config(
+    name: str, request: Request, body: RestoreRequest,
+    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
+    validate_name(name)
+    validate_commit(body.commit)
+    git = request.app.state.git
+    author_name, author_email = audit_service.git_author(user)
+    await history.restore_version(
+        git, f"connectors/{name}/{name}.yml", body.commit, author_name, author_email,
+    )
+    await audit_service.record(
+        db, user=user, action="connector.restore_config", resource_type="connector",
+        resource_id=name, request=request, detail={"commit": body.commit},
+    )
+    return {"status": "restored", "commit": body.commit}
 
 
 @router.put("/{name}/config")

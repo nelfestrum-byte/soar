@@ -35,6 +35,8 @@ actions.init(external_dir=external_dirs.get("actions"))
 
 
 def main():
+    import traceback as tb
+
     workflow_name = os.environ.get("SOAR_WORKFLOW_NAME", "")
     context_str = os.environ.get("SOAR_CONTEXT", "{}")
 
@@ -43,20 +45,28 @@ def main():
     except json.JSONDecodeError:
         context = {}
 
-    result = workflows.execute(workflow_name, context)
-
-    output = {
-        "success": result.success,
-        "workflow_name": result.workflow_name,
-        "duration_seconds": result.duration_seconds,
-        "data": result.data,
-    }
-    if result.error:
-        output["error"] = str(result.error)
+    try:
+        result = workflows.execute(workflow_name, context)
+        output = {
+            "success": result.success,
+            "workflow_name": result.workflow_name,
+            "duration_seconds": result.duration_seconds,
+            "data": result.data,
+        }
+        if result.error:
+            output["error"] = result.traceback or str(result.error)
+    except Exception:
+        output = {
+            "success": False,
+            "workflow_name": workflow_name,
+            "duration_seconds": None,
+            "data": None,
+            "error": tb.format_exc(),
+        }
 
     print(json.dumps(output))
 
-    if not result.success:
+    if not output["success"]:
         sys.exit(1)
 
 

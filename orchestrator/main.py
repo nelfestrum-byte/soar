@@ -16,7 +16,6 @@ _startup_config_path = os.environ.get("SOAR_CONFIG", "config.yaml")
 _startup_config = load_config(_startup_config_path)
 configure_table_prefix(_startup_config.database.table_prefix)
 
-import yaml  # noqa: E402
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
@@ -43,6 +42,7 @@ from orchestrator.core.queue.redis_queue import RedisQueue  # noqa: E402
 from orchestrator.core.scheduler import OrchestratorScheduler  # noqa: E402
 from orchestrator.core.subprocess_runner import SubprocessRunner  # noqa: E402
 from orchestrator.core.worker_pool import WorkerPool  # noqa: E402
+from orchestrator.core.workflow_state import load_state, parse_enabled, parse_token, save_state  # noqa: E402
 from orchestrator.db.session import get_session_factory, init_db, init_engine  # noqa: E402
 from orchestrator.models import ConcurrencyPolicy  # noqa: E402
 from orchestrator.models.workflow_meta import WorkflowMeta  # noqa: E402
@@ -97,13 +97,7 @@ def create_job_store(config) -> AbstractJobStore:
 
 
 def load_workflow_metas(config) -> list[WorkflowMeta]:
-    state_path = Path(config.soar.workflows_dir).parent / "orchestrator_state.yaml"
-    state: dict = {}
-    if state_path.exists():
-        with open(state_path) as f:
-            state = yaml.safe_load(f) or {}
-
-    state_workflows = state.get("workflows", {})
+    state_workflows = load_state(config)
 
     soar_metas = []
     try:
@@ -112,8 +106,11 @@ def load_workflow_metas(config) -> list[WorkflowMeta]:
         for wf_info in wf_registry.list():
             name = wf_info["name"]
             wf_type = wf_info["type"]
-            enabled = state_workflows.get(name, "enabled")
-            enabled = enabled == "enabled" if isinstance(enabled, str) else bool(enabled)
+            saved = state_workflows.get(name)
+            enabled = parse_enabled(saved) if saved is not None else True
+            token = wf_info.get("token")
+            if wf_type == "webhook":
+                token = parse_token(saved) or token
 
             meta = WorkflowMeta(
                 name=name,
@@ -122,24 +119,24 @@ def load_workflow_metas(config) -> list[WorkflowMeta]:
                 schedule=wf_info.get("schedule"),
                 interval=wf_info.get("interval"),
                 path=wf_info.get("path"),
-                token=wf_info.get("token"),
+                token=token,
                 concurrency=ConcurrencyPolicy.ALLOW if wf_type == "webhook" else ConcurrencyPolicy.FORBID,
             )
             soar_metas.append(meta)
     except ImportError:
         pass
 
-    for name, enabled_str in state_workflows.items():
+    for name, saved in state_workflows.items():
         if any(m.name == name for m in soar_metas):
             continue
-        enabled = enabled_str == "enabled" if isinstance(enabled_str, str) else bool(enabled_str)
         soar_metas.append(WorkflowMeta(
             name=name,
             type="scheduled",
-            enabled=enabled,
+            enabled=parse_enabled(saved),
             concurrency=ConcurrencyPolicy.FORBID,
         ))
 
+    save_state(config, soar_metas)
     return soar_metas
 
 

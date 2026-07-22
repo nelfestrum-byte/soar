@@ -1,17 +1,28 @@
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from orchestrator.api.validation import validate_name, validate_path_within
+from orchestrator.api.validation import (
+    validate_action_code,
+    validate_commit,
+    validate_name,
+    validate_path_within,
+)
 from orchestrator.audit import service as audit_service
 from orchestrator.auth.dependencies import CurrentUser, require_role
+from orchestrator.core import history
 from orchestrator.db.session import get_db
 
 router = APIRouter(prefix="/actions", tags=["actions"])
 
 _RO = ("viewer", "analyst", "service", "admin")
 _ADMIN = ("admin",)
+
+
+class RestoreRequest(BaseModel):
+    commit: str
 
 ACTION_TEMPLATE = '''from soar.connectors import connectors
 
@@ -73,6 +84,50 @@ async def get_action(name: str, request: Request):
     return {"name": name, "content": content}
 
 
+@router.get("/{name}/history", dependencies=[Depends(require_role(*_RO))])
+async def get_action_history(name: str, request: Request):
+    validate_name(name)
+    git = request.app.state.git
+    return await history.list_history(git, f"actions/{name}.py")
+
+
+@router.get("/{name}/history/{commit}", dependencies=[Depends(require_role(*_RO))])
+async def get_action_version(name: str, commit: str, request: Request):
+    validate_name(name)
+    validate_commit(commit)
+    git = request.app.state.git
+    content = await history.get_version(git, f"actions/{name}.py", commit)
+    return {"content": content}
+
+
+@router.get("/{name}/diff", dependencies=[Depends(require_role(*_RO))])
+async def get_action_diff(name: str, request: Request, a: str, b: str):
+    validate_name(name)
+    validate_commit(a)
+    validate_commit(b)
+    git = request.app.state.git
+    diff = await history.diff_versions(git, f"actions/{name}.py", a, b)
+    return {"diff": diff}
+
+
+@router.post("/{name}/restore")
+async def restore_action(
+    name: str, request: Request, body: RestoreRequest,
+    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
+    validate_name(name)
+    validate_commit(body.commit)
+    git = request.app.state.git
+    author_name, author_email = audit_service.git_author(user)
+    await history.restore_version(git, f"actions/{name}.py", body.commit, author_name, author_email)
+    await audit_service.record(
+        db, user=user, action="action.restore", resource_type="action",
+        resource_id=name, request=request, detail={"commit": body.commit},
+    )
+    return {"status": "restored", "commit": body.commit}
+
+
 @router.put("/{name}")
 async def save_action(
     name: str, request: Request,
@@ -95,6 +150,7 @@ async def save_action(
 
     if not code.strip():
         raise HTTPException(status_code=422, detail="Code must not be empty")
+    validate_action_code(code, name)
 
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(code)

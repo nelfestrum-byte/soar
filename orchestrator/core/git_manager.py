@@ -107,6 +107,12 @@ class GitManager:
     async def diff(self, filepath: str, commit_a: str, commit_b: str) -> str:
         return await self._run("diff", commit_a, commit_b, "--", filepath)
 
-    async def restore(self, filepath: str, commit: str) -> None:
+    async def restore(
+        self, filepath: str, commit: str,
+        author_name: str | None = None, author_email: str | None = None,
+    ) -> None:
         await self._run("checkout", commit, "--", filepath)
-        await self.commit(filepath, f"Restore to {commit}")
+        await self.commit(
+            filepath, f"Restore to {commit}",
+            author_name=author_name, author_email=author_email,
+        )

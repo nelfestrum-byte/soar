@@ -63,6 +63,19 @@ def test_base_workflow_execute_failure():
     assert "test error" in str(result.error)
 
 
+def test_base_workflow_execute_failure_captures_traceback():
+    class FailingWorkflow(ManualWorkflow):
+        def run(self, context):
+            raise ValueError("boom")
+
+    wf = FailingWorkflow()
+    result = wf.execute({})
+    assert result.traceback
+    assert "ValueError" in result.traceback
+    assert "boom" in result.traceback
+    assert "test_workflows.py" in result.traceback
+
+
 def test_base_workflow_run_not_implemented():
     wf = ManualWorkflow()
     with pytest.raises(NotImplementedError):

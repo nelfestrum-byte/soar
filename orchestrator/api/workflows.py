@@ -1,11 +1,18 @@
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from orchestrator.api.validation import validate_name, validate_path_within
+from orchestrator.api.validation import (
+    validate_commit,
+    validate_name,
+    validate_path_within,
+    validate_workflow_code,
+)
 from orchestrator.audit import service as audit_service
 from orchestrator.auth.dependencies import CurrentUser, require_role
+from orchestrator.core import history, workflow_state
 from orchestrator.db.session import get_db
 
 _RO = ("viewer", "analyst", "service", "admin")
@@ -66,6 +73,10 @@ TEMPLATES = {
 }
 
 
+class RestoreRequest(BaseModel):
+    commit: str
+
+
 @router.get("", dependencies=[Depends(require_role(*_RO))])
 async def list_workflows(request: Request):
     job_manager = request.app.state.job_manager
@@ -120,7 +131,7 @@ async def enable_workflow(
     if not meta:
         raise HTTPException(status_code=404, detail=f"Workflow '{name}' not found")
     meta.enabled = True
-    _save_state(request.app.state.config, job_manager.list_metas())
+    workflow_state.save_state(request.app.state.config, job_manager.list_metas())
     scheduler = request.app.state.scheduler
     await scheduler.reload(job_manager.list_metas())
     await audit_service.record(
@@ -141,7 +152,7 @@ async def disable_workflow(
     if not meta:
         raise HTTPException(status_code=404, detail=f"Workflow '{name}' not found")
     meta.enabled = False
-    _save_state(request.app.state.config, job_manager.list_metas())
+    workflow_state.save_state(request.app.state.config, job_manager.list_metas())
     scheduler = request.app.state.scheduler
     await scheduler.reload(job_manager.list_metas())
     await audit_service.record(
@@ -195,6 +206,61 @@ async def get_workflow_code(name: str, request: Request):
     return {"name": name, "content": content}
 
 
+@router.get("/{name}/code/history", dependencies=[Depends(require_role(*_RO))])
+async def get_workflow_history(name: str, request: Request):
+    validate_name(name)
+    git = request.app.state.git
+    return await history.list_history(git, f"workflows/{name}.py")
+
+
+@router.get("/{name}/code/history/{commit}", dependencies=[Depends(require_role(*_RO))])
+async def get_workflow_version(name: str, commit: str, request: Request):
+    validate_name(name)
+    validate_commit(commit)
+    git = request.app.state.git
+    content = await history.get_version(git, f"workflows/{name}.py", commit)
+    return {"content": content}
+
+
+@router.get("/{name}/code/diff", dependencies=[Depends(require_role(*_RO))])
+async def get_workflow_diff(name: str, request: Request, a: str, b: str):
+    validate_name(name)
+    validate_commit(a)
+    validate_commit(b)
+    git = request.app.state.git
+    diff = await history.diff_versions(git, f"workflows/{name}.py", a, b)
+    return {"diff": diff}
+
+
+@router.post("/{name}/code/restore")
+async def restore_workflow_code(
+    name: str, request: Request, body: RestoreRequest,
+    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
+    validate_name(name)
+    validate_commit(body.commit)
+    config = request.app.state.config
+    git = request.app.state.git
+    author_name, author_email = audit_service.git_author(user)
+    await history.restore_version(
+        git, f"workflows/{name}.py", body.commit, author_name, author_email,
+    )
+
+    from orchestrator.main import load_workflow_metas
+    job_manager = request.app.state.job_manager
+    scheduler = request.app.state.scheduler
+    workflows = load_workflow_metas(config)
+    job_manager.set_metas(workflows)
+    await scheduler.reload(workflows)
+
+    await audit_service.record(
+        db, user=user, action="workflow.restore", resource_type="workflow",
+        resource_id=name, request=request, detail={"commit": body.commit},
+    )
+    return {"status": "restored", "commit": body.commit}
+
+
 @router.put("/{name}/code")
 async def save_workflow_code(
     name: str, request: Request,
@@ -217,6 +283,7 @@ async def save_workflow_code(
 
     if not code.strip():
         raise HTTPException(status_code=422, detail="Code must not be empty")
+    validate_workflow_code(code)
 
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(code)
@@ -260,7 +327,7 @@ async def delete_workflow_code(
         raise HTTPException(status_code=404, detail="Workflow not found")
     os.remove(filepath)
 
-    _remove_from_state(config, name)
+    workflow_state.remove_from_state(config, name)
 
     git = request.app.state.git
     author_name, author_email = audit_service.git_author(user)
@@ -285,36 +352,3 @@ async def delete_workflow_code(
     )
 
     return {"status": "deleted", "commit": commit_hash}
-
-
-def _remove_from_state(config, name: str):
-    from pathlib import Path
-
-    import yaml
-
-    state_path = Path(config.soar.workflows_dir).parent / "orchestrator_state.yaml"
-    if not state_path.exists():
-        return
-    with open(state_path) as f:
-        state = yaml.safe_load(f) or {}
-    workflows = state.get("workflows", {})
-    if name in workflows:
-        del workflows[name]
-        state["workflows"] = workflows
-        with open(state_path, "w") as f:
-            yaml.dump(state, f)
-
-
-def _save_state(config, metas: list):
-    from pathlib import Path
-
-    import yaml
-
-    state_path = Path(config.soar.workflows_dir).parent / "orchestrator_state.yaml"
-    state: dict = {"workflows": {}}
-    for meta in metas:
-        state["workflows"][meta.name] = "enabled" if meta.enabled else "disabled"
-
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(state_path, "w") as f:
-        yaml.dump(state, f)

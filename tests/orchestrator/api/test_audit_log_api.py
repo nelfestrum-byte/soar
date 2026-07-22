@@ -4,6 +4,12 @@ from httpx import ASGITransport, AsyncClient
 from orchestrator.auth.dependencies import CurrentUser, get_current_user
 from orchestrator.main import app
 
+VALID_WF_CODE = (
+    "from soar.workflows.base import ManualWorkflow\n\n\n"
+    "class FilterWf(ManualWorkflow):\n"
+    "    def run(self, context):\n        return {}\n"
+).encode()
+
 
 def _mock_viewer() -> CurrentUser:
     return CurrentUser(id=2, role="viewer", type="user", username="test_viewer")
@@ -23,7 +29,7 @@ async def test_audit_log_admin_sees_rows_from_prior_mutation(setup_app_state):
     # setup_app_state's autouse fixture mocks get_current_user as admin already
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
-        await c.put("/actions/al_action", content=b"# test")
+        await c.put("/actions/al_action", content=b"def al_action():\n    pass\n")
         r = await c.get("/audit-log")
 
     assert r.status_code == 200
@@ -35,8 +41,8 @@ async def test_audit_log_admin_sees_rows_from_prior_mutation(setup_app_state):
 async def test_audit_log_filters_by_resource_type(setup_app_state):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
-        await c.put("/actions/filter_action", content=b"# test")
-        await c.put("/workflows/filter_wf/code", content=b"# test")
+        await c.put("/actions/filter_action", content=b"def filter_action():\n    pass\n")
+        await c.put("/workflows/filter_wf/code", content=VALID_WF_CODE)
 
         r = await c.get("/audit-log?resource_type=action")
         assert r.status_code == 200
@@ -50,7 +56,7 @@ async def test_audit_log_filters_by_resource_type(setup_app_state):
 async def test_audit_log_filters_by_action(setup_app_state):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
-        await c.put("/actions/act_filter", content=b"# test")
+        await c.put("/actions/act_filter", content=b"def act_filter():\n    pass\n")
         await c.delete("/actions/act_filter")
 
         r = await c.get("/audit-log?action=action.delete")
@@ -65,7 +71,10 @@ async def test_audit_log_pagination_limit(setup_app_state):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         for i in range(3):
-            await c.put(f"/actions/page_action_{i}", content=b"# test")
+            await c.put(
+                f"/actions/page_action_{i}",
+                content=f"def page_action_{i}():\n    pass\n".encode(),
+            )
 
         r = await c.get("/audit-log?limit=1")
         assert r.status_code == 200
