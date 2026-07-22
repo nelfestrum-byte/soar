@@ -252,8 +252,10 @@ rate limiting, subprocess isolation, API hardening) —
 
 Коротко: `orchestrator/api/validation.py` валидирует имена/пути/commit-хэши и код
 (`ast.parse`, без импорта) перед записью; auth — JWT + refresh + API keys + RBAC
-(`admin`/`analyst`/`viewer`/`service`), `auth.secret_key = ""` → анонимный admin;
-rate limit 120/60s (5/60s на login); все HTTP-коннекторы — `timeout=30`.
+(`admin`/`analyst`/`viewer`/`service`/`agent` — `agent`: код+jobs, не
+user-management/API-keys/audit-log/transfer, см. security-patterns.md),
+`auth.secret_key = ""` → анонимный admin; rate limit 120/60s (5/60s на login);
+все HTTP-коннекторы — `timeout=30`.
 
 ## Known limitations
 

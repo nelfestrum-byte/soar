@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from orchestrator.auth.models import ApiKey, RefreshToken, User
 
-ROLES = {"admin", "analyst", "viewer", "service"}
+ROLES = {"admin", "analyst", "viewer", "service", "agent"}
 
 
 def hash_password(password: str) -> str:

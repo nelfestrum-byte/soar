@@ -42,6 +42,15 @@ def test_create_rejects_unknown_role(tmp_path):
         create(instance, username="bob", role="superuser")
 
 
+def test_create_argv_agent_role(tmp_path, monkeypatch):
+    instance = _make_instance(tmp_path)
+    calls = []
+    monkeypatch.setattr("deploy.soarctl_lib.users.run", lambda argv, **kw: calls.append(argv))
+    create(instance, username="devbot", role="agent")
+    tail = _tail(instance, calls)
+    assert tail == ["orchestrator.auth.cli", "create-user", "--username", "devbot", "--role", "agent"]
+
+
 def test_deactivate_argv(tmp_path, monkeypatch):
     instance = _make_instance(tmp_path)
     calls = []

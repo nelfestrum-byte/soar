@@ -9,7 +9,7 @@ from orchestrator.auth.dependencies import CurrentUser, require_role
 from orchestrator.db.session import get_db
 
 router = APIRouter(prefix="/prompts", tags=["prompts"])
-_RO = ("viewer", "analyst", "service", "admin")
+_RO = ("viewer", "analyst", "service", "admin", "agent")
 _ADMIN = ("admin",)
 
 

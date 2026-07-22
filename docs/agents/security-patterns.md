@@ -23,7 +23,7 @@
 - **JWT access tokens** (HS256, TTL 30min): payload `{sub, role, type:"user", exp}`
 - **Refresh tokens**: opaque UUID, TTL 7d, хранятся как `SHA-256(token)` в Postgres, ротируются при каждом `/auth/refresh`
 - **API keys**: формат `soar_<32-byte-hex>`, хранятся как `SHA-256(key)`, для M2M сервисных аккаунтов
-- **RBAC роли**: `admin`, `analyst`, `viewer`, `service`; каждый эндпоинт декорирован `Depends(require_role(...))`
+- **RBAC роли**: `admin` (полный доступ), `analyst`, `viewer`, `service`, `agent` (Stage 3/P7 — код actions/connectors/workflows + jobs/logs на равных с `admin`, но НЕ `/auth/users`, `/auth/keys`, `/audit-log`, `/transfer/*`, `PUT /prompts/user` — эти остаются `admin`-only литералом, не через общий tuple); каждый эндпоинт декорирован `Depends(require_role(...))`
 - **Lazy DB session**: `get_current_user` не принимает `Depends(get_db)` — создаёт сессию только когда нужна проверка API-ключа (через `request.app.state.db_session_factory`)
 - **bcrypt напрямую**: `import bcrypt` + `bcrypt.hashpw/checkpw` — passlib 1.7.4 несовместима с bcrypt≥5.0.0 (`__about__` был убран)
 - **CORS**: `allow_origins=config.auth.cors_origins` + `allow_credentials=True`; `allow_origins=["*"]` несовместим с `credentials=True` в браузерах

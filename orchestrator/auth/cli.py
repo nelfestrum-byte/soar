@@ -67,7 +67,7 @@ def main() -> None:
 
     create = sub.add_parser("create-user", help="Create a new user")
     create.add_argument("--username", required=True)
-    create.add_argument("--role", default="analyst", choices=["admin", "analyst", "viewer", "service"])
+    create.add_argument("--role", default="analyst", choices=["admin", "analyst", "viewer", "service", "agent"])
     create.add_argument("--password", default=None, help="If omitted, prompted interactively")
     create.add_argument("--db-url", default=None, help="Override database.url from config")
 
