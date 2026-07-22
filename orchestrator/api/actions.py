@@ -19,8 +19,8 @@ from orchestrator.db.session import get_db
 
 router = APIRouter(prefix="/actions", tags=["actions"])
 
-_RO = ("viewer", "analyst", "service", "admin")
-_ADMIN = ("admin",)
+_RO = ("viewer", "analyst", "service", "admin", "agent")
+_ADMIN = ("admin", "agent")
 
 
 class RestoreRequest(BaseModel):

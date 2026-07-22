@@ -10,7 +10,7 @@ from orchestrator.models.job import JobStatus
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
-_RW = ("analyst", "service", "admin")
+_RW = ("analyst", "service", "admin", "agent")
 
 
 @router.get("/{job_id}", dependencies=[Depends(require_role(*_RW))])

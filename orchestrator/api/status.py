@@ -4,7 +4,7 @@ from orchestrator.auth.dependencies import require_role
 
 router = APIRouter(tags=["status"])
 
-_RO = ("viewer", "analyst", "service", "admin")
+_RO = ("viewer", "analyst", "service", "admin", "agent")
 
 
 @router.get("/health")

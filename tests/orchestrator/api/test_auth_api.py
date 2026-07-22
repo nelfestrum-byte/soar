@@ -88,6 +88,11 @@ async def viewer_user(db_session):
     return await create_user(db_session, "viewer", "viewerpass", role="viewer")
 
 
+@pytest.fixture
+async def agent_user(db_session):
+    return await create_user(db_session, "agentbot", "agentpass", role="agent")
+
+
 # helpers
 
 async def _login(client, username, password):
@@ -256,6 +261,55 @@ async def test_viewer_cannot_access_transfer(auth_client, viewer_user):
     assert r.status_code == 403
 
 
+# ── agent role: end-to-end with a real JWT (Stage 3, P7) ─────────────────
+
+@pytest.mark.asyncio
+async def test_agent_jwt_can_get_status(auth_client, agent_user):
+    token = await _login(auth_client, "agentbot", "agentpass")
+    r = await auth_client.get("/status", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_agent_jwt_can_post_jobs(auth_client, agent_user):
+    token = await _login(auth_client, "agentbot", "agentpass")
+    r = await auth_client.post("/jobs", json={"workflow_name": "nonexistent"},
+                               headers={"Authorization": f"Bearer {token}"})
+    # 404 because workflow doesn't exist, but RBAC passed (not 403)
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_agent_jwt_cannot_create_user(auth_client, agent_user):
+    token = await _login(auth_client, "agentbot", "agentpass")
+    r = await auth_client.post("/auth/users",
+                               json={"username": "x", "password": "password1", "role": "viewer"},
+                               headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_agent_jwt_cannot_create_api_key(auth_client, agent_user):
+    token = await _login(auth_client, "agentbot", "agentpass")
+    r = await auth_client.post("/auth/keys", json={"name": "x", "role": "service"},
+                               headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_agent_jwt_cannot_read_audit_log(auth_client, agent_user):
+    token = await _login(auth_client, "agentbot", "agentpass")
+    r = await auth_client.get("/audit-log", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_agent_jwt_cannot_access_transfer(auth_client, agent_user):
+    token = await _login(auth_client, "agentbot", "agentpass")
+    r = await auth_client.post("/transfer/export", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+
+
 # ── API keys ─────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -357,6 +411,26 @@ async def test_admin_can_create_user(auth_client, admin_user):
     assert data["role"] == "viewer"
     assert "password" not in data
     assert "password_hash" not in data
+
+
+@pytest.mark.asyncio
+async def test_admin_can_create_agent_user(auth_client, admin_user):
+    token = await _login(auth_client, "admin", "adminpass")
+    r = await auth_client.post("/auth/users",
+                               json={"username": "devbot", "password": "devbotpass1", "role": "agent"},
+                               headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    assert r.json()["role"] == "agent"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_create_agent_api_key(auth_client, admin_user):
+    token = await _login(auth_client, "admin", "adminpass")
+    r = await auth_client.post("/auth/keys",
+                               json={"name": "agent-key", "role": "agent"},
+                               headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    assert r.json()["role"] == "agent"
 
 
 @pytest.mark.asyncio

@@ -10,9 +10,9 @@ from orchestrator.models.job import JobStatus
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
-_RO = ("viewer", "analyst", "service", "admin")
-_RW = ("analyst", "service", "admin")
-_ANALYST = ("analyst", "admin")
+_RO = ("viewer", "analyst", "service", "admin", "agent")
+_RW = ("analyst", "service", "admin", "agent")
+_ANALYST = ("analyst", "admin", "agent")
 
 
 class JobRequest(BaseModel):

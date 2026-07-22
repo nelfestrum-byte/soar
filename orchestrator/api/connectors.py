@@ -26,9 +26,9 @@ from soar.tools.openapi import OpenAPIGenerator
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
 
-_RO = ("viewer", "analyst", "service", "admin")
-_RW = ("analyst", "admin")
-_ADMIN = ("admin",)
+_RO = ("viewer", "analyst", "service", "admin", "agent")
+_RW = ("analyst", "admin", "agent")
+_ADMIN = ("admin", "agent")
 
 
 class GenerateRequest(BaseModel):

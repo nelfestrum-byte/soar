@@ -15,9 +15,9 @@ from orchestrator.auth.dependencies import CurrentUser, require_role
 from orchestrator.core import history, workflow_state
 from orchestrator.db.session import get_db
 
-_RO = ("viewer", "analyst", "service", "admin")
-_RW = ("analyst", "admin")
-_ADMIN = ("admin",)
+_RO = ("viewer", "analyst", "service", "admin", "agent")
+_RW = ("analyst", "admin", "agent")
+_ADMIN = ("admin", "agent")
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 

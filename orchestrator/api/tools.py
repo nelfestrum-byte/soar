@@ -6,7 +6,7 @@ from orchestrator.auth.dependencies import require_role
 from orchestrator.core.introspect import _summary, parse_classes
 
 router = APIRouter(prefix="/tools", tags=["tools"])
-_RO = ("viewer", "analyst", "service", "admin")
+_RO = ("viewer", "analyst", "service", "admin", "agent")
 
 
 @router.get("", dependencies=[Depends(require_role(*_RO))])
