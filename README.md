@@ -264,7 +264,7 @@ M2M-клиенты используют API-ключ напрямую в `Author
 UI (`ui/`) делает то же самое автоматически — см. `ui/src/api.js` /
 `ui/src/store/auth.js`: форма логина, авто-refresh при 401, logout.
 
-Роли: `admin`, `analyst`, `viewer`, `service`. Подробности — [docs/agents/security-patterns.md → Authentication](docs/agents/security-patterns.md#authentication-orchestratorauth).
+Роли: `admin`, `analyst`, `viewer`, `service`, `agent` (код actions/connectors/workflows + jobs/logs, без user-management/API-keys/audit-log). Подробности — [docs/agents/security-patterns.md → Authentication](docs/agents/security-patterns.md#authentication-orchestratorauth).
 
 ## Логи — где что смотреть
 
