@@ -67,7 +67,7 @@ make migrate
 ```
 
 Full explanation (why `stamp` and not `upgrade` on first deploy) — see
-[AGENTS.md → Database backend](../../AGENTS.md#database-backend-sqlitepostgresql-и-table-prefix).
+[docs/agents/config-reference.md → Database backend](../../docs/agents/config-reference.md#database-backend-sqlitepostgresql-и-table-prefix).
 
 ## Commands
 

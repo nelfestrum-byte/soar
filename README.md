@@ -60,7 +60,7 @@ mypy orchestrator/ soar/ --ignore-missing-imports
 
 `memory` — только для одного инстанса оркестратора; `redis` — при
 нескольких инстансах/распределённой нагрузке. См. Known Limitation #2 в
-[AGENTS.md](AGENTS.md#known-limitations) (at-most-once delivery).
+[docs/agents/known-limitations.md](docs/agents/known-limitations.md) (at-most-once delivery).
 
 ### `database` — SQLite / PostgreSQL
 
@@ -94,7 +94,7 @@ database:
 
 Применяется на уровне процесса при старте (до импорта ORM-моделей) —
 не может быть изменён без рестарта. Подробности реализации —
-[AGENTS.md → Database backend](AGENTS.md#database-backend-sqlitepostgresql-и-table-prefix).
+[docs/agents/config-reference.md → Database backend](docs/agents/config-reference.md#database-backend-sqlitepostgresql-и-table-prefix).
 
 ### `jobs` — история выполнения workflow
 
@@ -264,7 +264,7 @@ M2M-клиенты используют API-ключ напрямую в `Author
 UI (`ui/`) делает то же самое автоматически — см. `ui/src/api.js` /
 `ui/src/store/auth.js`: форма логина, авто-refresh при 401, logout.
 
-Роли: `admin`, `analyst`, `viewer`, `service`. Подробности — [AGENTS.md → Authentication](AGENTS.md#authentication-orchestratorauth).
+Роли: `admin`, `analyst`, `viewer`, `service`. Подробности — [docs/agents/security-patterns.md → Authentication](docs/agents/security-patterns.md#authentication-orchestratorauth).
 
 ## Логи — где что смотреть
 
@@ -422,7 +422,7 @@ python soarctl migrate --fresh   # или --upgrade — только если р
 — `AUTH_SECRET_KEY`/`POSTGRES_PASSWORD` не перегенерируются (иначе апгрейд
 заблокировал бы доступ к собственной БД). День-2 операции —
 `soarctl status`/`logs`/`backup create`/`backup restore --confirm`/`down`.
-Один инстанс на вызов — мультиинстансность вне scope (см. [AGENTS.md → Known Limitations #9](AGENTS.md#known-limitations)).
+Один инстанс на вызов — мультиинстансность вне scope (см. [Known Limitations #9](docs/agents/known-limitations.md)).
 Подробнее — [`deploy/prod/README.md`](deploy/prod/README.md) и
 [`docs/compose/specs/2026-07-22-deploy-cli-design.md`](docs/compose/specs/2026-07-22-deploy-cli-design.md).
 
@@ -433,7 +433,7 @@ Postgres), `queue.backend: redis` (managed Redis), `auth.secret_key`
 (сгенерированный секрет) и, при необходимости, `database.table_prefix`
 (если БД шарится с другими окружениями/инстансами). Перед первым стартом на
 уже существующей БД — та же логика stamp/upgrade, что и для Compose (см.
-выше и [AGENTS.md → Database backend](AGENTS.md#database-backend-sqlitepostgresql-и-table-prefix)).
+выше и [docs/agents/config-reference.md → Database backend](docs/agents/config-reference.md#database-backend-sqlitepostgresql-и-table-prefix)).
 
 ## Дальше
 

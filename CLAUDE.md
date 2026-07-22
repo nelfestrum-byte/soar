@@ -27,11 +27,13 @@ docs/compose/reports/<feature>.md                    ← после заверш
 
 ## Текущее состояние
 
-Актуальные баги и Known Limitations — в `AGENTS.md#known-limitations`.
+Актуальные баги и Known Limitations — в [`docs/agents/known-limitations.md`](docs/agents/known-limitations.md).
 
 Активные спеки (написаны, не выполнены):
-- [`docs/compose/specs/2026-07-03-bugfixes-design.md`](docs/compose/specs/2026-07-03-bugfixes-design.md) — 7 багов из ревью (cancel race, mysql sql, redis concurrency, result_data, rate limiter, ssrf dns, private fields)
+
 - [`docs/compose/specs/2026-07-03-v06-upgrade-design.md`](docs/compose/specs/2026-07-03-v06-upgrade-design.md) — CachedHttpClient, per-workflow метрики, dry-run конвенция
+
+`2026-07-03-bugfixes-design.md` — не активен, все 7 багов исправлены в v0.5 (см. `CHANGELOG.md`), спек оставлен как референс.
 
 ## Что читать, что не читать
 
@@ -46,7 +48,7 @@ docs/compose/reports/<feature>.md                    ← после заверш
 - **Workflow key:** имя файла без `.py` (не имя класса) — `WorkflowRegistry` использует `module_name` как ключ
 - **Connector lazy init:** `_ensure_connected()` при первом вызове метода
 - **Git auto-commit:** любое изменение файла через API коммитится через `GitManager`
-- **No auth до v0.8:** сервис в Docker-сети, авторизации нет
+- **Auth:** JWT+RBAC с v0.5.1, но опционален — `auth.secret_key = ""` в config → анонимный admin (Docker-сетевое доверие); на deploy/stage включена с v0.9
 - **Dry-run:** `context["dry_run"] = True` в `POST /jobs` → workflow пропускает мутации
 
 ## Чего не делать
