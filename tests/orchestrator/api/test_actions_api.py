@@ -28,6 +28,64 @@ async def test_list_actions():
 
 
 @pytest.mark.asyncio
+async def test_list_actions_includes_summary():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.put(
+            "/actions/summarized_action",
+            content=b'def summarized_action():\n    """Do the thing."""\n    pass\n',
+        )
+        r = await c.get("/actions")
+        assert r.status_code == 200
+        item = next(a for a in r.json() if a["name"] == "summarized_action")
+        assert item["summary"] == "Do the thing."
+
+
+@pytest.mark.asyncio
+async def test_describe_action():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.put(
+            "/actions/described_action",
+            content=b'def described_action(indicator):\n    """Describe me."""\n    pass\n',
+        )
+        r = await c.get("/actions/described_action/describe")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["name"] == "described_action"
+        assert data["signature"] == "(indicator)"
+        assert data["docstring"] == "Describe me."
+        assert data["module"] == "described_action"
+
+
+@pytest.mark.asyncio
+async def test_describe_action_not_found():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/actions/nonexistent/describe")
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_describe_action_function_name_mismatch_is_404():
+    """File exists but its function isn't named after the file — describe
+    must not 500, since ActionsRegistry looks up actions by file name.
+    Written directly to disk: the PUT endpoint's validate_action_code
+    already rejects a mismatched name at save time, so this state can only
+    arise from a file placed on disk outside the API."""
+    import os
+    actions_dir = app.state.config.soar.actions_dir
+    os.makedirs(actions_dir, exist_ok=True)
+    with open(os.path.join(actions_dir, "mismatched_action.py"), "w") as f:
+        f.write("def other_name():\n    pass\n")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/actions/mismatched_action/describe")
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_action_template():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:

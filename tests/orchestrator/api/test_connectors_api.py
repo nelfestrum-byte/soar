@@ -51,6 +51,79 @@ async def test_list_connectors():
         assert isinstance(r.json(), list)
 
 
+DESCRIBED_CONNECTOR_CODE = (
+    "from soar.connectors.base import BaseConnector\n\n\n"
+    "class DescribedConnector(BaseConnector):\n"
+    '    """A describable connector."""\n\n'
+    "    def __init__(self, instance_name: str, base_url: str, **kwargs):\n"
+    "        super().__init__(instance_name)\n"
+    "        self.base_url = base_url\n\n"
+    "    def _connect_impl(self):\n        self._connected = True\n\n"
+    "    def disconnect(self):\n        self._connected = False\n\n"
+    "    def ping(self):\n"
+    '        """Check connectivity."""\n'
+    "        return True\n"
+).encode()
+
+
+@pytest.mark.asyncio
+async def test_list_connectors_includes_summary():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/described_conn")
+        await c.put("/connectors/described_conn/code", content=DESCRIBED_CONNECTOR_CODE)
+        r = await c.get("/connectors")
+        item = next(x for x in r.json() if x["name"] == "described_conn")
+        assert item["summary"] == "A describable connector."
+
+
+@pytest.mark.asyncio
+async def test_get_connector_includes_summary():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/described_conn2")
+        await c.put("/connectors/described_conn2/code", content=DESCRIBED_CONNECTOR_CODE)
+        r = await c.get("/connectors/described_conn2")
+        assert r.json()["summary"] == "A describable connector."
+
+
+@pytest.mark.asyncio
+async def test_describe_connector():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/describe_conn")
+        await c.put("/connectors/describe_conn/code", content=DESCRIBED_CONNECTOR_CODE)
+        r = await c.get("/connectors/describe_conn/describe")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["name"] == "DescribedConnector"
+        assert data["module"] == "describe_conn"
+        assert data["docstring"] == "A describable connector."
+        assert data["constructor"] == "(instance_name, base_url)"
+        methods = {m["name"]: m for m in data["methods"]}
+        assert methods["ping"]["docstring"] == "Check connectivity."
+
+
+@pytest.mark.asyncio
+async def test_describe_connector_no_code_is_404():
+    import os
+    dirpath = os.path.join(app.state.config.soar.connectors_dir, "no_code_conn")
+    os.makedirs(dirpath, exist_ok=True)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/connectors/no_code_conn/describe")
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_describe_connector_unknown_is_404():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/connectors/nonexistent/describe")
+        assert r.status_code == 404
+
+
 @pytest.mark.asyncio
 async def test_connector_template():
     transport = ASGITransport(app=app)

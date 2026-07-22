@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -13,6 +14,7 @@ from orchestrator.api.validation import (
 from orchestrator.audit import service as audit_service
 from orchestrator.auth.dependencies import CurrentUser, require_role
 from orchestrator.core import history
+from orchestrator.core.introspect import _summary, parse_functions
 from orchestrator.db.session import get_db
 
 router = APIRouter(prefix="/actions", tags=["actions"])
@@ -36,21 +38,34 @@ def {name}({params}):
 '''
 
 
+def _describe_action_summary(actions_dir: str, name: str) -> str:
+    try:
+        for fn in parse_functions(Path(actions_dir) / f"{name}.py"):
+            if fn["name"] == name:
+                return _summary(fn["docstring"])
+    except (SyntaxError, OSError):
+        pass
+    return ""
+
+
 @router.get("", dependencies=[Depends(require_role(*_RO))])
 async def list_actions(request: Request):
     config = request.app.state.config
     actions_dir = config.soar.actions_dir
     if not os.path.exists(actions_dir):
         return []
-    result = []
+    names = []
     for entry in os.scandir(actions_dir):
         if entry.name.startswith(("_", ".")):
             continue
         if entry.name == "__init__.py":
             continue
         if entry.is_file() and entry.name.endswith(".py"):
-            result.append(entry.name[:-3])
-    return sorted(result)
+            names.append(entry.name[:-3])
+    return [
+        {"name": name, "summary": _describe_action_summary(actions_dir, name)}
+        for name in sorted(names)
+    ]
 
 
 @router.get("/template", dependencies=[Depends(require_role(*_RO))])
@@ -69,6 +84,20 @@ async def get_action_code(name: str, request: Request):
     with open(filepath) as f:
         content = f.read()
     return {"name": name, "content": content}
+
+
+@router.get("/{name}/describe", dependencies=[Depends(require_role(*_RO))])
+async def describe_action(name: str, request: Request):
+    validate_name(name)
+    config = request.app.state.config
+    filepath = os.path.join(config.soar.actions_dir, f"{name}.py")
+    validate_path_within(config.soar.actions_dir, filepath)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Action not found")
+    for fn in parse_functions(Path(filepath)):
+        if fn["name"] == name:
+            return {**fn, "module": name}
+    raise HTTPException(status_code=404, detail=f"No function named '{name}' found in {name}.py")
 
 
 @router.get("/{name}", dependencies=[Depends(require_role(*_RO))])

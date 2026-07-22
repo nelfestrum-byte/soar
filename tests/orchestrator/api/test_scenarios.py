@@ -133,7 +133,7 @@ async def test_scenario_5_action_crud_lifecycle():
 
         # List
         r = await c.get("/actions")
-        assert "scenario_action" in r.json()
+        assert "scenario_action" in {a["name"] for a in r.json()}
 
         # Get
         r = await c.get("/actions/scenario_action")
@@ -145,7 +145,7 @@ async def test_scenario_5_action_crud_lifecycle():
 
         # Verify removed
         r = await c.get("/actions")
-        assert "scenario_action" not in r.json()
+        assert "scenario_action" not in {a["name"] for a in r.json()}
 
 
 @pytest.mark.asyncio
