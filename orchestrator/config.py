@@ -50,6 +50,7 @@ class SoarConfig(BaseModel):
     connectors_dir: str = "/app/data/connectors"
     actions_dir: str = "/app/data/actions"
     tools_dir: str = "soar/tools"
+    system_prompt_path: str = "orchestrator/prompts/system_prompt.md"
 
 
 class GitConfig(BaseModel):
