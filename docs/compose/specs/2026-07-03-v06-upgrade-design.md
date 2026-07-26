@@ -4,6 +4,14 @@
 > Спек на следующую итерацию после bugfixes. Без LLM, без YAML DSL.
 > Plan: `docs/compose/plans/2026-07-03-v06-upgrade.md` (создать перед началом работы)
 
+> [!IMPORTANT]
+> **Feature 1 (`[S4] CachedHttpClient`) превзойдена** —
+> `docs/compose/specs/2026-07-27-http-client-design.md` (см.
+> `docs/concepts/UPGRADE-v2.md` P12) заменяет её: один класс `HttpClient`
+> с опциональным кэшем вместо всегда-кэширующего `CachedHttpClient`.
+> Feature 2 (per-workflow метрики, `[S5]`) и Feature 3 (dry-run конвенция,
+> `[S7]`) этой спеки остаются в силе, не реализованы.
+
 ## [S1] Problem
 
 Три независимые потребности следующей итерации:

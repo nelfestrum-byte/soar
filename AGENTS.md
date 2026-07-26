@@ -339,6 +339,7 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 | API endpoints (полные таблицы) | `docs/agents/api-reference.md` |
 | Security patterns (полное описание) | `docs/agents/security-patterns.md` |
 | Known limitations (полное описание) | `docs/agents/known-limitations.md` |
+| Концепты верхнего уровня (карта проблем + реестр рисков, не спеки) | `docs/concepts/` — `UPGRADE.md` (Agent Dev-Loop, этапы 1-3 реализованы), `UPGRADE-v2.md` (pre-release ревью перед деплоем на живую инфру) |
 | Queue/Database backend config (полное описание) | `docs/agents/config-reference.md` |
 | История версий | `CHANGELOG.md` |
 
