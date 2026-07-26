@@ -90,6 +90,7 @@ orchestrator/
 │   ├── git_manager.py         # Git операции через subprocess (commit принимает author_name/author_email override)
 │   ├── history.py             # Тонкие обёртки над GitManager для history/diff/restore (общие для workflows/actions/connectors)
 │   ├── workflow_state.py      # Единственный читатель/писатель orchestrator_state.yaml (enable/disable + webhook token)
+│   ├── introspect.py          # parse_classes/parse_functions — AST-интроспекция без импорта, общая для tools.py/actions.py/connectors.py
 │   └── net.py                 # resolve_client_ip() — trusted-proxy-aware IP, общий для rate limiter/access log/audit
 ├── store/
 │   ├── base.py                 # AbstractJobStore — интерфейс (save/get/list/count_by_status/stats/recover_on_startup)
@@ -101,14 +102,15 @@ orchestrator/
 ├── db/                         # base (table_prefix), session (init_engine/init_db/get_db) — см. File map
 └── api/
     ├── workflows.py            # GET/POST enable/disable, reload + CRUD кода workflow + history/diff/restore
-    ├── actions.py               # CRUD actions + templates + history/diff/restore
-    ├── connectors.py            # CRUD connectors + code/config + OpenAPI generate/preview + history/diff/restore
+    ├── actions.py               # CRUD actions + templates + history/diff/restore + GET {name}/describe
+    ├── connectors.py            # CRUD connectors + code/config + OpenAPI generate/preview + history/diff/restore + GET {name}/describe
     ├── jobs.py                  # POST запуск, GET статус, cancel
     ├── webhooks.py              # POST webhook с токеном
     ├── logs.py                  # GET лог + SSE стрим
     ├── status.py                # GET /status, GET /health
     ├── transfer.py               # POST export/import — импорт/экспорт конфигурации
     ├── tools.py                  # GET /tools — read-only discovery (AST, без импорта) для soar/tools/
+    ├── prompts.py                 # GET /prompts/system (read-only, versioned с кодом) + GET/PUT /prompts/user (admin, git-CRUD)
     ├── audit.py                  # GET /audit-log — admin-only, paginated, фильтры
     └── validation.py              # validate_name, validate_path_within, SSRF validation
 
@@ -137,8 +139,10 @@ tests/
 Полные таблицы (workflows/actions/connectors/tools/transfer/jobs/webhooks/logs/status/auth/audit) —
 **[docs/agents/api-reference.md](docs/agents/api-reference.md)**.
 
-Быстрый ориентир по префиксам: `/workflows`, `/actions`, `/connectors` (CRUD кода/конфига + history/diff/restore),
-`/jobs`, `/webhooks/{name}`, `/logs/{id}`, `/status`, `/health` (без auth), `/tools` (read-only), `/transfer/{export,import}`,
+Быстрый ориентир по префиксам: `/workflows`, `/actions`, `/connectors` (CRUD кода/конфига,
+history/diff/restore, `/describe` — сигнатуры/докстринг без импорта, тот же AST-паттерн, что `/tools`),
+`/jobs`, `/webhooks/{name}`, `/logs/{id}`, `/status`, `/health` (без auth), `/tools` (read-only),
+`/prompts/system` (read-only, встроенный), `/prompts/user` (admin, git-CRUD), `/transfer/{export,import}`,
 `/auth/*`, `/audit-log` (admin).
 
 ## Key patterns
@@ -312,6 +316,8 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 | Runner | `soar/runner.py` — точка входа для subprocess |
 | История/diff/restore (движок) | `orchestrator/core/history.py` — обёртка над `GitManager` для workflows/actions/connectors |
 | Workflow enable/disable state | `orchestrator/core/workflow_state.py` — единственный читатель/писатель `orchestrator_state.yaml` |
+| AST-интроспекция (describe) | `orchestrator/core/introspect.py` — `parse_classes`/`parse_functions`, общий для `/tools`, `/actions/{name}/describe`, `/connectors/{name}/describe` |
+| Системный/пользовательский промпт агента | `orchestrator/api/prompts.py`, текст — `orchestrator/prompts/system_prompt.md` |
 | Auth endpoints | `orchestrator/auth/router.py` — /auth/login, /auth/refresh, /auth/logout, /auth/me, /auth/keys, /auth/users |
 | Auth dependencies | `orchestrator/auth/dependencies.py` — get_current_user, require_role |
 | Auth models (ORM) | `orchestrator/auth/models.py` — User, RefreshToken, ApiKey |

@@ -20,13 +20,16 @@
 | GET | /workflows/{name}/code/diff?a=&b= | Diff между двумя коммитами |
 | POST | /workflows/{name}/code/restore `{"commit": "..."}` | Откат на коммит (admin), коммитится от актора, триггерит reload |
 
+`GET /workflows`/`GET /workflows/{name}` включают `docstring` (докстринг класса workflow, `""` если не задан).
+
 ### Actions
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /actions | Список actions |
+| GET | /actions | Список actions — `[{name, summary}]`, `summary` = первая строка докстринга функции |
 | GET | /actions/template | Шаблон boilerplate |
 | GET | /actions/{name} | Получить код |
 | GET | /actions/{name}/code | Получить код (алиас) |
+| GET | /actions/{name}/describe | Сигнатура + докстринг функции, AST без импорта (`{name, signature, docstring, module}`) |
 | PUT | /actions/{name} | Сохранить код — 422 если код не парсится или нет функции с именем `name` (`validate_action_code`) |
 | DELETE | /actions/{name} | Удалить action |
 | GET | /actions/{name}/history | История коммитов файла |
@@ -37,9 +40,10 @@
 ### Connectors
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /connectors | Список коннекторов |
+| GET | /connectors | Список коннекторов — включает `summary` (первая строка докстринга класса) при `has_code` |
 | GET | /connectors/template | Шаблон кода + конфига |
-| GET | /connectors/{name} | Meta коннектора (class_name, has_code, has_config) |
+| GET | /connectors/{name} | Meta коннектора (class_name, has_code, has_config, summary) |
+| GET | /connectors/{name}/describe | Докстринг класса + constructor + публичные методы (сигнатура, докстринг), AST без импорта |
 | POST | /connectors/{name} | Создать коннектор |
 | DELETE | /connectors/{name} | Удалить коннектор |
 | GET | /connectors/{name}/code | Получить код .py |
@@ -62,6 +66,13 @@
 |--------|------|-------------|
 | GET | /tools | Список классов `soar/tools/` (name, module, summary) — AST, без импорта |
 | GET | /tools/{name} | Докстринг, сигнатура конструктора и публичных методов класса |
+
+### Prompts
+| Method | Path | Roles | Description |
+|--------|------|-------|-------------|
+| GET | /prompts/system | `_RO` | Встроенный системный промпт (`orchestrator/prompts/system_prompt.md`) — версионируется с кодом, не редактируется через API; 404 если файл не найден по `config.soar.system_prompt_path` |
+| GET | /prompts/user | `_RO` | Пользовательский промпт (`{"content": null}`, если не задан) |
+| PUT | /prompts/user | admin | Сохранить пользовательский промпт (`{"content": "..."}`) — git-commit, без history/diff/restore (см. `docs/compose/specs/2026-07-22-agent-devloop-stage2-design.md` [S6]) |
 
 ### Transfer
 | Method | Path | Description |
