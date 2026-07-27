@@ -1,9 +1,13 @@
+from typing import ClassVar
+
 import requests
 
 from soar.connectors.base import BaseConnector
 
 
 class CrtshConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = set()
+
     BASE_URL = "https://crt.sh"
 
     def __init__(self, instance_name: str):

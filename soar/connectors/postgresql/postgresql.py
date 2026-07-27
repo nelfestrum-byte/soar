@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 import psycopg2
 import psycopg2.extras
 
@@ -5,6 +7,8 @@ from soar.connectors.base import BaseConnector
 
 
 class PostgreSQLConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+
     def __init__(
         self,
         instance_name: str,

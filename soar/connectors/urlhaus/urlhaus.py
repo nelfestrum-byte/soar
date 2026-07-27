@@ -1,9 +1,13 @@
+from typing import ClassVar
+
 import requests
 
 from soar.connectors.base import BaseConnector
 
 
 class UrlhausConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = set()
+
     BASE_URL = "https://urlhaus-api.abuse.ch/v1"
 
     def __init__(self, instance_name: str):

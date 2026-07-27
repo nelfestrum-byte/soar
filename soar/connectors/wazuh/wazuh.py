@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 import requests
 import urllib3
 
@@ -5,6 +7,8 @@ from soar.connectors.base import BaseConnector
 
 
 class WazuhConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+
     def __init__(
         self,
         instance_name: str,

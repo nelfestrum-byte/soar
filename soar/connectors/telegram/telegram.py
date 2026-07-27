@@ -1,4 +1,5 @@
 import asyncio
+from typing import ClassVar
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
@@ -7,6 +8,8 @@ from soar.connectors.base import BaseConnector
 
 
 class TelegramConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"token"}
+
     def __init__(self, instance_name: str, token: str, parse_mode: str = ""):
         super().__init__(instance_name)
         self.token = token

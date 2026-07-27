@@ -1,9 +1,13 @@
+from typing import ClassVar
+
 import requests
 
 from soar.connectors.base import BaseConnector
 
 
 class KasperskyOpenTipConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"api_key"}
+
     DEFAULT_BASE_URL = "https://opentip.kaspersky.com"
 
     def __init__(self, instance_name: str, api_key: str, base_url: str = "", verify_ssl: bool = True):

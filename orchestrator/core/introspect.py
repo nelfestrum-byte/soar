@@ -11,6 +11,44 @@ def _summary(docstring: str) -> str:
     return docstring.splitlines()[0] if docstring else ""
 
 
+def _fields(fn: ast.FunctionDef) -> list[dict]:
+    """Extract typed constructor fields (name/type/default) via AST — no import."""
+    args = [a for a in fn.args.args if a.arg != "self"]
+    defaults = fn.args.defaults
+    pad = len(args) - len(defaults)
+    out = []
+    for i, a in enumerate(args):
+        default = None
+        if i >= pad:
+            d = defaults[i - pad]
+            default = ast.literal_eval(d) if isinstance(d, ast.Constant) else None
+        out.append({
+            "name": a.arg,
+            "type": ast.unparse(a.annotation) if a.annotation else "str",
+            "default": default,
+        })
+    return out
+
+
+def _target_name(item: ast.stmt) -> str | None:
+    if isinstance(item, ast.AnnAssign):
+        return item.target.id if isinstance(item.target, ast.Name) else None
+    if isinstance(item, ast.Assign) and len(item.targets) == 1:
+        target = item.targets[0]
+        return target.id if isinstance(target, ast.Name) else None
+    return None
+
+
+def _hidden_fields(node: ast.ClassDef) -> set[str]:
+    """Read the class-level HIDDEN_FIELDS declaration via AST — no import."""
+    for item in node.body:
+        if isinstance(item, (ast.AnnAssign, ast.Assign)) and _target_name(item) == "HIDDEN_FIELDS":
+            value = item.value
+            if isinstance(value, (ast.Set, ast.List, ast.Tuple)):
+                return {el.value for el in value.elts if isinstance(el, ast.Constant)}
+    return set()
+
+
 def parse_classes(path: Path) -> list[dict]:
     """Static AST parse of a module's top-level classes — never imports it.
     Moved from orchestrator/api/tools.py without behavior change."""
@@ -32,6 +70,8 @@ def parse_classes(path: Path) -> list[dict]:
             "docstring": ast.get_docstring(node) or "",
             "constructor": _signature(init) if init else "()",
             "methods": methods,
+            "fields": _fields(init) if init else [],
+            "hidden_fields": _hidden_fields(node),
         })
     return classes
 

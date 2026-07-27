@@ -1,9 +1,13 @@
+from typing import ClassVar
+
 import requests
 
 from soar.connectors.base import BaseConnector
 
 
 class AbuseChConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = set()
+
     THREATFOX_API = "https://threatfox-api.abuse.ch/api/v1/"
     BAZAAR_API = "https://mb-api.abuse.ch/api/v1/"
     URLHAUS_API = "https://urlhaus-api.abuse.ch/v1/"
