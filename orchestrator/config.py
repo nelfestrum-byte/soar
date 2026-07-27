@@ -74,6 +74,12 @@ class ServerConfig(BaseModel):
     trusted_proxies: list[str] = []
 
 
+class HttpClientConfig(BaseModel):
+    cache_backend: str = "memory"   # memory | redis | none
+    default_ttl: int = 3600
+    domain_ttl: dict[str, int] = {}
+
+
 class OrchestratorConfig(BaseModel):
     workers: WorkersConfig = WorkersConfig()
     queue: QueueConfig = QueueConfig()
@@ -84,6 +90,7 @@ class OrchestratorConfig(BaseModel):
     server: ServerConfig = ServerConfig()
     auth: AuthConfig = AuthConfig()
     database: DatabaseConfig = DatabaseConfig()
+    http_client: HttpClientConfig = HttpClientConfig()
 
 
 def load_config(path: str = "config.yaml") -> OrchestratorConfig:

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from orchestrator.config import DatabaseConfig, OrchestratorConfig, load_config
+from orchestrator.config import DatabaseConfig, HttpClientConfig, OrchestratorConfig, load_config
 
 
 def test_load_config_default():
@@ -12,6 +12,9 @@ def test_load_config_default():
     assert config.logging.level == "INFO"
     assert config.database.table_prefix == ""
     assert config.jobs.persistence == "memory"
+    assert config.http_client.cache_backend == "memory"
+    assert config.http_client.default_ttl == 3600
+    assert config.http_client.domain_ttl == {}
 
 
 def test_load_config_from_yaml(tmp_path):
@@ -28,6 +31,11 @@ database:
   table_prefix: "stage_"
 jobs:
   persistence: sql
+http_client:
+  cache_backend: redis
+  default_ttl: 7200
+  domain_ttl:
+    api.virustotal.com: 86400
 """)
     config = load_config(str(config_file))
     assert config.workers.count == 2
@@ -36,6 +44,9 @@ jobs:
     assert config.database.url == "postgresql+asyncpg://soar:soar@localhost:5432/soar"
     assert config.database.table_prefix == "stage_"
     assert config.jobs.persistence == "sql"
+    assert config.http_client.cache_backend == "redis"
+    assert config.http_client.default_ttl == 7200
+    assert config.http_client.domain_ttl == {"api.virustotal.com": 86400}
 
 
 def test_load_config_nonexistent():
@@ -54,3 +65,10 @@ def test_database_table_prefix_rejects_invalid_characters():
 def test_database_table_prefix_accepts_valid_characters():
     cfg = DatabaseConfig(table_prefix="stage_v2_")
     assert cfg.table_prefix == "stage_v2_"
+
+
+def test_http_client_config_defaults():
+    cfg = HttpClientConfig()
+    assert cfg.cache_backend == "memory"
+    assert cfg.default_ttl == 3600
+    assert cfg.domain_ttl == {}
