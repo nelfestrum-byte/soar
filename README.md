@@ -422,7 +422,7 @@ python soarctl migrate --fresh   # или --upgrade — только если р
 — `AUTH_SECRET_KEY`/`POSTGRES_PASSWORD` не перегенерируются (иначе апгрейд
 заблокировал бы доступ к собственной БД). День-2 операции —
 `soarctl status`/`logs`/`backup create`/`backup restore --confirm`/`down`.
-Один инстанс на вызов — мультиинстансность вне scope (см. [Known Limitations #9](docs/agents/known-limitations.md)).
+Один инстанс на вызов — мультиинстансность вне scope (см. [Known Limitations #8](docs/agents/known-limitations.md)).
 Подробнее — [`deploy/prod/README.md`](deploy/prod/README.md) и
 [`docs/compose/specs/2026-07-22-deploy-cli-design.md`](docs/compose/specs/2026-07-22-deploy-cli-design.md).
 

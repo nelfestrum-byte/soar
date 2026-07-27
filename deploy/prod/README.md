@@ -9,7 +9,7 @@ never makes a network call. See
 for the full design.
 
 Single instance only — `soarctl` has no concept of multiple concurrently
-managed instances. See AGENTS.md Known Limitations #9.
+managed instances. See AGENTS.md Known Limitations #8.
 
 ## 1. Build machine (has internet)
 

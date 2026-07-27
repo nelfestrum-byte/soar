@@ -152,8 +152,9 @@ init` и `soarctl up`, требующий прописать реальный д
 
 ## Часть 2 — Спеки
 
-Спеки написаны, план и реализация — следующий шаг (по правилам
-`CLAUDE.md`: спека → план → отчёт), в этом цикле не выполнялись.
+**Реализовано в v0.12** (2026-07-27) — P12/P13/P14/P16, каждая своим
+циклом спек → план → отчёт по правилам `CLAUDE.md`. См. `CHANGELOG.md`
+v0.12 и отчёты, на которые ссылается каждый пункт ниже.
 
 ### P12 → HTTP Client Tool
 
@@ -163,6 +164,9 @@ init` и `soarctl up`, требующий прописать реальный д
 per-call флаг `cached`. Заменяет Feature 1 v0.6-спеки
 (`2026-07-03-v06-upgrade-design.md`, `[S4]`) — та спека помечена
 превзойдённой в этой части, Feature 2/3 остаются в её собственном скоупе.
+
+**Реализовано** — план: `docs/compose/plans/2026-07-27-http-client.md`,
+отчёт: `docs/compose/reports/http-client.md`.
 
 ### P13 → Connector Config Schema + Secret Redaction
 
@@ -177,6 +181,9 @@ per-call флаг `cached`. Заменяет Feature 1 v0.6-спеки
 Включает дизайн stage UI (`ui/src/views/Connectors.vue` — форма по схеме
 вместо raw-textarea).
 
+**Реализовано** — план: `docs/compose/plans/2026-07-27-connector-secrets-schema.md`,
+отчёт: `docs/compose/reports/connector-secrets-schema.md`.
+
 ### P16 → GitManager: детерминированное определение "нечего коммитить"
 
 `docs/compose/specs/2026-07-27-git-manager-nothing-to-commit-design.md`.
@@ -185,6 +192,9 @@ per-call флаг `cached`. Заменяет Feature 1 v0.6-спеки
 потенциально зависим от локали) — заменяет на `git diff --cached --quiet`
 после `git add`, детерминированную проверку по exit-коду, не зависящую от
 текста вывода git и от посторонних untracked-файлов в рабочей директории.
+
+**Реализовано** — план: `docs/compose/plans/2026-07-27-git-manager-nothing-to-commit.md`,
+отчёт: `docs/compose/reports/git-manager-nothing-to-commit.md`.
 
 ### P14 → SQL-Backed Job Queue + Job History Retention
 
@@ -202,11 +212,14 @@ UPDATE SKIP LOCKED` на Postgres, сериализация записи на SQ
 деплое. `deploy/prod/config.yaml.template`/`deploy/stage/config.yaml`
 переключаются с `queue.backend: redis` на `sql`.
 
+**Реализовано** — план: `docs/compose/plans/2026-07-27-sql-job-queue.md`,
+отчёт: `docs/compose/reports/sql-job-queue.md`.
+
 ## Часть 3 — Реестр рисков (дополняет реестр `UPGRADE.md`)
 
 | # | Риск | Почему не чиним сейчас | Когда пересмотреть |
 |---|------|------------------------|---------------------|
-| P15 | Нет guard от деактивации последнего admin (known-limitation #8) | Recovery уже есть вне API — `orchestrator/auth/cli.py create-user --role admin` | Не пересматривается; переоценить только при отказе от прямого доступа к серверу/БД в проде |
+| P15 | Нет guard от деактивации последнего admin (known-limitation #7) | Recovery уже есть вне API — `orchestrator/auth/cli.py create-user --role admin` | Не пересматривается; переоценить только при отказе от прямого доступа к серверу/БД в проде |
 | P17 | CORS origins по умолчанию (`localhost:3000/5173`) не переопределены в `deploy/prod/config.yaml.template` | Не код, а чеклист запуска | Добавить `auth.cors_origins` в runbook первого деплоя |
 
 ## Не в скоупе этого документа

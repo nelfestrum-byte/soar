@@ -1,4 +1,4 @@
-# AGENTS.md — SOAR Project v0.11
+# AGENTS.md — SOAR Project v0.12
 
 > Это индекс. Детали вынесены в сателлитные файлы под `docs/agents/` и в `CHANGELOG.md` —
 > открывай их только когда задача реально их касается (см. Token optimization внизу).
@@ -81,22 +81,24 @@ orchestrator/
 │   ├── job.py                 # WorkflowJob (dataclass)
 │   └── workflow_meta.py       # WorkflowMeta (dataclass)
 ├── core/
-│   ├── queue/                 # AbstractJobQueue → InMemoryQueue | RedisQueue
+│   ├── queue/                 # AbstractJobQueue → InMemoryQueue | RedisQueue | SQLQueue
+│   │   └── sql_queue.py        # SQLQueue — poll-claim поверх workflow_jobs (FOR UPDATE SKIP LOCKED / SQLite serialization), см. Queue backend
 │   ├── worker.py              # Worker — один воркер, цикл pop → execute
 │   ├── worker_pool.py         # WorkerPool — N воркеров как asyncio tasks
-│   ├── scheduler.py           # OrchestratorScheduler (APScheduler)
+│   ├── scheduler.py           # OrchestratorScheduler (APScheduler) — + периодическая retention_cleanup job (jobs.retention_days > 0)
 │   ├── job_manager.py         # JobManager — координатор, enqueue/cancel
 │   ├── subprocess_runner.py   # Запуск workflows как subprocess
-│   ├── git_manager.py         # Git операции через subprocess (commit принимает author_name/author_email override)
+│   ├── git_manager.py         # Git операции через subprocess (commit принимает author_name/author_email override; nothing-to-commit определяется через `git diff --cached --quiet`, не string-match stderr)
 │   ├── history.py             # Тонкие обёртки над GitManager для history/diff/restore (общие для workflows/actions/connectors)
 │   ├── workflow_state.py      # Единственный читатель/писатель orchestrator_state.yaml (enable/disable + webhook token)
-│   ├── introspect.py          # parse_classes/parse_functions — AST-интроспекция без импорта, общая для tools.py/actions.py/connectors.py
+│   ├── introspect.py          # parse_classes/parse_functions — AST-интроспекция без импорта, общая для tools.py/actions.py/connectors.py; parse_classes также извлекает fields (тип+дефолт) и hidden_fields (HIDDEN_FIELDS) для connector schema
 │   └── net.py                 # resolve_client_ip() — trusted-proxy-aware IP, общий для rate limiter/access log/audit
 ├── store/
-│   ├── base.py                 # AbstractJobStore — интерфейс (save/get/list/count_by_status/stats/recover_on_startup)
-│   ├── job_store.py            # InMemoryJobStore (JobStore — алиас для обратной совместимости)
+│   ├── base.py                 # AbstractJobStore — интерфейс (save/get/list/count_by_status/stats/recover_on_startup/purge_old)
+│   ├── job_store.py            # InMemoryJobStore (JobStore — алиас для обратной совместимости); purge_old() — no-op
 │   ├── models.py                # SQLAlchemy ORM: JobRecord (workflow_jobs)
-│   └── sql_job_store.py        # SQLJobStore — персистентный джоб-стор поверх database.url
+│   ├── mapping.py               # job_to_record/record_to_job — общие для SQLJobStore и SQLQueue, не дублируются
+│   └── sql_job_store.py        # SQLJobStore — персистентный джоб-стор поверх database.url; purge_old() удаляет старые завершённые записи по jobs.retention_days
 ├── auth/                       # models/schemas/service/dependencies/router/cli — см. File map
 ├── audit/                      # models (AuditLog) + service (record, git_author) — см. File map
 ├── db/                         # base (table_prefix), session (init_engine/init_db/get_db) — см. File map
@@ -115,11 +117,11 @@ orchestrator/
     └── validation.py              # validate_name, validate_path_within, SSRF validation
 
 soar/
-├── connectors/                 # 23 коннектора, автообнаружение через ConnectorRegistry — полный список см. File map
+├── connectors/                 # 24 коннектора (23 интеграции + file), автообнаружение через ConnectorRegistry — полный список см. File map; каждый объявляет class-level HIDDEN_FIELDS для редакции секретов в config API
 ├── actions/__init__.py         # ActionsRegistry — автообнаружение actions
 ├── workflows/                  # __init__.py (WorkflowRegistry), base.py (BaseWorkflow/ScheduledWorkflow/WebhookWorkflow/ManualWorkflow)
-├── tools/                      # openapi.py (OpenAPIGenerator), watermark.py (WatermarkStore/SeenStore) — см. File map
-├── runner.py                   # Точка входа для subprocess workflows — см. Runner contract
+├── tools/                      # openapi.py (OpenAPIGenerator), watermark.py (WatermarkStore/SeenStore), http_client.py (HttpClient singleton — логирование безусловно, кэш опционален) — см. File map
+├── runner.py                   # Точка входа для subprocess workflows — см. Runner contract; также инициализирует soar.tools.http_client singleton из SOAR_CONFIG
 └── examples/nadproject_integration.py
 
 ui/src/                         # Vue 3 SPA, полный список views — см. File map
@@ -140,7 +142,9 @@ tests/
 **[docs/agents/api-reference.md](docs/agents/api-reference.md)**.
 
 Быстрый ориентир по префиксам: `/workflows`, `/actions`, `/connectors` (CRUD кода/конфига,
-history/diff/restore, `/describe` — сигнатуры/докстринг без импорта, тот же AST-паттерн, что `/tools`),
+history/diff/restore, `/describe` — сигнатуры/докстринг без импорта, тот же AST-паттерн, что `/tools`;
+`/schema` — типизированные поля + `hidden: bool`; конфиг/история/diff редактируют значения hidden-полей
+для всех ролей включая admin, см. Security patterns),
 `/jobs`, `/webhooks/{name}`, `/logs/{id}`, `/status`, `/health` (без auth), `/tools` (read-only),
 `/prompts/system` (read-only, встроенный), `/prompts/user` (admin, git-CRUD), `/transfer/{export,import}`,
 `/auth/*`, `/audit-log` (admin).
@@ -266,14 +270,13 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 Полные описания + workaround — **[docs/agents/known-limitations.md](docs/agents/known-limitations.md)**.
 
 1. `ConcurrencyPolicy.QUEUE` — race между двумя QUEUE-jobs (busy-wait в Worker)
-2. RedisQueue — at-most-once, может терять сообщения при обрыве соединения
+2. RedisQueue — at-most-once, может терять сообщения при обрыве соединения (дефолт `deploy/prod`/`deploy/stage` с v0.12 — `queue.backend: sql`, устраняет этот риск для критичных workflows)
 3. Crash recovery работает только при `jobs.persistence: sql`
 4. JobStore теряет историю при рестарте только на дефолте `persistence: memory`
 5. `keep_completed` eviction — FIFO, не LRU
 6. `AuditLog.actor_name` для JWT — числовой id, не логин
-7. `GitManager.commit()` не распознаёт все формулировки "nothing to commit" (пропуск audit-записи при untracked-файлах)
-8. `PATCH /auth/users/{id}` не защищает от деактивации последнего admin'а
-9. Мультиинстансность вне scope `soarctl` (нет CLI-контекста нескольких инстансов)
+7. `PATCH /auth/users/{id}` не защищает от деактивации последнего admin'а (принято как остаточный риск — recovery вне API через `orchestrator/auth/cli.py create-user --role admin`)
+8. Мультиинстансность вне scope `soarctl` (нет CLI-контекста нескольких инстансов)
 
 ## File map (для быстрого навигации)
 
@@ -306,11 +309,13 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 | URLhaus | `soar/connectors/urlhaus/` — URL/host/payload lookups |
 | crt.sh | `soar/connectors/crtsh/` — certificate/domain/identity search |
 | Watermark / дедуп событий | `soar/tools/watermark.py` — WatermarkStore, SeenStore (durable JSON, generic) |
+| HTTP client (логирование + опциональный кэш) | `soar/tools/http_client.py` — HttpClient singleton, `http_client:` секция конфига, см. `docs/agents/config-reference.md` |
+| Connector config schema / секреты | `orchestrator/core/introspect.py` (`_fields`/`_hidden_fields`), `orchestrator/api/connectors.py` (`GET /schema`, редакция config/history/diff), `HIDDEN_FIELDS` на каждом коннекторе |
 | Новый action | `soar/actions/`, один файл = одна функция |
 | Новый workflow | `soar/workflows/`, наследовать от `ScheduledWorkflow`/`WebhookWorkflow`/`ManualWorkflow` |
 | Шаблон workflow | `orchestrator/api/workflows.py` — TEMPLATES dict |
 | Изменить модель | `orchestrator/models/` |
-| Очередь задач | `orchestrator/core/queue/` |
+| Очередь задач | `orchestrator/core/queue/` — memory / redis / sql (`sql_queue.py`, дефолт `deploy/prod`/`deploy/stage`), см. `docs/agents/config-reference.md` |
 | Воркеры | `orchestrator/core/worker.py`, `worker_pool.py` |
 | Планировщик | `orchestrator/core/scheduler.py` |
 | Runner | `soar/runner.py` — точка входа для subprocess |
@@ -387,8 +392,8 @@ API (UI или LLM-агентом) **без передеплоя**. Три шт�
   параметрами конструктора?". Примеры: `OpenAPIGenerator` (генератор
   коннектора из спеки — работает с любым OpenAPI), `WatermarkStore`/
   `SeenStore` (durable курсор/TTL-дедуп — общий примитив для любого
-  polling/webhook-приёмника), `CachedHttpClient` (v0.6, план — TTL-кэш
-  HTTP per-domain для threat-intel actions)
+  polling/webhook-приёмника), `HttpClient` (v0.12 — логирование безусловно +
+  TTL-кэш per-domain опционален, для threat-intel actions)
   `actions/` — всё простое и специфичное для одной интеграции: бизнес-
   правила, decision-логика, магические значения (endpoint-пути, теги,
   имена workflow) — даже если внутри action используется класс из
@@ -438,7 +443,23 @@ API (UI или LLM-агентом) **без передеплоя**. Три шт�
 
 Полная история версий — **[CHANGELOG.md](CHANGELOG.md)**.
 
-Текущая версия: **v0.11** (2026-07-22) — Agent Dev-Loop Этап 1: validation перед записью
+Текущая версия: **v0.12** (2026-07-27) — pre-release ревью перед деплоем на живую
+инфраструктуру (`docs/concepts/UPGRADE-v2.md`, P12/P13/P14/P16): `HttpClient`
+(`soar/tools/http_client.py`, безусловное логирование + опциональный кэш +
+SSRF-guard) для threat-intel actions; connector config schema + редакция
+секретов (`HIDDEN_FIELDS` на всех 24 коннекторах, `GET /connectors/{name}/schema`,
+маскирование hidden-полей в config/history/diff для всех ролей включая admin,
+merge-on-write + admin-only смена реального значения); `SQLQueue` — poll-based
+очередь поверх `workflow_jobs`, устраняет at-most-once потерю джобов
+`RedisQueue`, дефолт в `deploy/prod`/`deploy/stage`, + `jobs.retention_days`
+(периодическая очистка через `OrchestratorScheduler`); `GitManager.commit()` —
+детерминированное определение "нечего коммитить" через `git diff --cached
+--quiet` вместо string-match по stderr (закрывает потерю audit-записи при
+untracked-файлах). P15/P17 — приняты как есть (recovery через CLI / чеклист
+деплоя), без изменений кода. Отчёты: `docs/compose/reports/{http-client,
+connector-secrets-schema,sql-job-queue,git-manager-nothing-to-commit}.md`.
+
+Предыдущая версия: **v0.11** (2026-07-22) — Agent Dev-Loop Этап 1: validation перед записью
 кода (workflows/actions/connectors), traceback в WorkflowResult, history/diff/restore
 (`orchestrator/core/history.py`), единый `orchestrator/core/workflow_state.py` для
 `orchestrator_state.yaml`.

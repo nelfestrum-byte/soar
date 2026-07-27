@@ -5,9 +5,9 @@
 
 ## Queue backend
 
-Очередь задач поддерживает два бэкенда:
+Очередь задач поддерживает три бэкенда:
 
-**In-Memory (по умолчанию)**:
+**In-Memory (дефолт схемы, не деплоя)**:
 ```yaml
 queue:
   backend: memory
@@ -28,6 +28,69 @@ RedisQueue (`orchestrator/core/queue/redis_queue.py`):
 - Автоматическое переподключение при ошибках соединения
 - Таймауты для push/pop операций
 - Health check через `/status` endpoint (`connected: true/false`)
+- At-most-once — может терять джобы при обрыве соединения (Known Limitations #2)
+
+**SQL (дефолт `deploy/prod`/`deploy/stage` с v0.12)**:
+```yaml
+queue:
+  backend: sql
+  sql_poll_interval: 0.5   # секунд между claim-попытками при пустой очереди
+
+jobs:
+  persistence: sql   # обязателен вместе с backend: sql, иначе ValueError при старте
+```
+
+`SQLQueue` (`orchestrator/core/queue/sql_queue.py`) — не отдельный источник
+правды, а poll поверх уже существующей таблицы `workflow_jobs`, которую
+`JobManager.enqueue()` пишет durably до вызова `queue.push()`: `push()` —
+no-op, `pop()` — атомарный claim (`UPDATE ... WHERE id = (SELECT ... FOR
+UPDATE SKIP LOCKED)` на Postgres; на SQLite — тот же запрос без `SKIP
+LOCKED`, полагается на файловую сериализацию записи одним writer'ом).
+Устраняет at-most-once потерю джобов RedisQueue (Known Limitations #2) без
+нового компонента в деплое. Partial-индекс `(status, triggered_at) WHERE
+status='PENDING'` (`alembic/versions/42fbd47b0d46_*.py`) держит claim-запрос
+дешёвым независимо от объёма исторических завершённых записей. Валиден
+только вместе с `jobs.persistence: sql` — `create_queue()`
+(`orchestrator/main.py`) fail-fast при рассинхроне.
+
+**Job history retention (`jobs.retention_days`)** — только при
+`jobs.persistence: sql`:
+```yaml
+jobs:
+  retention_days: 90   # 0 (дефолт) = хранить бесконечно, явный опт-ин на удаление
+```
+`SQLJobStore.purge_old()` удаляет завершённые (COMPLETED/FAILED/TIMEOUT/
+CANCELLED) записи старше порога; вызывается раз в 24ч через уже
+существующий `OrchestratorScheduler`, только если `retention_days > 0`.
+`InMemoryJobStore.purge_old()` — no-op (`keep_completed` уже делает
+эквивалентную по смыслу эвикцию).
+
+Спек/отчёт: `docs/compose/specs/2026-07-27-sql-job-queue-design.md`,
+`docs/compose/reports/sql-job-queue.md`.
+
+## HTTP client (soar/tools/http_client.py)
+
+Общий инструмент для threat-intel actions (VT, AbuseCh, Shodan, Fofa, Censys,
+MISP, RstCloud, Kaspersky, URLhaus, crt.sh) — логирование каждого запроса
+безусловно (loguru, method/domain/status/duration_ms/cache_hit), кэш GET-ответов
+опционален:
+
+```yaml
+http_client:
+  cache_backend: memory   # memory | redis | none
+  default_ttl: 3600
+  domain_ttl:
+    api.virustotal.com: 86400
+```
+
+`cache_backend: redis` переиспользует `queue.redis_url` — отдельного поля
+нет; пустой `queue.redis_url` с `cache_backend: redis` — ошибка конфигурации
+при старте, не тихий fallback на memory. `POST` никогда не кэшируется.
+Singleton `soar.tools.http_client`, инициализируется в `soar/runner.py` из
+того же `SOAR_CONFIG`, что и остальной конфиг subprocess-раннера. Пока не
+используется существующими коннекторами — миграция на этот клиент
+отдельная задача (см. `docs/compose/specs/2026-07-27-http-client-design.md`
+[S9]).
 
 ## Database backend (SQLite/PostgreSQL) и table prefix
 

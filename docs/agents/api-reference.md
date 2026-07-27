@@ -44,20 +44,21 @@
 | GET | /connectors/template | Шаблон кода + конфига |
 | GET | /connectors/{name} | Meta коннектора (class_name, has_code, has_config, summary) |
 | GET | /connectors/{name}/describe | Докстринг класса + constructor + публичные методы (сигнатура, докстринг), AST без импорта |
+| GET | /connectors/{name}/schema | Типизированные поля конструктора + `hidden: bool` (из `HIDDEN_FIELDS`), AST без импорта |
 | POST | /connectors/{name} | Создать коннектор |
 | DELETE | /connectors/{name} | Удалить коннектор |
 | GET | /connectors/{name}/code | Получить код .py |
 | PUT | /connectors/{name}/code | Сохранить код .py — 422 если код не парсится или нет класса-наследника `BaseConnector` (`validate_connector_code`) |
-| GET | /connectors/{name}/config | Получить конфиг .yml |
-| PUT | /connectors/{name}/config | Сохранить конфиг .yml |
+| GET | /connectors/{name}/config | Получить конфиг .yml — значения hidden-полей замаскированы `"********"` для всех ролей, включая `admin` |
+| PUT | /connectors/{name}/config | Сохранить конфиг .yml — merge-on-write для hidden-полей (плейсхолдер `"********"` не затирает старое значение); реальное изменение hidden-поля требует роль `admin` буквально, не `agent` (`403` иначе) |
 | POST | /connectors/generate | Генерация коннектора из OpenAPI spec |
 | POST | /connectors/preview | Парсинг OpenAPI spec (POST, тело) |
 | GET | /connectors/preview | Парсинг OpenAPI spec (GET, URL) — SSRF-защищён |
 | GET | /connectors/{name}/code/history[/{commit}] | История/версия `.py` |
 | GET | /connectors/{name}/code/diff?a=&b= | Diff `.py` между коммитами |
 | POST | /connectors/{name}/code/restore `{"commit": "..."}` | Откат `.py` на коммит (admin), без reload |
-| GET | /connectors/{name}/config/history[/{commit}] | История/версия `.yml` |
-| GET | /connectors/{name}/config/diff?a=&b= | Diff `.yml` между коммитами |
+| GET | /connectors/{name}/config/history[/{commit}] | История/версия `.yml` — hidden-поля замаскированы, как и в `GET /config` |
+| GET | /connectors/{name}/config/diff?a=&b= | Diff `.yml` между коммитами — значения hidden-полей в `+`/`-` строках замаскированы, факт изменения виден |
 | POST | /connectors/{name}/config/restore `{"commit": "..."}` | Откат `.yml` на коммит (admin) |
 
 ### Tools

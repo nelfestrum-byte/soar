@@ -34,7 +34,7 @@ jobs:
 
 database:
   url: postgresql+asyncpg://soar:${POSTGRES_PASSWORD}@postgres:5432/soar
-  table_prefix: ""  # single-instance deploy — no table_prefix needed, see AGENTS.md Known Limitations #9
+  table_prefix: ""  # single-instance deploy — no table_prefix needed, see AGENTS.md Known Limitations #8
 
 auth:
   secret_key: "${AUTH_SECRET_KEY}"

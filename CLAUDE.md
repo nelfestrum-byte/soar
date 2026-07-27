@@ -29,14 +29,12 @@ docs/compose/reports/<feature>.md                    ← после заверш
 
 Актуальные баги и Known Limitations — в [`docs/agents/known-limitations.md`](docs/agents/known-limitations.md).
 
-Концепты верхнего уровня (карта проблем + реестр рисков, не заменяют спеки) — [`docs/concepts/`](docs/concepts/): [`UPGRADE.md`](docs/concepts/UPGRADE.md) (Agent Dev-Loop, этапы 1-3 реализованы), [`UPGRADE-v2.md`](docs/concepts/UPGRADE-v2.md) (pre-release ревью перед деплоем на живую инфру, P12+).
+Концепты верхнего уровня (карта проблем + реестр рисков, не заменяют спеки) — [`docs/concepts/`](docs/concepts/): [`UPGRADE.md`](docs/concepts/UPGRADE.md) (Agent Dev-Loop, этапы 1-3 реализованы), [`UPGRADE-v2.md`](docs/concepts/UPGRADE-v2.md) (pre-release ревью перед деплоем на живую инфру — P12/P13/P14/P16 реализованы в v0.12, P15/P17 приняты как остаточный риск/чеклист без кода).
 
 Активные спеки (написаны, не выполнены):
 
-- [`docs/compose/specs/2026-07-27-http-client-design.md`](docs/compose/specs/2026-07-27-http-client-design.md) — HttpClient: логирование безусловно, кэш опционален (`UPGRADE-v2.md` P12)
-- [`docs/compose/specs/2026-07-27-connector-secrets-schema-design.md`](docs/compose/specs/2026-07-27-connector-secrets-schema-design.md) — схема полей коннектора из сигнатуры + hidden-поля, редакция секретов на уровне API, stage UI (`UPGRADE-v2.md` P13)
-- [`docs/compose/specs/2026-07-27-sql-job-queue-design.md`](docs/compose/specs/2026-07-27-sql-job-queue-design.md) — SQL-backed очередь поверх `workflow_jobs` вместо `queue.backend: redis` по умолчанию (устраняет at-most-once потерю джобов), + `jobs.retention_days` (`UPGRADE-v2.md` P14)
-- [`docs/compose/specs/2026-07-03-v06-upgrade-design.md`](docs/compose/specs/2026-07-03-v06-upgrade-design.md) — per-workflow метрики, dry-run конвенция (Feature 1/CachedHttpClient превзойдена вышеуказанной спекой на HttpClient, см. пометку в файле)
+- [`docs/compose/specs/2026-07-03-v06-upgrade-design.md`](docs/compose/specs/2026-07-03-v06-upgrade-design.md) — per-workflow метрики, dry-run конвенция (Feature 1/`CachedHttpClient` реализована как `HttpClient` в v0.12, см. `2026-07-27-http-client-design.md` и пометку в файле; Feature 2/3 остаются неактивными)
+- [`docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md`](docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md) — `soarctl`: on-site установка из git + `update` без пересоздания БД (расширяет `2026-07-22-deploy-cli-design.md`, не входит в `UPGRADE-v2.md`)
 
 `2026-07-03-bugfixes-design.md` — не активен, все 7 багов исправлены в v0.5 (см. `CHANGELOG.md`), спек оставлен как референс.
 

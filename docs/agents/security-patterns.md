@@ -8,6 +8,7 @@
 - `validate_commit(commit)` — regex `^[0-9a-f]{4,40}$`, используется history/diff/restore ручками
 - `validate_workflow_code`/`validate_action_code`/`validate_connector_code` — `ast.parse` (без импорта, тот же принцип что `GET /tools`) на синтаксис + наличие ожидаемой точки входа; вызывается в `PUT`-обработчиках перед записью файла, 422 при провале
 - SSRF protection — блокировка RFC 1918, link-local, localhost, cloud metadata IPs + DNS resolve (socket.getaddrinfo) + follow_redirects=False
+- `soar/tools/http_client.py::_validate_external_url` — та же проверка, отдельная реализация (не импорт `orchestrator/`, `soar/` не зависит от оркестратора по архитектуре), поднимает `ValueError` вместо `HTTPException`; нужна там, где threat-intel actions строят URL из атакер-контролируемых данных алерта (IOC), не только из захардкоженного домена API
 
 ### Connector security (soar/connectors/)
 - SQL: параметризованные запросы (PostgreSQL, MSSQL) + валидация имён (MySQL)
@@ -17,6 +18,24 @@
 - WinRM: SSL verification по умолчанию (`verify_ssl=True`)
 - HTTP: `timeout=30` на все HTTP-запросы (prevents worker pool exhaustion)
 - Wazuh: пустые credentials по умолчанию, SSL verification включён
+
+### Connector secret redaction (orchestrator/api/connectors.py, orchestrator/core/introspect.py)
+Каждый коннектор объявляет class-level `HIDDEN_FIELDS: ClassVar[set[str]]`
+(парсится AST-интроспекцией, без импорта — `introspect.py::_hidden_fields()`,
+та же безопасная схема, что уже используется для `/describe`). `GET
+/connectors/{name}/schema` отдаёт типизированные поля с `hidden: bool`, сама
+схема не секрет — доступна `_RO`. Значения hidden-полей маскируются
+`"********"` в `GET /config`, `/config/history[/{commit}]`, `/config/diff`
+**для всех ролей, включая `admin`** — секреты в этой системе write-only:
+задать можно, прочитать обратно через API нельзя никому. `PUT /config` —
+merge-on-write (плейсхолдер `"********"` = "не менять", берётся старое
+значение с диска) + разделение прав по полю, не по ручке: реальное
+изменение hidden-поля требует роль `admin` буквально (ручная проверка
+внутри обработчика, не через `dependencies=[...]`, т.к. решение зависит от
+содержимого запроса) — `agent` получает `403` при попытке сменить
+credential, но по-прежнему правит не-hidden поля наравне с `admin`. Формат
+хранения (`{name}.yml`, git-история) не меняется — секреты физически
+остаются в git, но никогда не возвращаются через API ни одной ролью.
 
 ### Authentication (orchestrator/auth/)
 - **Auth-disabled mode**: когда `auth.secret_key = ""` — `get_current_user` возвращает анонимного admin. Backward-совместимость с Docker-сетевым доверием и существующими тестами.
