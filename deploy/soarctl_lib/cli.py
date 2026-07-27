@@ -4,10 +4,11 @@ as the rest of the project's API routes).
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
-from . import backup, bundle, compose, doctor, env, migrate, paths, status, users
+from . import backup, bundle, compose, doctor, env, git_source, migrate, paths, prompts, status, users
 
 
 def _add_dir_arg(parser: argparse.ArgumentParser) -> None:
@@ -22,12 +23,20 @@ def build_parser() -> argparse.ArgumentParser:
     pkg.add_argument("--version", required=True)
     pkg.add_argument("--output", required=True)
 
-    install = sub.add_parser("install", help="Extract a bundle + docker load its images (target machine)")
-    install.add_argument("bundle")
+    install = sub.add_parser(
+        "install",
+        help="Extract a bundle + docker load its images (air-gapped target), "
+        "or build from a git checkout on-site (--repo)",
+    )
+    install.add_argument("bundle", nargs="?", default=None)
+    install.add_argument("--repo", default=None, help="Git URL or local checkout path to build from on-site")
+    install.add_argument("--ref", default=None, help="git ref to check out (branch/tag/sha), --repo only")
     _add_dir_arg(install)
 
     init = sub.add_parser("init", help="Generate .env secrets + render config.yaml")
     init.add_argument("--force", action="store_true", help="Overwrite an existing .env")
+    init.add_argument("--interactive", action="store_true", help="Prompt for auth.cors_origins")
+    init.add_argument("--cors-origin", action="append", default=None, help="UI origin for CORS (repeatable)")
     _add_dir_arg(init)
 
     for name, help_text in [("up", "Start the instance"), ("down", "Stop the instance"), ("restart", "Restart the instance")]:
@@ -78,6 +87,11 @@ def build_parser() -> argparse.ArgumentParser:
     doc = sub.add_parser("doctor", help="Preflight checks")
     _add_dir_arg(doc)
 
+    upd = sub.add_parser("update", help="Pull latest code (git-sourced instance), rebuild, and up — no down")
+    upd.add_argument("--ref", default=None, help="git ref to check out; default: pull current branch")
+    upd.add_argument("--migrate", choices=["fresh", "upgrade"], default=None)
+    _add_dir_arg(upd)
+
     return parser
 
 
@@ -94,11 +108,23 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.cmd == "install":
-        bundle.install(Path(args.bundle), paths.instance_dir(args))
+        if bool(args.bundle) == bool(args.repo):
+            parser.error("install requires exactly one of: a bundle path, or --repo")
+        if args.repo:
+            git_source.install(args.repo, args.ref, paths.instance_dir(args))
+        else:
+            bundle.install(Path(args.bundle), paths.instance_dir(args))
         return
 
     if args.cmd == "init":
-        env.init_instance(paths.instance_dir(args), force=args.force)
+        if args.interactive and args.cors_origin:
+            parser.error("init: --interactive and --cors-origin are mutually exclusive")
+        overrides = None
+        if args.cors_origin:
+            overrides = {"CORS_ORIGINS_JSON": json.dumps(args.cors_origin)}
+        elif args.interactive:
+            overrides = {"CORS_ORIGINS_JSON": json.dumps(prompts.prompt_cors_origins())}
+        env.init_instance(paths.instance_dir(args), force=args.force, overrides=overrides)
         return
 
     if args.cmd == "up":
@@ -157,4 +183,8 @@ def main(argv: list[str] | None = None) -> None:
             failed = failed or not ok
         if failed:
             sys.exit(1)
+        return
+
+    if args.cmd == "update":
+        git_source.update(paths.instance_dir(args), ref=args.ref, migrate=args.migrate)
         return

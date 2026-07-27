@@ -1,4 +1,4 @@
-# AGENTS.md — SOAR Project v0.12
+# AGENTS.md — SOAR Project v0.13
 
 > Это индекс. Детали вынесены в сателлитные файлы под `docs/agents/` и в `CHANGELOG.md` —
 > открывай их только когда задача реально их касается (см. Token optimization внизу).
@@ -128,7 +128,8 @@ ui/src/                         # Vue 3 SPA, полный список views —
 alembic/                        # Alembic-миграции (auth + workflow_jobs + audit_log таблицы), см. docs/agents/config-reference.md
 deploy/stage/                   # QA docker-compose (build: from source) + Makefile
 deploy/prod/                    # Distributable profile — image: не build:, config.yaml не в git, см. deploy/prod/README.md
-deploy/soarctl, soarctl_lib/    # Host-layer CLI: package/install/init/up/migrate/users/backup/doctor
+deploy/soarctl, soarctl_lib/    # Host-layer CLI: package/install/init/up/update/migrate/users/backup/doctor
+                                 # git_source.py — on-site install (--repo) + update, no bundle/air-gap
 
 tests/
 ├── soar/                       # flat files: test_<connector>_connector.py (mocked), test_workflows.py, tools/
@@ -339,7 +340,8 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 | Конфиг | `orchestrator/config.py`, `orchestrator/config.yaml` |
 | UI | `ui/src/views/` — Status, Workflows, Jobs, Actions, Connectors, AuditLog, ApiKeys, Users, Tools, Generate, Settings, Login, Logs |
 | Deploy (QA-стенд) | `deploy/stage/` — docker-compose.yml (build:), Dockerfiles |
-| Deploy (дистрибуция) | `deploy/prod/` (docker-compose.yml с `image:`, config.yaml.template) + `deploy/soarctl`/`soarctl_lib/` — package/install/init/up/migrate/users/backup/doctor, см. `docs/compose/specs/2026-07-22-deploy-cli-design.md` |
+| Deploy (дистрибуция, air-gap) | `deploy/prod/` (docker-compose.yml с `image:`, config.yaml.template) + `deploy/soarctl`/`soarctl_lib/` — package/install/init/up/migrate/users/backup/doctor, см. `docs/compose/specs/2026-07-22-deploy-cli-design.md` |
+| Deploy (дистрибуция, on-site/с интернетом) | `soarctl install --repo <url-or-path> [--ref REF]` — сборка образов на месте, без bundle; `soarctl init --interactive`/`--cors-origin` — заполняет `auth.cors_origins` вместо плейсхолдера; `soarctl update [--ref REF] [--migrate fresh\|upgrade]` — git pull/checkout + пересборка + `up`, без `down`, postgres/redis не пересоздаются; `soarctl_lib/git_source.py`, `prompts.py`; см. `docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md` |
 | Тесты | `tests/orchestrator/`, `tests/soar/`, `tests/deploy/` |
 | API endpoints (полные таблицы) | `docs/agents/api-reference.md` |
 | Security patterns (полное описание) | `docs/agents/security-patterns.md` |
@@ -443,7 +445,21 @@ API (UI или LLM-агентом) **без передеплоя**. Три шт�
 
 Полная история версий — **[CHANGELOG.md](CHANGELOG.md)**.
 
-Текущая версия: **v0.12** (2026-07-27) — pre-release ревью перед деплоем на живую
+Текущая версия: **v0.13** (2026-07-27) — `soarctl` on-site install + update:
+`soarctl install --repo <url-or-path> [--ref REF]` собирает образы локально
+из git-чекаута вместо air-gap bundle (`docker load`), переиспользуя
+`bundle.build_images()`; `soarctl init --interactive`/`--cors-origin` заводит
+реальный `auth.cors_origins` через `${CORS_ORIGINS_JSON}` в
+`config.yaml.template` вместо ручного пост-редактирования — частичное
+закрытие P17 кодом поверх чеклиста; `soarctl update [--ref REF] [--migrate
+fresh|upgrade]` — git fetch/checkout+pull, пересборка, `env.update_version()`,
+`compose up` без `down`, postgres/redis не пересоздаются (теги их образов не
+меняются); `soarctl doctor` — новая проверка `git checkout` для
+git-инстансов. Только для `deploy/prod`, air-gap bundle-путь не затронут. См.
+`docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md`, отчёт —
+`docs/compose/reports/soarctl-onsite-update.md`.
+
+Предыдущая версия: **v0.12** (2026-07-27) — pre-release ревью перед деплоем на живую
 инфраструктуру (`docs/concepts/UPGRADE-v2.md`, P12/P13/P14/P16): `HttpClient`
 (`soar/tools/http_client.py`, безусловное логирование + опциональный кэш +
 SSRF-guard) для threat-intel actions; connector config schema + редакция

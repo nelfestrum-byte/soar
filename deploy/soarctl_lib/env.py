@@ -25,7 +25,7 @@ def render_template(text: str, values: dict[str, str]) -> str:
     return Template(text).safe_substitute(values)
 
 
-def init_instance(directory: Path, force: bool = False) -> None:
+def init_instance(directory: Path, force: bool = False, overrides: dict[str, str] | None = None) -> None:
     template_path = directory / "config.yaml.template"
     if not template_path.exists():
         raise FileNotFoundError(f"config.yaml.template not found in {directory}")
@@ -35,13 +35,21 @@ def init_instance(directory: Path, force: bool = False) -> None:
         raise FileExistsError(f"{env_path} already exists — pass force=True to regenerate secrets")
 
     version = read_version(directory)
-    values = generate_secrets()
-    values["SOAR_VERSION"] = version
+    secret_values = generate_secrets()
+    secret_values["SOAR_VERSION"] = version
 
-    env_text = "\n".join(f"{key}={value}" for key, value in values.items()) + "\n"
+    env_text = "\n".join(f"{key}={value}" for key, value in secret_values.items()) + "\n"
     env_path.write_text(env_text)
 
-    config_text = render_template(template_path.read_text(), values)
+    # CORS_ORIGINS_JSON is a config.yaml-only template value, not a secret —
+    # it never goes into .env. Placeholder domain, left as-is unless
+    # `overrides` supplies a real one (from `soarctl init
+    # --interactive`/`--cors-origin`, see prompts.py).
+    template_values = dict(secret_values)
+    template_values["CORS_ORIGINS_JSON"] = '["https://CHANGE-ME.example.com"]'
+    template_values.update(overrides or {})
+
+    config_text = render_template(template_path.read_text(), template_values)
     (directory / "config.yaml").write_text(config_text)
 
 

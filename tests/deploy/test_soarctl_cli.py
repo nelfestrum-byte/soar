@@ -43,13 +43,106 @@ def test_install_dispatches_to_bundle_install(monkeypatch, tmp_path):
 def test_init_dispatches_to_env_init_instance(monkeypatch, tmp_path):
     calls = {}
     monkeypatch.setattr(
-        cli.env, "init_instance", lambda directory, force=False: calls.update(directory=directory, force=force)
+        cli.env,
+        "init_instance",
+        lambda directory, force=False, overrides=None: calls.update(
+            directory=directory, force=force, overrides=overrides
+        ),
     )
 
     cli.main(["init", "--dir", str(tmp_path)])
 
     assert calls["directory"] == tmp_path
     assert calls["force"] is False
+    assert calls["overrides"] is None
+
+
+def test_init_interactive_prompts_and_passes_overrides(monkeypatch, tmp_path):
+    calls = {}
+    monkeypatch.setattr(
+        cli.env,
+        "init_instance",
+        lambda directory, force=False, overrides=None: calls.update(overrides=overrides),
+    )
+    monkeypatch.setattr(cli.prompts, "prompt_cors_origins", lambda: ["https://soar.example.com"])
+
+    cli.main(["init", "--interactive", "--dir", str(tmp_path)])
+
+    assert calls["overrides"] == {"CORS_ORIGINS_JSON": '["https://soar.example.com"]'}
+
+
+def test_init_cors_origin_flags_skip_prompting(monkeypatch, tmp_path):
+    calls = {}
+    monkeypatch.setattr(
+        cli.env,
+        "init_instance",
+        lambda directory, force=False, overrides=None: calls.update(overrides=overrides),
+    )
+
+    def fail_prompt():
+        raise AssertionError("should not prompt when --cors-origin is given")
+
+    monkeypatch.setattr(cli.prompts, "prompt_cors_origins", fail_prompt)
+
+    cli.main(["init", "--cors-origin", "https://a.example.com", "--cors-origin", "https://b.example.com", "--dir", str(tmp_path)])
+
+    assert calls["overrides"] == {"CORS_ORIGINS_JSON": '["https://a.example.com", "https://b.example.com"]'}
+
+
+def test_init_interactive_and_cors_origin_are_mutually_exclusive(tmp_path):
+    with pytest.raises(SystemExit):
+        cli.main(["init", "--interactive", "--cors-origin", "https://a.example.com", "--dir", str(tmp_path)])
+
+
+def test_install_repo_dispatches_to_git_source_install(monkeypatch, tmp_path):
+    calls = {}
+    monkeypatch.setattr(
+        cli.git_source,
+        "install",
+        lambda repo, ref, dest_dir: calls.update(repo=repo, ref=ref, dest_dir=dest_dir),
+    )
+
+    cli.main(["install", "--repo", "https://example.com/soar.git", "--ref", "v1.0.0", "--dir", str(tmp_path / "instance")])
+
+    assert calls == {"repo": "https://example.com/soar.git", "ref": "v1.0.0", "dest_dir": tmp_path / "instance"}
+
+
+def test_install_requires_exactly_one_of_bundle_or_repo(tmp_path):
+    with pytest.raises(SystemExit):
+        cli.main(["install", "--dir", str(tmp_path)])
+
+
+def test_install_rejects_both_bundle_and_repo(tmp_path):
+    bundle_file = tmp_path / "b.tar.gz"
+    bundle_file.write_bytes(b"x")
+    with pytest.raises(SystemExit):
+        cli.main(["install", str(bundle_file), "--repo", "https://example.com/soar.git", "--dir", str(tmp_path)])
+
+
+def test_update_dispatches_to_git_source_update(monkeypatch, tmp_path):
+    calls = {}
+    monkeypatch.setattr(
+        cli.git_source,
+        "update",
+        lambda instance, ref, migrate: calls.update(instance=instance, ref=ref, migrate=migrate),
+    )
+
+    cli.main(["update", "--ref", "v1.2.3", "--dir", str(tmp_path)])
+
+    assert calls == {"instance": tmp_path, "ref": "v1.2.3", "migrate": None}
+
+
+def test_update_migrate_flag_passed_through(monkeypatch, tmp_path):
+    calls = {}
+    monkeypatch.setattr(
+        cli.git_source,
+        "update",
+        lambda instance, ref, migrate: calls.update(instance=instance, ref=ref, migrate=migrate),
+    )
+
+    cli.main(["update", "--migrate", "fresh", "--dir", str(tmp_path)])
+
+    assert calls == {"instance": tmp_path, "ref": None, "migrate": "fresh"}
 
 
 def test_up_dispatches_to_compose_up(monkeypatch, tmp_path):

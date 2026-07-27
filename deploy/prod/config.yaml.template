@@ -41,4 +41,6 @@ auth:
   # REQUIRED: set to the real UI origin(s) before going live — the code
   # default (localhost:3000/5173) will silently win otherwise and the UI
   # will fail to log in (browser CORS rejection), see UPGRADE-v2.md P17.
-  cors_origins: ["https://CHANGE-ME.example.com"]
+  # `soarctl init --interactive` (or `--cors-origin URL`) fills this in for
+  # you; plain `soarctl init` leaves the placeholder below for manual edit.
+  cors_origins: ${CORS_ORIGINS_JSON}

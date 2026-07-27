@@ -17,7 +17,12 @@ from .runner import run
 BASE_IMAGES = ("redis:7-alpine", "postgres:16-alpine")
 
 
-def package(repo_root: Path, version: str, output: Path) -> Path:
+def build_images(repo_root: Path, version: str) -> tuple[str, str]:
+    """Builds orchestrator/ui images tagged with `version` and pulls the base
+    images — shared by `package()` (which also `docker save`s the result)
+    and `git_source.install()`/`update()` (which use the images locally,
+    no save/load involved at all).
+    """
     prod_dir = repo_root / "deploy" / "prod"
     orchestrator_tag = f"soar-orchestrator:{version}"
     ui_tag = f"soar-ui:{version}"
@@ -26,6 +31,13 @@ def package(repo_root: Path, version: str, output: Path) -> Path:
     run(["docker", "build", "-f", str(prod_dir / "Dockerfile.ui"), "-t", ui_tag, str(repo_root)])
     for image in BASE_IMAGES:
         run(["docker", "pull", image])
+
+    return orchestrator_tag, ui_tag
+
+
+def package(repo_root: Path, version: str, output: Path) -> Path:
+    prod_dir = repo_root / "deploy" / "prod"
+    orchestrator_tag, ui_tag = build_images(repo_root, version)
 
     output.parent.mkdir(parents=True, exist_ok=True)
 

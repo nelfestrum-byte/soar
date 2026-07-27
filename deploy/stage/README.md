@@ -21,9 +21,10 @@ docker compose up --build
 
 ## Queue Backend Configuration
 
-SOAR supports two queue backends:
+SOAR supports three queue backends — this stand's `config.yaml` uses `sql`
+(see below); `memory`/`redis` are shown for reference.
 
-### In-Memory (Default)
+### In-Memory (schema default, not this stand's)
 ```yaml
 queue:
   backend: memory
@@ -38,6 +39,23 @@ queue:
   redis_push_timeout: 5.0
   redis_pop_timeout: 1.0
 ```
+
+### SQL (what this stand actually runs)
+```yaml
+queue:
+  backend: sql
+  sql_poll_interval: 0.5
+
+jobs:
+  persistence: sql   # required alongside backend: sql, or the orchestrator fails fast at startup
+```
+
+Polls the same `workflow_jobs` table `jobs.persistence: sql` already
+writes to — no separate broker, no at-most-once job loss on connection
+drop (unlike `redis`, see `docs/agents/known-limitations.md` #2). `redis`
+service stays up in this compose file regardless — it's optional for
+`http_client.cache_backend: redis`, not required for the queue anymore.
+Full details — [docs/agents/config-reference.md → Queue backend](../../docs/agents/config-reference.md#queue-backend).
 
 ## Database (SQLite / PostgreSQL) and Table Prefix
 

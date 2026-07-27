@@ -1,7 +1,7 @@
 import tarfile
 from pathlib import Path
 
-from deploy.soarctl_lib.bundle import BASE_IMAGES, install, package
+from deploy.soarctl_lib.bundle import BASE_IMAGES, build_images, install, package
 
 
 def _make_fake_repo(tmp_path: Path) -> Path:
@@ -66,6 +66,29 @@ def test_package_builds_and_pulls_and_saves(tmp_path, monkeypatch):
     assert "soarctl_lib/runner.py" in names
     assert "images.tar" in names
     assert not any("__pycache__" in n for n in names)
+
+
+def test_build_images_builds_and_pulls(tmp_path, monkeypatch):
+    repo = _make_fake_repo(tmp_path)
+    calls = []
+
+    def fake_run(argv, **kw):
+        calls.append(argv)
+        return type("R", (), {"stdout": ""})()
+
+    monkeypatch.setattr("deploy.soarctl_lib.bundle.run", fake_run)
+
+    orchestrator_tag, ui_tag = build_images(repo, "1.2.3")
+
+    assert orchestrator_tag == "soar-orchestrator:1.2.3"
+    assert ui_tag == "soar-ui:1.2.3"
+
+    build_calls = [c for c in calls if c[:2] == ["docker", "build"]]
+    pull_calls = [c for c in calls if c[:2] == ["docker", "pull"]]
+    assert len(build_calls) == 2
+    assert any("soar-orchestrator:1.2.3" in c for c in build_calls)
+    assert any("soar-ui:1.2.3" in c for c in build_calls)
+    assert {c[2] for c in pull_calls} == set(BASE_IMAGES)
 
 
 def test_install_extracts_and_loads_and_cleans_up(tmp_path, monkeypatch):

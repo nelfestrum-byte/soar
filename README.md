@@ -52,15 +52,19 @@ mypy orchestrator/ soar/ --ignore-missing-imports
 
 | Поле | По умолчанию | Описание |
 |---|---|---|
-| `backend` | `memory` | `memory` (один инстанс) или `redis` (распределённое развёртывание) |
+| `backend` | `memory` | `memory` (один инстанс), `redis` (распределённое развёртывание) или `sql` (poll поверх `workflow_jobs`, дефолт `deploy/prod`/`deploy/stage` с v0.12) |
 | `redis_url` | `redis://localhost:6379/0` | Только для `backend: redis` |
 | `redis_max_connections` | `10` | Размер пула соединений |
 | `redis_push_timeout` | `5.0` | Таймаут постановки job в очередь, сек |
 | `redis_pop_timeout` | `1.0` | Таймаут ожидания job воркером, сек |
+| `sql_poll_interval` | `0.5` | Только для `backend: sql` — сек между claim-попытками при пустой очереди |
 
 `memory` — только для одного инстанса оркестратора; `redis` — при
-нескольких инстансах/распределённой нагрузке. См. Known Limitation #2 в
-[docs/agents/known-limitations.md](docs/agents/known-limitations.md) (at-most-once delivery).
+нескольких инстансах/распределённой нагрузке, но at-most-once (см. Known
+Limitation #2 в [docs/agents/known-limitations.md](docs/agents/known-limitations.md)).
+`sql` устраняет эту потерю джобов ценой требования `jobs.persistence: sql`
+(fail-fast иначе) — подробности и claim-запрос см.
+[docs/agents/config-reference.md → Queue backend](docs/agents/config-reference.md#queue-backend).
 
 ### `database` — SQLite / PostgreSQL
 
@@ -365,7 +369,11 @@ make migrate
 - API: `http://localhost:8000/status`, `http://localhost:8000/docs`
 
 Конфиг стенда — [`deploy/stage/config.yaml`](deploy/stage/config.yaml)
-(Postgres, `table_prefix: "stage_"`, `jobs.persistence: sql`, Redis-очередь).
+(Postgres, `table_prefix: "stage_"`, `jobs.persistence: sql`,
+`queue.backend: sql`). Redis всё ещё поднят сервисом в compose — он
+опционален для очереди задач (`queue.backend: redis`) и для кэша
+`http_client.cache_backend: redis`, ни то ни другое не включено в текущем
+`config.yaml` стенда.
 Остальные команды (`up`/`down`/`logs`/`restart`/`status`) — [`deploy/stage/Makefile`](deploy/stage/Makefile),
 подробнее — [`deploy/stage/README.md`](deploy/stage/README.md).
 
@@ -425,6 +433,37 @@ python soarctl migrate --fresh   # или --upgrade — только если р
 Один инстанс на вызов — мультиинстансность вне scope (см. [Known Limitations #8](docs/agents/known-limitations.md)).
 Подробнее — [`deploy/prod/README.md`](deploy/prod/README.md) и
 [`docs/compose/specs/2026-07-22-deploy-cli-design.md`](docs/compose/specs/2026-07-22-deploy-cli-design.md).
+
+**On-site установка (машина сама имеет доступ в интернет)** — альтернатива
+шагам 1-2 выше для случая, когда сборка и цель — одна и та же машина: без
+бандла, образы собираются локально прямо из git-чекаута:
+
+```bash
+python deploy/soarctl install --repo . --dir soar-prod   # или URL для git clone
+cd soar-prod
+python soarctl doctor
+python soarctl init --interactive   # спросит auth.cors_origins вместо плейсхолдера
+python soarctl up
+python soarctl migrate --fresh
+python soarctl users create --username admin --role admin
+```
+
+Версия образа — `git describe --tags --always --dirty` (суффикс `-dirty`
+сигнализирует несохранённые изменения на момент сборки). Апгрейд такого
+инстанса — не `install` новым бандлом, а:
+
+```bash
+python soarctl update --ref v1.3.0   # или без --ref — pull текущей ветки
+python soarctl migrate --fresh       # только если релиз принёс миграцию
+```
+
+`update` делает `git fetch`/`checkout` или `pull --ff-only`, пересобирает
+образы, обновляет `SOAR_VERSION` и `up` — без `docker compose down`;
+`postgres`/`redis` не пересоздаются, поскольку их теги образов не меняются.
+Работает только для инстансов, поставленных через `install --repo`
+(маркер `source.json`) — бандл-инстансы обновляются прежним способом выше.
+Подробнее —
+[`docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md`](docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md).
 
 ### 4. Production вне Docker Compose
 

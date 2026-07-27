@@ -79,6 +79,26 @@ def test_init_instance_missing_template_raises(tmp_path):
         init_instance(tmp_path)
 
 
+def test_init_instance_default_cors_origins_placeholder(tmp_path):
+    (tmp_path / "config.yaml.template").write_text("auth:\n  cors_origins: ${CORS_ORIGINS_JSON}\n")
+    (tmp_path / "VERSION").write_text("1.2.3\n")
+
+    init_instance(tmp_path)
+
+    config_text = (tmp_path / "config.yaml").read_text()
+    assert 'cors_origins: ["https://CHANGE-ME.example.com"]' in config_text
+
+
+def test_init_instance_overrides_cors_origins(tmp_path):
+    (tmp_path / "config.yaml.template").write_text("auth:\n  cors_origins: ${CORS_ORIGINS_JSON}\n")
+    (tmp_path / "VERSION").write_text("1.2.3\n")
+
+    init_instance(tmp_path, overrides={"CORS_ORIGINS_JSON": '["https://soar.example.com"]'})
+
+    config_text = (tmp_path / "config.yaml").read_text()
+    assert 'cors_origins: ["https://soar.example.com"]' in config_text
+
+
 def test_update_version_replaces_existing_line_only(tmp_path):
     env_path = tmp_path / ".env"
     env_path.write_text("AUTH_SECRET_KEY=keep-me\nSOAR_VERSION=1.0.0\nPOSTGRES_PASSWORD=keep-too\n")

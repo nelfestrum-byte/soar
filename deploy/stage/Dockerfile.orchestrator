@@ -13,7 +13,7 @@ COPY alembic.ini /app/alembic.ini
 
 RUN pip install --no-cache-dir \
     -r /app/orchestrator/requirements.txt \
-    elasticsearch vt-py requests
+    elasticsearch vt-py requests httpx
 
 RUN mkdir -p /app/data /app/data/workflows /app/data/actions /app/data/connectors /var/log/soar/jobs && \
     find /app/soar/workflows -maxdepth 1 -name '*.py' ! -name '__init__.py' ! -name 'base.py' -exec cp -n {} /app/data/workflows/ \; 2>/dev/null || true && \

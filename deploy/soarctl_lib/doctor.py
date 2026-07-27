@@ -2,6 +2,7 @@
 doctor` can report all of them instead of stopping at the first failure.
 """
 
+import json
 import shutil
 import socket
 from pathlib import Path
@@ -54,6 +55,23 @@ def check_disk_space(instance: Path, min_free_gb: int = _MIN_FREE_GB) -> tuple[b
     return True, f"{free_gb:.1f}GB free"
 
 
+def check_git_checkout(instance: Path) -> tuple[bool, str] | None:
+    """Only meaningful for git-sourced instances (`soarctl install --repo`) —
+    returns None (not a failure) when `source.json` is absent, so bundle-
+    sourced instances don't get a spurious check in their `doctor` output.
+    """
+    source_path = instance / "source.json"
+    if not source_path.exists():
+        return None
+
+    checkout = Path(json.loads(source_path.read_text())["checkout"])
+    if not shutil.which("git"):
+        return False, "git not found on PATH"
+    if not checkout.exists():
+        return False, f"recorded checkout {checkout} no longer exists"
+    return True, f"checkout present at {checkout}"
+
+
 def run_checks(instance: Path) -> list[tuple[str, bool, str]]:
     checks = [
         ("docker", check_docker_present),
@@ -66,4 +84,10 @@ def run_checks(instance: Path) -> list[tuple[str, bool, str]]:
     for name, check in checks:
         ok, message = check()
         results.append((name, ok, message))
+
+    git_result = check_git_checkout(instance)
+    if git_result is not None:
+        ok, message = git_result
+        results.append(("git checkout", ok, message))
+
     return results
