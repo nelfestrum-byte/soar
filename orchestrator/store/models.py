@@ -7,6 +7,10 @@ from orchestrator.db.base import Base, prefixed
 
 
 class JobRecord(Base):
+    # NOTE: a partial index on (status, triggered_at) WHERE status='PENDING' is
+    # added via alembic migration (not declared here) — keeps SQLQueue.pop()'s
+    # claim query cheap regardless of historical COMPLETED/FAILED row volume.
+    # See docs/compose/specs/2026-07-27-sql-job-queue-design.md [S5].
     __tablename__ = prefixed("workflow_jobs")
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
