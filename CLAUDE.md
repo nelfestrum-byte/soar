@@ -35,6 +35,7 @@ docs/compose/reports/<feature>.md                    ← после заверш
 
 - [`docs/compose/specs/2026-07-27-http-client-design.md`](docs/compose/specs/2026-07-27-http-client-design.md) — HttpClient: логирование безусловно, кэш опционален (`UPGRADE-v2.md` P12)
 - [`docs/compose/specs/2026-07-27-connector-secrets-schema-design.md`](docs/compose/specs/2026-07-27-connector-secrets-schema-design.md) — схема полей коннектора из сигнатуры + hidden-поля, редакция секретов на уровне API, stage UI (`UPGRADE-v2.md` P13)
+- [`docs/compose/specs/2026-07-27-sql-job-queue-design.md`](docs/compose/specs/2026-07-27-sql-job-queue-design.md) — SQL-backed очередь поверх `workflow_jobs` вместо `queue.backend: redis` по умолчанию (устраняет at-most-once потерю джобов), + `jobs.retention_days` (`UPGRADE-v2.md` P14)
 - [`docs/compose/specs/2026-07-03-v06-upgrade-design.md`](docs/compose/specs/2026-07-03-v06-upgrade-design.md) — per-workflow метрики, dry-run конвенция (Feature 1/CachedHttpClient превзойдена вышеуказанной спекой на HttpClient, см. пометку в файле)
 
 `2026-07-03-bugfixes-design.md` — не активен, все 7 багов исправлены в v0.5 (см. `CHANGELOG.md`), спек оставлен как референс.

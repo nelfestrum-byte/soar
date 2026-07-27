@@ -30,6 +30,15 @@ python soarctl install soar-bundle-0.9.0.tar.gz --dir soar-prod
 cd soar-prod
 python soarctl doctor            # preflight: docker, ports, disk space
 python soarctl init              # generates .env secrets + config.yaml — do this once
+```
+
+Edit `config.yaml` and set `auth.cors_origins` to the real UI origin(s)
+(e.g. `["https://soar.example.com"]`) — `soarctl init` renders the
+template as-is and does not know your domain. Skipping this leaves the
+code default (`localhost:3000`/`5173`), and the UI will fail to log in
+(browser CORS rejection) once accessed from its real address.
+
+```bash
 python soarctl up
 python soarctl migrate --fresh   # first boot only, see note below
 python soarctl users create --username admin --role admin
