@@ -31,6 +31,8 @@ docs/compose/reports/<feature>.md                    ← после заверш
 
 Концепты верхнего уровня (карта проблем + реестр рисков, не заменяют спеки) — [`docs/concepts/`](docs/concepts/): [`UPGRADE.md`](docs/concepts/UPGRADE.md) (Agent Dev-Loop, этапы 1-3 реализованы), [`UPGRADE-v2.md`](docs/concepts/UPGRADE-v2.md) (pre-release ревью перед деплоем на живую инфру — P12/P13/P14/P16 реализованы в v0.12, P15/P17 приняты как остаточный риск/чеклист без кода).
 
+**Открытые баги — [`docs/concepts/BAGFIX_PLAN.md`](docs/concepts/BAGFIX_PLAN.md)** (трек по итогам ревью 2026-07-27, отчёт — [`docs/compose/reports/prod-readiness-review-2026-07-27.md`](docs/compose/reports/prod-readiness-review-2026-07-27.md)). B1–B4 — блокеры пилота, до их закрытия на живую инфру не выходим.
+
 Активные спеки (написаны, не выполнены):
 
 - [`docs/compose/specs/2026-07-03-v06-upgrade-design.md`](docs/compose/specs/2026-07-03-v06-upgrade-design.md) — per-workflow метрики, dry-run конвенция (Feature 1/`CachedHttpClient` реализована как `HttpClient` в v0.12, см. `2026-07-27-http-client-design.md` и пометку в файле; Feature 2/3 остаются неактивными)
