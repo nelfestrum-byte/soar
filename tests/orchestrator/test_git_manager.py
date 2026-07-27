@@ -80,6 +80,29 @@ async def test_git_manager_commit_nothing(git_repo):
 
 
 @pytest.mark.asyncio
+async def test_git_manager_commit_nothing_with_untracked_file(git_repo):
+    gm = GitManager(repo_path=git_repo, author_name="Test", author_email="test@test.com")
+    await gm.ensure_repo()
+
+    pycache_dir = os.path.join(git_repo, "__pycache__")
+    os.makedirs(pycache_dir, exist_ok=True)
+    with open(os.path.join(pycache_dir, "x.pyc"), "w") as f:
+        f.write("compiled")
+
+    commit_hash = await gm.commit("test.txt", "No changes")
+    assert commit_hash == ""
+
+
+@pytest.mark.asyncio
+async def test_git_manager_commit_real_error_still_raises(git_repo):
+    gm = GitManager(repo_path=git_repo, author_name="Test", author_email="test@test.com")
+    await gm.ensure_repo()
+
+    with pytest.raises(RuntimeError):
+        await gm.commit("does_not_exist.txt", "Commit nonexistent file")
+
+
+@pytest.mark.asyncio
 async def test_git_manager_restore_with_author_override(git_repo):
     gm = GitManager(repo_path=git_repo, author_name="Test", author_email="test@test.com")
     await gm.ensure_repo()
