@@ -58,6 +58,15 @@ class GitManager:
         email = author_email or self.author_email
 
         await self._run("add", "--", filepath)
+
+        diff_proc = await asyncio.create_subprocess_exec(
+            "git", "diff", "--cached", "--quiet", "--", filepath,
+            cwd=self.repo_path,
+        )
+        await diff_proc.wait()
+        if diff_proc.returncode == 0:
+            return ""  # ничего не застейджено для filepath — реальный no-op
+
         env = {
             **os.environ,
             "GIT_AUTHOR_NAME": name,
@@ -75,9 +84,6 @@ class GitManager:
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            combined = (stdout.decode() + stderr.decode()).lower()
-            if "nothing to commit" in combined or "no changes" in combined:
-                return ""
             raise RuntimeError(f"git commit failed: {stderr.decode()}")
         result = await self._run("rev-parse", "--short", "HEAD")
         return result.strip()
