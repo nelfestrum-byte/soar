@@ -73,3 +73,61 @@ def test_parse_functions_empty_file(tmp_path):
     path = tmp_path / "empty.py"
     path.write_text(EMPTY_MODULE, encoding="utf-8")
     assert parse_functions(path) == []
+
+
+FIELDS_MODULE = '''from typing import ClassVar
+
+from soar.connectors.base import BaseConnector
+
+
+class SampleConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"password", "api_key"}
+
+    def __init__(
+        self,
+        instance_name: str,
+        host: str = "localhost",
+        port: int = 9200,
+        api_key: str = "",
+        password: str = "",
+        verify_certs: bool = True,
+    ):
+        super().__init__(instance_name)
+'''
+
+NO_HIDDEN_FIELDS_MODULE = '''from soar.connectors.base import BaseConnector
+
+
+class PlainConnector(BaseConnector):
+    def __init__(self, instance_name: str, base_path: str = "/tmp"):
+        super().__init__(instance_name)
+'''
+
+
+def test_parse_classes_extracts_typed_fields_and_defaults(tmp_path):
+    path = tmp_path / "sample.py"
+    path.write_text(FIELDS_MODULE, encoding="utf-8")
+    cls = parse_classes(path)[0]
+    fields = {f["name"]: f for f in cls["fields"]}
+    assert fields["instance_name"] == {"name": "instance_name", "type": "str", "default": None}
+    assert fields["host"] == {"name": "host", "type": "str", "default": "localhost"}
+    assert fields["port"] == {"name": "port", "type": "int", "default": 9200}
+    assert fields["verify_certs"] == {"name": "verify_certs", "type": "bool", "default": True}
+
+
+def test_parse_classes_extracts_hidden_fields(tmp_path):
+    path = tmp_path / "sample.py"
+    path.write_text(FIELDS_MODULE, encoding="utf-8")
+    cls = parse_classes(path)[0]
+    assert cls["hidden_fields"] == {"password", "api_key"}
+
+
+def test_parse_classes_hidden_fields_empty_when_absent(tmp_path):
+    path = tmp_path / "plain.py"
+    path.write_text(NO_HIDDEN_FIELDS_MODULE, encoding="utf-8")
+    cls = parse_classes(path)[0]
+    assert cls["hidden_fields"] == set()
+    assert cls["fields"] == [
+        {"name": "instance_name", "type": "str", "default": None},
+        {"name": "base_path", "type": "str", "default": "/tmp"},
+    ]

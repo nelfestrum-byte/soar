@@ -99,6 +99,7 @@ export const api = {
   getConnectorConfig: (name) => request(`/connectors/${name}/config`),
   saveConnectorConfig: (name, content) =>
     request(`/connectors/${name}/config`, { method: 'PUT', body: content }),
+  getConnectorSchema: (name) => request(`/connectors/${name}/schema`),
   createConnector: (name, className = '') =>
     request(`/connectors/${name}?class_name=${className}`, { method: 'POST' }),
   deleteConnector: (name) => request(`/connectors/${name}`, { method: 'DELETE' }),

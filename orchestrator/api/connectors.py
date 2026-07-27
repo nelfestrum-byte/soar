@@ -30,6 +30,9 @@ _RO = ("viewer", "analyst", "service", "admin", "agent")
 _RW = ("analyst", "admin", "agent")
 _ADMIN = ("admin", "agent")
 
+_MASK = "********"
+_DIFF_KV_RE = re.compile(r"^([+-])(\s*)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
+
 
 class GenerateRequest(BaseModel):
     spec: str
@@ -79,6 +82,108 @@ def _describe_connector_summary(py_file: str, class_name: str) -> str:
     except (SyntaxError, OSError):
         pass
     return ""
+
+
+def _connector_py_path(config, name: str) -> Path:
+    return Path(os.path.join(config.soar.connectors_dir, name, f"{name}.py"))
+
+
+def _hidden_fields_for(config, name: str) -> set[str]:
+    """Hidden field names declared on a connector's class, via AST — no import."""
+    filepath = _connector_py_path(config, name)
+    if not filepath.exists():
+        return set()
+    try:
+        classes = parse_classes(filepath)
+    except SyntaxError:
+        return set()
+    if not classes:
+        return set()
+    cls = next((c for c in classes if not c["name"].startswith("Base")), classes[0])
+    return cls["hidden_fields"]
+
+
+def _redact_yaml(content: str, hidden: set[str]) -> str:
+    if not hidden or not content:
+        return content
+    try:
+        data = pyyaml.safe_load(content)
+    except pyyaml.YAMLError:
+        return content
+    if not isinstance(data, dict) or not isinstance(data.get("instances"), dict):
+        return content
+    for instance in data["instances"].values():
+        if not isinstance(instance, dict):
+            continue
+        for key in hidden:
+            if key in instance:
+                instance[key] = _MASK
+    return pyyaml.safe_dump(data, sort_keys=False)
+
+
+def _redact_diff(diff: str, hidden: set[str]) -> str:
+    """Line-by-line redaction: mask the value of a `key: value` diff line
+    when `key` is hidden — the fact of the change stays visible, the value doesn't."""
+    if not hidden or not diff:
+        return diff
+    out_lines = []
+    for line in diff.split("\n"):
+        if line.startswith("+++") or line.startswith("---"):
+            out_lines.append(line)
+            continue
+        match = _DIFF_KV_RE.match(line)
+        if match and match.group(3) in hidden:
+            out_lines.append(f"{match.group(1)}{match.group(2)}{match.group(3)}: {_MASK}")
+        else:
+            out_lines.append(line)
+    return "\n".join(out_lines)
+
+
+def _merge_hidden_fields(filepath: str, content: str, hidden: set[str], user: CurrentUser) -> str:
+    """Merge-on-write: a submitted `********` keeps the on-disk value; a real change
+    to a hidden field requires the literal `admin` role (write-only secrets, field-level
+    RBAC split, not endpoint-level — non-hidden fields are unaffected by this function)."""
+    try:
+        new_data = pyyaml.safe_load(content)
+    except pyyaml.YAMLError:
+        return content
+    if not isinstance(new_data, dict) or not isinstance(new_data.get("instances"), dict):
+        return content
+
+    old_instances: dict = {}
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, encoding="utf-8") as f:
+                old_data = pyyaml.safe_load(f.read())
+            if isinstance(old_data, dict) and isinstance(old_data.get("instances"), dict):
+                old_instances = old_data["instances"]
+        except pyyaml.YAMLError:
+            old_instances = {}
+
+    changed = False
+    for instance_id, instance in new_data["instances"].items():
+        if not isinstance(instance, dict):
+            continue
+        old_instance = old_instances.get(instance_id)
+        if not isinstance(old_instance, dict):
+            old_instance = {}
+        for key in hidden:
+            if key not in instance:
+                continue
+            new_value = instance[key]
+            if new_value == _MASK:
+                changed = True
+                if key in old_instance:
+                    instance[key] = old_instance[key]
+                else:
+                    del instance[key]
+            elif new_value != old_instance.get(key) and user.role != "admin":
+                raise HTTPException(
+                    status_code=403, detail="Only admin may set connector secret fields",
+                )
+    if not changed:
+        return content
+    return pyyaml.safe_dump(new_data, sort_keys=False)
 
 
 @router.get("", dependencies=[Depends(require_role(*_RO))])
@@ -298,6 +403,22 @@ async def describe_connector(name: str, request: Request):
     raise HTTPException(status_code=404, detail=f"No class '{class_name}' found in {name}.py")
 
 
+@router.get("/{name}/schema", dependencies=[Depends(require_role(*_RO))])
+async def get_connector_schema(name: str, request: Request):
+    validate_name(name)
+    config = request.app.state.config
+    filepath = _connector_py_path(config, name)
+    validate_path_within(config.soar.connectors_dir, str(filepath))
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="Connector not found")
+    classes = parse_classes(filepath)
+    if not classes:
+        return {"fields": []}
+    cls = next((c for c in classes if not c["name"].startswith("Base")), classes[0])
+    hidden = cls["hidden_fields"]
+    return {"fields": [{**f, "hidden": f["name"] in hidden} for f in cls["fields"]]}
+
+
 @router.get("/{name}", dependencies=[Depends(require_role(*_RO))])
 async def get_connector(name: str, request: Request):
     validate_name(name)
@@ -432,21 +553,22 @@ async def get_connector_config(name: str, request: Request):
     config = request.app.state.config
     filepath = os.path.join(config.soar.connectors_dir, name, f"{name}.yml")
     validate_path_within(config.soar.connectors_dir, filepath)
+    hidden = _hidden_fields_for(config, name)
     if not os.path.exists(filepath):
         # Look for .example.yml in connectors_dir (generated connectors)
         example_in_dir = os.path.join(config.soar.connectors_dir, name, f"{name}.example.yml")
         if os.path.exists(example_in_dir):
             with open(example_in_dir) as f:
-                return {"name": name, "content": f.read()}
+                return {"name": name, "content": _redact_yaml(f.read(), hidden)}
         # Fall back to builtin example
         builtin_dir = Path(__file__).resolve().parent.parent.parent / "soar" / "connectors"
         example = builtin_dir / name / f"{name}.example.yml"
         if example.exists():
-            return {"name": name, "content": example.read_text()}
+            return {"name": name, "content": _redact_yaml(example.read_text(), hidden)}
         return {"name": name, "content": ""}
     with open(filepath) as f:
         content = f.read()
-    return {"name": name, "content": content}
+    return {"name": name, "content": _redact_yaml(content, hidden)}
 
 
 @router.get("/{name}/config/history", dependencies=[Depends(require_role(*_RO))])
@@ -460,9 +582,11 @@ async def get_connector_config_history(name: str, request: Request):
 async def get_connector_config_version(name: str, commit: str, request: Request):
     validate_name(name)
     validate_commit(commit)
+    config = request.app.state.config
     git = request.app.state.git
     content = await history.get_version(git, f"connectors/{name}/{name}.yml", commit)
-    return {"content": content}
+    hidden = _hidden_fields_for(config, name)
+    return {"content": _redact_yaml(content, hidden)}
 
 
 @router.get("/{name}/config/diff", dependencies=[Depends(require_role(*_RO))])
@@ -470,9 +594,11 @@ async def get_connector_config_diff(name: str, request: Request, a: str, b: str)
     validate_name(name)
     validate_commit(a)
     validate_commit(b)
+    config = request.app.state.config
     git = request.app.state.git
     diff = await history.diff_versions(git, f"connectors/{name}/{name}.yml", a, b)
-    return {"diff": diff}
+    hidden = _hidden_fields_for(config, name)
+    return {"diff": _redact_diff(diff, hidden)}
 
 
 @router.post("/{name}/config/restore")
@@ -514,6 +640,9 @@ async def save_connector_config(
         raise HTTPException(status_code=400, detail="Content must be valid UTF-8")
     if "\x00" in content:
         raise HTTPException(status_code=400, detail="Content must not contain null bytes")
+    hidden = _hidden_fields_for(config, name)
+    if hidden:
+        content = _merge_hidden_fields(filepath, content, hidden, user)
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(content)
     git = request.app.state.git

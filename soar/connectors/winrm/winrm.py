@@ -1,9 +1,13 @@
+from typing import ClassVar
+
 import winrm
 
 from soar.connectors.base import BaseConnector
 
 
 class WinRMConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+
     def __init__(
         self,
         instance_name: str,

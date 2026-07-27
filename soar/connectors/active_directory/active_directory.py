@@ -1,9 +1,13 @@
+from typing import ClassVar
+
 from ldap3 import ALL, Connection, Server, SUBTREE
 
 from soar.connectors.base import BaseConnector
 
 
 class ActiveDirectoryConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"bind_password"}
+
     def __init__(
         self,
         instance_name: str,

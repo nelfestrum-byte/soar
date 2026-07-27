@@ -1,9 +1,13 @@
+from typing import ClassVar
+
 import pymssql
 
 from soar.connectors.base import BaseConnector
 
 
 class MSSQLConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+
     def __init__(
         self,
         instance_name: str,

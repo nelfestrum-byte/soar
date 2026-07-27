@@ -1,9 +1,13 @@
+from typing import ClassVar
+
 from elasticsearch import Elasticsearch
 
 from soar.connectors.base import BaseConnector
 
 
 class ElasticConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"password", "api_key"}
+
     def __init__(
         self,
         instance_name: str,

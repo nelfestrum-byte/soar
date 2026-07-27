@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -460,6 +461,234 @@ async def test_connector_config_history_diff_restore(tmp_path):
     rows = await _audit_rows("connector", "hist_conf_conn")
     actions = {row.action for row in rows}
     assert "connector.restore_config" in actions
+
+
+HIDDEN_FIELD_CONNECTOR_CODE = (
+    "from typing import ClassVar\n\n"
+    "from soar.connectors.base import BaseConnector\n\n\n"
+    "class HiddenFieldConnector(BaseConnector):\n"
+    '    HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}\n\n'
+    "    def __init__(self, instance_name: str, host: str = \"localhost\", password: str = \"\"):\n"
+    "        super().__init__(instance_name)\n"
+    "        self.host = host\n"
+    "        self.password = password\n\n"
+    "    def _connect_impl(self):\n        self._connected = True\n\n"
+    "    def disconnect(self):\n        self._connected = False\n"
+).encode()
+
+
+def _agent():
+    return CurrentUser(id=3, role="agent", type="user", username="test_agent")
+
+
+def _viewer():
+    return CurrentUser(id=2, role="viewer", type="user", username="test_viewer")
+
+
+@pytest.mark.asyncio
+async def test_connector_schema():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/schema_conn")
+        await c.put("/connectors/schema_conn/code", content=HIDDEN_FIELD_CONNECTOR_CODE)
+        r = await c.get("/connectors/schema_conn/schema")
+        assert r.status_code == 200
+        fields = {f["name"]: f for f in r.json()["fields"]}
+        assert fields["password"]["hidden"] is True
+        assert fields["password"]["type"] == "str"
+        assert fields["host"]["hidden"] is False
+        assert fields["host"]["default"] == "localhost"
+        assert "instance_name" in fields
+
+
+@pytest.mark.asyncio
+async def test_connector_schema_not_found():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/connectors/does_not_exist/schema")
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_connector_config_redacts_hidden_field_for_admin():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/redact_conn")
+        await c.put("/connectors/redact_conn/code", content=HIDDEN_FIELD_CONNECTOR_CODE)
+        await c.put(
+            "/connectors/redact_conn/config",
+            content=b"instances:\n  a:\n    host: real-host\n    password: supersecret\n",
+        )
+        r = await c.get("/connectors/redact_conn/config")
+        assert r.status_code == 200
+        content = r.json()["content"]
+        assert "supersecret" not in content
+        assert "********" in content
+        assert "real-host" in content
+
+
+@pytest.mark.asyncio
+async def test_get_connector_config_redacts_hidden_field_for_viewer():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/redact_viewer_conn")
+        await c.put("/connectors/redact_viewer_conn/code", content=HIDDEN_FIELD_CONNECTOR_CODE)
+        await c.put(
+            "/connectors/redact_viewer_conn/config",
+            content=b"instances:\n  a:\n    password: supersecret\n",
+        )
+
+        app.dependency_overrides[get_current_user] = _viewer
+        try:
+            r = await c.get("/connectors/redact_viewer_conn/config")
+            assert r.status_code == 200
+            assert "supersecret" not in r.json()["content"]
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+                id=1, role="admin", type="user", username="test_admin"
+            )
+
+
+@pytest.mark.asyncio
+async def test_config_history_and_diff_mask_hidden_field(tmp_path):
+    (tmp_path / ".gitkeep").write_text("")
+    real_git = GitManager(repo_path=str(tmp_path), author_name="Test", author_email="test@test.com")
+    await real_git.ensure_repo()
+    app.state.git = real_git
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/hist_redact_conn")
+        await c.put("/connectors/hist_redact_conn/code", content=HIDDEN_FIELD_CONNECTOR_CODE)
+        r1 = await c.put(
+            "/connectors/hist_redact_conn/config",
+            content=b"instances:\n  a:\n    password: firstsecret\n",
+        )
+        first_commit = r1.json()["commit"]
+        await c.put(
+            "/connectors/hist_redact_conn/config",
+            content=b"instances:\n  a:\n    password: secondsecret\n",
+        )
+
+        r = await c.get("/connectors/hist_redact_conn/config/history")
+        entries = r.json()
+
+        r = await c.get(f"/connectors/hist_redact_conn/config/history/{first_commit}")
+        assert r.status_code == 200
+        assert "firstsecret" not in r.json()["content"]
+        assert "********" in r.json()["content"]
+
+        r = await c.get(
+            f"/connectors/hist_redact_conn/config/diff?a={first_commit}&b={entries[0]['hash']}"
+        )
+        assert r.status_code == 200
+        diff = r.json()["diff"]
+        assert "firstsecret" not in diff
+        assert "secondsecret" not in diff
+        assert "********" in diff
+
+
+@pytest.mark.asyncio
+async def test_put_config_merge_on_write_keeps_old_secret():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/merge_conn")
+        await c.put("/connectors/merge_conn/code", content=HIDDEN_FIELD_CONNECTOR_CODE)
+        await c.put(
+            "/connectors/merge_conn/config",
+            content=b"instances:\n  a:\n    host: h1\n    password: originalsecret\n",
+        )
+        r = await c.put(
+            "/connectors/merge_conn/config",
+            content=b"instances:\n  a:\n    host: h2\n    password: '********'\n",
+        )
+        assert r.status_code == 200
+
+    filepath = os.path.join(app.state.config.soar.connectors_dir, "merge_conn", "merge_conn.yml")
+    with open(filepath) as f:
+        raw = f.read()
+    assert "originalsecret" in raw
+    assert "h2" in raw
+
+
+@pytest.mark.asyncio
+async def test_put_config_agent_cannot_change_hidden_field():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/agent_secret_conn")
+        await c.put("/connectors/agent_secret_conn/code", content=HIDDEN_FIELD_CONNECTOR_CODE)
+        await c.put(
+            "/connectors/agent_secret_conn/config",
+            content=b"instances:\n  a:\n    password: originalsecret\n",
+        )
+
+        app.dependency_overrides[get_current_user] = _agent
+        try:
+            r = await c.put(
+                "/connectors/agent_secret_conn/config",
+                content=b"instances:\n  a:\n    password: newsecret\n",
+            )
+            assert r.status_code == 403
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+                id=1, role="admin", type="user", username="test_admin"
+            )
+
+    filepath = os.path.join(
+        app.state.config.soar.connectors_dir, "agent_secret_conn", "agent_secret_conn.yml"
+    )
+    with open(filepath) as f:
+        raw = f.read()
+    assert "originalsecret" in raw
+    assert "newsecret" not in raw
+
+
+@pytest.mark.asyncio
+async def test_put_config_admin_can_change_hidden_field():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/admin_secret_conn")
+        await c.put("/connectors/admin_secret_conn/code", content=HIDDEN_FIELD_CONNECTOR_CODE)
+        await c.put(
+            "/connectors/admin_secret_conn/config",
+            content=b"instances:\n  a:\n    password: originalsecret\n",
+        )
+        r = await c.put(
+            "/connectors/admin_secret_conn/config",
+            content=b"instances:\n  a:\n    password: newsecret\n",
+        )
+        assert r.status_code == 200
+
+    filepath = os.path.join(
+        app.state.config.soar.connectors_dir, "admin_secret_conn", "admin_secret_conn.yml"
+    )
+    with open(filepath) as f:
+        raw = f.read()
+    assert "newsecret" in raw
+
+
+@pytest.mark.asyncio
+async def test_put_config_agent_can_change_non_hidden_field():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/agent_nonhidden_conn")
+        await c.put("/connectors/agent_nonhidden_conn/code", content=HIDDEN_FIELD_CONNECTOR_CODE)
+        await c.put(
+            "/connectors/agent_nonhidden_conn/config",
+            content=b"instances:\n  a:\n    host: h1\n",
+        )
+
+        app.dependency_overrides[get_current_user] = _agent
+        try:
+            r = await c.put(
+                "/connectors/agent_nonhidden_conn/config",
+                content=b"instances:\n  a:\n    host: h2\n",
+            )
+            assert r.status_code == 200
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+                id=1, role="admin", type="user", username="test_admin"
+            )
 
 
 @pytest.mark.asyncio

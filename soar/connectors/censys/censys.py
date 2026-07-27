@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 import requests
 from requests.auth import HTTPBasicAuth
 
@@ -5,6 +7,8 @@ from soar.connectors.base import BaseConnector
 
 
 class CensysConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"api_secret"}
+
     DEFAULT_BASE_URL = "https://search.censys.io/api"
 
     def __init__(self, instance_name: str, api_id: str, api_secret: str, base_url: str = ""):

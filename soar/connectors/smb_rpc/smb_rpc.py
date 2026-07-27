@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from smbprotocol.connection import Connection
 from smbprotocol.file_info import FileDirectoryInformation
 from smbprotocol.open import (
@@ -15,6 +17,8 @@ from soar.connectors.base import BaseConnector
 
 
 class SMBRPCConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+
     def __init__(
         self,
         instance_name: str,

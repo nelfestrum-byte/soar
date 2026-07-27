@@ -3,11 +3,14 @@ import smtplib
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from typing import ClassVar
 
 from soar.connectors.base import BaseConnector
 
 
 class SMTPConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+
     def __init__(
         self,
         instance_name: str,

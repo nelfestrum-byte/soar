@@ -1,9 +1,13 @@
+from typing import ClassVar
+
 import shodan
 
 from soar.connectors.base import BaseConnector
 
 
 class ShodanConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"api_key"}
+
     def __init__(self, instance_name: str, api_key: str):
         super().__init__(instance_name)
         self.api_key = api_key

@@ -1,4 +1,5 @@
 import re
+from typing import ClassVar
 
 import pymysql
 import pymysql.cursors
@@ -7,6 +8,8 @@ from soar.connectors.base import BaseConnector
 
 
 class MySQLConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+
     def __init__(
         self,
         instance_name: str,

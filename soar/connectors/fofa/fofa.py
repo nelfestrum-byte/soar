@@ -1,4 +1,5 @@
 import base64
+from typing import ClassVar
 
 import requests
 
@@ -6,6 +7,8 @@ from soar.connectors.base import BaseConnector
 
 
 class FofaConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = {"api_key"}
+
     DEFAULT_BASE_URL = "https://fofa.info/api/v1"
 
     def __init__(self, instance_name: str, email: str, api_key: str, base_url: str = ""):

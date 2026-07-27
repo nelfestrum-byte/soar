@@ -1,10 +1,13 @@
 import json
 from pathlib import Path
+from typing import ClassVar
 
 from soar.connectors.base import BaseConnector
 
 
 class FileConnector(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = set()
+
     def __init__(self, instance_name: str, base_path: str = "/tmp"):
         super().__init__(instance_name)
         self.base_path = Path(base_path)
