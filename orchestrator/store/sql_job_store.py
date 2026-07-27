@@ -1,67 +1,22 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from loguru import logger
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from orchestrator.models import ConcurrencyPolicy, JobStatus
-from orchestrator.models.job import WorkflowJob
+from orchestrator.models.job import JobStatus, WorkflowJob
 from orchestrator.store.base import AbstractJobStore
+from orchestrator.store.mapping import job_to_record, record_to_job
 from orchestrator.store.models import JobRecord
 
-
-def _ensure_utc(dt: datetime | None) -> datetime | None:
-    if dt is not None and dt.tzinfo is None:
-        return dt.replace(tzinfo=UTC)
-    return dt
-
-
-def _ensure_utc_required(dt: datetime) -> datetime:
-    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
-
-
-def _job_to_record(job: WorkflowJob) -> JobRecord:
-    return JobRecord(
-        id=job.id,
-        workflow_name=job.workflow_name,
-        workflow_type=job.workflow_type,
-        triggered_by=job.triggered_by,
-        context=job.context,
-        status=job.status.value,
-        concurrency=job.concurrency.value,
-        pid=job.pid,
-        log_path=job.log_path,
-        timeout=job.timeout,
-        triggered_at=job.triggered_at,
-        started_at=job.started_at,
-        finished_at=job.finished_at,
-        result_success=job.result_success,
-        result_data=job.result_data,
-        result_error=job.result_error,
-    )
-
-
-def _record_to_job(record: JobRecord) -> WorkflowJob:
-    return WorkflowJob(
-        id=record.id,
-        workflow_name=record.workflow_name,
-        workflow_type=record.workflow_type,
-        triggered_by=record.triggered_by,
-        context=record.context or {},
-        status=JobStatus(record.status),
-        concurrency=ConcurrencyPolicy(record.concurrency),
-        pid=record.pid,
-        log_path=record.log_path,
-        timeout=record.timeout,
-        triggered_at=_ensure_utc_required(record.triggered_at),
-        started_at=_ensure_utc(record.started_at),
-        finished_at=_ensure_utc(record.finished_at),
-        result_success=record.result_success,
-        result_data=record.result_data,
-        result_error=record.result_error,
-    )
+_TERMINAL_STATUSES = (
+    JobStatus.COMPLETED.value,
+    JobStatus.FAILED.value,
+    JobStatus.TIMEOUT.value,
+    JobStatus.CANCELLED.value,
+)
 
 
 class SQLJobStore(AbstractJobStore):
@@ -70,13 +25,13 @@ class SQLJobStore(AbstractJobStore):
 
     async def save(self, job: WorkflowJob) -> None:
         async with self._session_factory() as session:
-            await session.merge(_job_to_record(job))
+            await session.merge(job_to_record(job))
             await session.commit()
 
     async def get(self, job_id: str) -> WorkflowJob | None:
         async with self._session_factory() as session:
             record = await session.get(JobRecord, job_id)
-            return _record_to_job(record) if record else None
+            return record_to_job(record) if record else None
 
     async def list(
         self,
@@ -97,7 +52,7 @@ class SQLJobStore(AbstractJobStore):
 
         async with self._session_factory() as session:
             result = await session.execute(stmt)
-            return [_record_to_job(r) for r in result.scalars().all()]
+            return [record_to_job(r) for r in result.scalars().all()]
 
     async def count_by_status(self, workflow_name: str, statuses: list[JobStatus]) -> int:  # type: ignore[valid-type]
         stmt = select(func.count()).select_from(JobRecord).where(
@@ -142,4 +97,19 @@ class SQLJobStore(AbstractJobStore):
             count = len(records)
         if count > 0:
             logger.info(f"Startup recovery: {count} RUNNING jobs marked as FAILED")
+        return count
+
+    async def purge_old(self, retention_days: int) -> int:
+        threshold = datetime.now(UTC) - timedelta(days=retention_days)
+        async with self._session_factory() as session:
+            result = await session.execute(
+                delete(JobRecord).where(
+                    JobRecord.status.in_(_TERMINAL_STATUSES),
+                    JobRecord.finished_at < threshold,
+                )
+            )
+            await session.commit()
+            count = result.rowcount or 0
+        if count > 0:
+            logger.info(f"Retention cleanup: purged {count} job records older than {retention_days}d")
         return count

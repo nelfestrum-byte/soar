@@ -30,3 +30,6 @@ class AbstractJobStore(ABC):
 
     @abstractmethod
     async def recover_on_startup(self) -> int: ...
+
+    @abstractmethod
+    async def purge_old(self, retention_days: int) -> int: ...

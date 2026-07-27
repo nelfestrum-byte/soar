@@ -43,6 +43,7 @@ class QueueConfig(BaseModel):
     redis_max_connections: int = 10
     redis_push_timeout: float = 5.0
     redis_pop_timeout: float = 1.0
+    sql_poll_interval: float = 0.5
 
 
 class SoarConfig(BaseModel):
@@ -68,6 +69,7 @@ class JobsConfig(BaseModel):
     log_dir: str = "/var/log/soar/jobs"
     keep_completed: int = 1000
     persistence: str = "memory"  # memory | sql
+    retention_days: int = 0  # 0 = disabled — explicit opt-in, not a silent default
 
 
 class ServerConfig(BaseModel):

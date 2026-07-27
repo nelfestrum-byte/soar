@@ -3,11 +3,14 @@ workers:
   default_timeout: 300
 
 queue:
-  backend: redis
+  backend: sql  # was redis — SQLQueue polls `workflow_jobs` directly, closing the
+  # at-most-once job-loss window in RedisQueue.pop() (BRPOP). requires jobs.persistence: sql.
+  # See docs/concepts/UPGRADE-v2.md P14 / docs/compose/specs/2026-07-27-sql-job-queue-design.md.
   redis_url: redis://redis:6379/0
   redis_max_connections: 10
   redis_push_timeout: 5.0
   redis_pop_timeout: 1.0
+  sql_poll_interval: 0.5
 
 soar:
   workflows_dir: /app/data/workflows
@@ -27,6 +30,7 @@ jobs:
   log_dir: /var/log/soar/jobs
   keep_completed: 100
   persistence: sql  # memory | sql — sql persists job history in `database` across restarts
+  retention_days: 90  # explicit opt-in — 0 would keep job history forever
 
 database:
   url: postgresql+asyncpg://soar:${POSTGRES_PASSWORD}@postgres:5432/soar

@@ -1,7 +1,7 @@
 """Mirrors tests/orchestrator/test_job_store.py, one-for-one, against SQLJobStore
 backed by an in-memory SQLite DB (same fixture pattern as test_auth_api.py)."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -144,3 +144,52 @@ async def test_sql_job_store_roundtrips_context_and_result_data(store):
     retrieved = await store.get(job.id)
     assert retrieved.context == {"alert_id": "abc", "n": 3}
     assert retrieved.result_data == {"matched": True, "count": 2}
+
+
+async def test_sql_job_store_purge_old_deletes_only_terminal_statuses_past_threshold(store):
+    now = datetime.now(UTC)
+    old = now - timedelta(days=100)
+
+    old_completed = WorkflowJob(workflow_name="a", status=JobStatus.COMPLETED)
+    old_completed.finished_at = old
+    old_failed = WorkflowJob(workflow_name="b", status=JobStatus.FAILED)
+    old_failed.finished_at = old
+    old_timeout = WorkflowJob(workflow_name="c", status=JobStatus.TIMEOUT)
+    old_timeout.finished_at = old
+    old_cancelled = WorkflowJob(workflow_name="d", status=JobStatus.CANCELLED)
+    old_cancelled.finished_at = old
+
+    recent_completed = WorkflowJob(workflow_name="e", status=JobStatus.COMPLETED)
+    recent_completed.finished_at = now
+
+    old_running = WorkflowJob(workflow_name="f", status=JobStatus.RUNNING)
+    old_running.started_at = old
+
+    old_pending = WorkflowJob(workflow_name="g", status=JobStatus.PENDING)
+    old_pending.triggered_at = old
+
+    for job in (
+        old_completed, old_failed, old_timeout, old_cancelled,
+        recent_completed, old_running, old_pending,
+    ):
+        await store.save(job)
+
+    deleted = await store.purge_old(retention_days=90)
+
+    assert deleted == 4
+    assert await store.get(old_completed.id) is None
+    assert await store.get(old_failed.id) is None
+    assert await store.get(old_timeout.id) is None
+    assert await store.get(old_cancelled.id) is None
+    assert await store.get(recent_completed.id) is not None
+    assert await store.get(old_running.id) is not None
+    assert await store.get(old_pending.id) is not None
+
+
+async def test_sql_job_store_purge_old_returns_zero_when_nothing_old(store):
+    job = WorkflowJob(workflow_name="test", status=JobStatus.COMPLETED)
+    job.finished_at = datetime.now(UTC)
+    await store.save(job)
+
+    deleted = await store.purge_old(retention_days=90)
+    assert deleted == 0

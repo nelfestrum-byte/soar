@@ -40,6 +40,7 @@ from orchestrator.core.job_manager import JobManager  # noqa: E402
 from orchestrator.core.net import resolve_client_ip  # noqa: E402
 from orchestrator.core.queue.memory import InMemoryQueue  # noqa: E402
 from orchestrator.core.queue.redis_queue import RedisQueue  # noqa: E402
+from orchestrator.core.queue.sql_queue import SQLQueue  # noqa: E402
 from orchestrator.core.scheduler import OrchestratorScheduler  # noqa: E402
 from orchestrator.core.subprocess_runner import SubprocessRunner  # noqa: E402
 from orchestrator.core.worker_pool import WorkerPool  # noqa: E402
@@ -88,6 +89,13 @@ def create_queue(config):
             push_timeout=config.queue.redis_push_timeout,
             pop_timeout=config.queue.redis_pop_timeout,
         )
+    if config.queue.backend == "sql":
+        if config.jobs.persistence != "sql":
+            raise ValueError(
+                "queue.backend: sql requires jobs.persistence: sql — "
+                "SQLQueue reads/writes the same workflow_jobs table as JobStore"
+            )
+        return SQLQueue(get_session_factory(), poll_interval=config.queue.sql_poll_interval)
     return InMemoryQueue()
 
 
@@ -203,7 +211,7 @@ async def lifespan(app: FastAPI):
     app.state.queue = queue
 
     await pool.start()
-    await scheduler.start(workflows)
+    await scheduler.start(workflows, retention_days=config.jobs.retention_days)
 
     yield
 

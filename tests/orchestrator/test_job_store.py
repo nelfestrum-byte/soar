@@ -119,3 +119,16 @@ async def test_recover_on_startup_returns_zero_when_no_running():
     await store.save(WorkflowJob(workflow_name="wf1", status=JobStatus.COMPLETED))
     count = await store.recover_on_startup()
     assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_purge_old_is_a_noop_for_in_memory_store():
+    """InMemoryJobStore relies on keep_completed for eviction; purge_old is a
+    no-op per docs/compose/specs/2026-07-27-sql-job-queue-design.md [S6]."""
+    store = JobStore()
+    await store.save(WorkflowJob(workflow_name="wf1", status=JobStatus.COMPLETED))
+
+    deleted = await store.purge_old(retention_days=90)
+
+    assert deleted == 0
+    assert len(await store.list()) == 1

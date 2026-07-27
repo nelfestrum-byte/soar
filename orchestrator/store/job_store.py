@@ -86,6 +86,10 @@ class InMemoryJobStore(AbstractJobStore):
             logger.info(f"Startup recovery: {count} RUNNING jobs marked as FAILED")
         return count
 
+    async def purge_old(self, retention_days: int) -> int:
+        """No-op: keep_completed already bounds size (see _cleanup below)."""
+        return 0
+
     def _cleanup(self) -> None:
         completed = [
             j for j in self._jobs.values()

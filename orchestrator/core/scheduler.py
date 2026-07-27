@@ -10,12 +10,26 @@ class OrchestratorScheduler:
         self._scheduler = AsyncIOScheduler()
         self._jobs: dict[str, str] = {}
 
-    async def start(self, workflows: list) -> None:
+    async def start(self, workflows: list, retention_days: int = 0) -> None:
         self._scheduler.start()
         for meta in workflows:
             if meta.type == "scheduled" and meta.enabled:
                 self._add_job(meta)
+        if retention_days > 0:
+            self._add_retention_job(retention_days)
         logger.info(f"Scheduler started with {len(self._jobs)} jobs")
+
+    def _add_retention_job(self, retention_days: int) -> None:
+        async def purge_task():
+            try:
+                deleted = await self._job_manager.job_store.purge_old(retention_days)
+                logger.info(f"Retention cleanup: purged {deleted} job records older than {retention_days}d")
+            except Exception as e:
+                logger.error(f"Retention cleanup failed: {e}")
+
+        self._scheduler.add_job(
+            purge_task, IntervalTrigger(hours=24), id="retention_cleanup", replace_existing=True
+        )
 
     def _add_job(self, meta) -> None:
         job_id = f"scheduled_{meta.name}"
