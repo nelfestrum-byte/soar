@@ -4,15 +4,18 @@ import sys
 
 import yaml
 
+import soar.tools as tools
 from soar.actions import actions
 from soar.connectors import connectors
 from soar.logger import setup_logging
+from soar.tools.http_client import HttpClient, InMemoryCache, RedisCache
 from soar.workflows import workflows
 
 setup_logging(level="INFO")
 
 config_path = os.environ.get("SOAR_CONFIG", "config.yaml")
 external_dirs = {}
+config: dict = {}
 try:
     with open(config_path) as f:
         config = yaml.safe_load(f) or {}
@@ -32,6 +35,32 @@ except Exception as e:
 workflows.init(external_dir=external_dirs.get("workflows"))
 connectors.init(external_dir=external_dirs.get("connectors"))
 actions.init(external_dir=external_dirs.get("actions"))
+
+
+def _build_http_client(config: dict) -> HttpClient:
+    http_cfg = config.get("http_client", {})
+    cache_backend = http_cfg.get("cache_backend", "memory")
+    default_ttl = http_cfg.get("default_ttl", 3600)
+    domain_ttl = http_cfg.get("domain_ttl", {})
+
+    if cache_backend == "memory":
+        cache = InMemoryCache()
+    elif cache_backend == "redis":
+        redis_url = config.get("queue", {}).get("redis_url", "")
+        if not redis_url:
+            raise ValueError(
+                "http_client.cache_backend is 'redis' but queue.redis_url is empty"
+            )
+        cache = RedisCache(redis_url)
+    elif cache_backend == "none":
+        cache = None
+    else:
+        raise ValueError(f"Unknown http_client.cache_backend: {cache_backend!r}")
+
+    return HttpClient(cache=cache, default_ttl=default_ttl, domain_ttl=domain_ttl)
+
+
+tools.http_client = _build_http_client(config)
 
 
 def main():

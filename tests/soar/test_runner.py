@@ -1,8 +1,10 @@
 import json
+from unittest.mock import patch
 
 import pytest
 
 from soar import runner
+from soar.tools.http_client import InMemoryCache, RedisCache
 
 
 def test_main_missing_workflow_prints_traceback_and_exits(monkeypatch, capsys):
@@ -45,3 +47,49 @@ def test_main_workflow_run_failure_includes_full_traceback(monkeypatch, capsys):
         assert "test_runner.py" in output["error"]
     finally:
         wf_registry._workflows.pop("failing_test_workflow", None)
+
+
+def test_build_http_client_defaults_to_memory_cache():
+    client = runner._build_http_client({})
+    assert isinstance(client._cache, InMemoryCache)
+    assert client._default_ttl == 3600
+
+
+def test_build_http_client_none_backend_has_no_cache():
+    client = runner._build_http_client({"http_client": {"cache_backend": "none"}})
+    assert client._cache is None
+
+
+def test_build_http_client_reads_ttl_and_domain_ttl():
+    client = runner._build_http_client({
+        "http_client": {
+            "cache_backend": "memory",
+            "default_ttl": 60,
+            "domain_ttl": {"api.virustotal.com": 86400},
+        }
+    })
+    assert client._default_ttl == 60
+    assert client._domain_ttl == {"api.virustotal.com": 86400}
+
+
+def test_build_http_client_redis_backend_uses_queue_redis_url():
+    with patch("redis.from_url") as mock_from_url:
+        client = runner._build_http_client({
+            "http_client": {"cache_backend": "redis"},
+            "queue": {"redis_url": "redis://localhost:6379/2"},
+        })
+        assert isinstance(client._cache, RedisCache)
+        mock_from_url.assert_called_once_with("redis://localhost:6379/2")
+
+
+def test_build_http_client_redis_backend_without_redis_url_raises():
+    with pytest.raises(ValueError, match="redis_url"):
+        runner._build_http_client({
+            "http_client": {"cache_backend": "redis"},
+            "queue": {"redis_url": ""},
+        })
+
+
+def test_build_http_client_unknown_backend_raises():
+    with pytest.raises(ValueError, match="Unknown"):
+        runner._build_http_client({"http_client": {"cache_backend": "bogus"}})
