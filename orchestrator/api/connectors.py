@@ -47,10 +47,14 @@ class PreviewRequest(BaseModel):
 class RestoreRequest(BaseModel):
     commit: str
 
-CONNECTOR_TEMPLATE = '''from soar.connectors.base import BaseConnector
+CONNECTOR_TEMPLATE = '''from typing import ClassVar
+
+from soar.connectors.base import BaseConnector
 
 
 class {class_name}(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = set()
+
     def __init__(self, instance_name: str, **kwargs):
         super().__init__(instance_name)
         # TODO: add parameters
