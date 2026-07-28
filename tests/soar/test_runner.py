@@ -93,3 +93,18 @@ def test_build_http_client_redis_backend_without_redis_url_raises():
 def test_build_http_client_unknown_backend_raises():
     with pytest.raises(ValueError, match="Unknown"):
         runner._build_http_client({"http_client": {"cache_backend": "bogus"}})
+
+
+def test_build_http_client_sync_shares_cache_with_async_client():
+    http_client = runner._build_http_client({
+        "http_client": {
+            "cache_backend": "memory",
+            "default_ttl": 60,
+            "domain_ttl": {"api.virustotal.com": 86400},
+        }
+    })
+    sync_client = runner._build_http_client_sync(http_client)
+
+    assert sync_client._cache is http_client._cache
+    assert sync_client._default_ttl == http_client._default_ttl == 60
+    assert sync_client._domain_ttl == http_client._domain_ttl == {"api.virustotal.com": 86400}

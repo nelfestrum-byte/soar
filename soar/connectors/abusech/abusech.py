@@ -1,8 +1,7 @@
 from typing import ClassVar
 
-import requests
-
 from soar.connectors.base import BaseConnector
+from soar.tools import http_client_sync
 
 
 class AbuseChConnector(BaseConnector):
@@ -12,27 +11,12 @@ class AbuseChConnector(BaseConnector):
     BAZAAR_API = "https://mb-api.abuse.ch/api/v1/"
     URLHAUS_API = "https://urlhaus-api.abuse.ch/v1/"
 
-    def __init__(self, instance_name: str):
-        super().__init__(instance_name)
-        self._session: requests.Session | None = None
-
     def _connect_impl(self):
-        self._session = requests.Session()
-        self._session.headers["User-Agent"] = "SOAR-Connector/1.0"
-
-    def disconnect(self):
-        if self._session:
-            self._session.close()
-            self._session = None
-            self._connected = False
-            self._logger.info(f"Disconnected from {self.instance_name}")
+        pass  # http_client_sync opens a connection per request, nothing to hold open
 
     def _post(self, url: str, data: dict) -> dict:
         self._ensure_connected()
-        assert self._session is not None
-        resp = self._session.post(url, data=data, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
+        return http_client_sync.post_json(url, data, headers={"User-Agent": "SOAR-Connector/1.0"})
 
     def get_malware_iocs(self, malware: str = "") -> list[dict]:
         query = {"query": "get_iocs", "malware": malware} if malware else {"query": "get_iocs"}
