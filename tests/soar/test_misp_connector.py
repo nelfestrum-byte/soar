@@ -1,5 +1,9 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+pytest.importorskip("pymisp")
+
 from soar.connectors.misp.misp import MISPConnector
 
 

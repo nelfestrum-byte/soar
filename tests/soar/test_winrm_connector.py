@@ -1,5 +1,9 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+pytest.importorskip("winrm")
+
 from soar.connectors.winrm.winrm import WinRMConnector
 
 
