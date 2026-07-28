@@ -36,6 +36,10 @@ merge-on-write (плейсхолдер `"********"` = "не менять", бе�
 credential, но по-прежнему правит не-hidden поля наравне с `admin`. Формат
 хранения (`{name}.yml`, git-история) не меняется — секреты физически
 остаются в git, но никогда не возвращаются через API ни одной ролью.
+Тот же write-only периметр покрывает и `POST /transfer/export` (S3):
+экспортируемый `{name}.yml` редактируется той же `_redact_yaml`/
+`_hidden_fields_for` перед упаковкой в архив — секрет, который нельзя
+прочитать через `GET /config`, нельзя прочитать и через `/export`.
 
 ### Authentication (orchestrator/auth/)
 - **Auth-disabled mode**: когда `auth.secret_key = ""` — `get_current_user` возвращает анонимного admin. Backward-совместимость с Docker-сетевым доверием и существующими тестами.

@@ -8,15 +8,28 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from orchestrator.api.validation import validate_name
-from orchestrator.auth.dependencies import require_role
+from orchestrator.api.connectors import _hidden_fields_for, _redact_yaml
+from orchestrator.api.validation import (
+    validate_action_code,
+    validate_connector_code,
+    validate_name,
+    validate_workflow_code,
+)
+from orchestrator.audit import service as audit_service
+from orchestrator.auth.dependencies import CurrentUser, require_role
+from orchestrator.db.session import get_db
 
 router = APIRouter(prefix="/transfer", tags=["transfer"], dependencies=[Depends(require_role("admin"))])
 
 
 @router.post("/export")
-async def export_entities(request: Request):
+async def export_entities(
+    request: Request,
+    user: CurrentUser = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
     config = request.app.state.config
     job_manager = request.app.state.job_manager
 
@@ -36,7 +49,15 @@ async def export_entities(request: Request):
                         zf.write(py_file, f"connectors/{entry.name}/code.py")
                         connectors.append(entry.name)
                     if os.path.exists(yml_file):
-                        zf.write(yml_file, f"connectors/{entry.name}/config.yml")
+                        # P13 write-only secrets: export is a read path like any other,
+                        # so it must mask hidden fields the same as GET /config does.
+                        with open(yml_file, encoding="utf-8") as f:
+                            yml_content = f.read()
+                        hidden = _hidden_fields_for(config, entry.name)
+                        zf.writestr(
+                            f"connectors/{entry.name}/config.yml",
+                            _redact_yaml(yml_content, hidden),
+                        )
 
         # Collect actions
         actions = []
@@ -75,6 +96,11 @@ async def export_entities(request: Request):
 
     buffer.seek(0)
     filename = f"soar-export-{timestamp}.zip"
+    await audit_service.record(
+        db, user=user, action="transfer.export", resource_type="transfer",
+        resource_id=filename, request=request,
+        detail={"connectors": connectors, "actions": actions, "workflows": workflows},
+    )
     return StreamingResponse(
         buffer,
         media_type="application/zip",
@@ -83,7 +109,11 @@ async def export_entities(request: Request):
 
 
 @router.post("/import")
-async def import_entities(request: Request, file: UploadFile):
+async def import_entities(
+    request: Request, file: UploadFile,
+    user: CurrentUser = Depends(require_role("admin")),
+    db: AsyncSession = Depends(get_db),
+):
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a .zip archive")
 
@@ -94,6 +124,7 @@ async def import_entities(request: Request, file: UploadFile):
 
     conflicts = []
     imported: dict = {"connectors": [], "actions": [], "workflows": []}
+    warnings: list[str] = []
 
     try:
         zf = zipfile.ZipFile(buffer, "r")
@@ -147,6 +178,26 @@ async def import_entities(request: Request, file: UploadFile):
                 "message": f"Found {len(conflicts)} conflicts. Send force=true to overwrite.",
             }
 
+        # P1: validate every entity before writing anything to disk — one bad
+        # file in the archive must not leave a partially-imported tree behind.
+        for name in manifest.get("connectors", []):
+            code_path = f"connectors/{name}/code.py"
+            if code_path in zf.namelist():
+                validate_connector_code(zf.read(code_path).decode("utf-8"))
+
+        for name in manifest.get("actions", []):
+            action_path = f"actions/{name}.py"
+            if action_path in zf.namelist():
+                validate_action_code(zf.read(action_path).decode("utf-8"), name)
+
+        for name in manifest.get("workflows", []):
+            workflow_path = f"workflows/{name}.py"
+            if workflow_path in zf.namelist():
+                validate_workflow_code(zf.read(workflow_path).decode("utf-8"))
+
+        git = request.app.state.git
+        author_name, author_email = audit_service.git_author(user)
+
         # Import connectors
         for name in manifest.get("connectors", []):
             connector_dir = os.path.join(connectors_dir, name)
@@ -158,6 +209,13 @@ async def import_entities(request: Request, file: UploadFile):
                 extracted = os.path.join(str(Path(workflows_dir).parent), code_path)
                 target = os.path.join(connector_dir, f"{name}.py")
                 shutil.move(extracted, target)
+                try:
+                    await git.commit(
+                        f"connectors/{name}/{name}.py", f"Import connector {name}",
+                        author_name=author_name, author_email=author_email,
+                    )
+                except RuntimeError as e:
+                    warnings.append(str(e))
 
             config_path = f"connectors/{name}/config.yml"
             if config_path in zf.namelist():
@@ -165,6 +223,13 @@ async def import_entities(request: Request, file: UploadFile):
                 extracted = os.path.join(str(Path(workflows_dir).parent), config_path)
                 target = os.path.join(connector_dir, f"{name}.yml")
                 shutil.move(extracted, target)
+                try:
+                    await git.commit(
+                        f"connectors/{name}/{name}.yml", f"Import connector {name}",
+                        author_name=author_name, author_email=author_email,
+                    )
+                except RuntimeError as e:
+                    warnings.append(str(e))
 
             imported["connectors"].append(name)
 
@@ -177,6 +242,13 @@ async def import_entities(request: Request, file: UploadFile):
                 target = os.path.join(actions_dir, f"{name}.py")
                 os.makedirs(os.path.dirname(target), exist_ok=True)
                 shutil.move(extracted, target)
+                try:
+                    await git.commit(
+                        f"actions/{name}.py", f"Import action {name}",
+                        author_name=author_name, author_email=author_email,
+                    )
+                except RuntimeError as e:
+                    warnings.append(str(e))
                 imported["actions"].append(name)
 
         # Import workflows
@@ -188,6 +260,13 @@ async def import_entities(request: Request, file: UploadFile):
                 target = os.path.join(workflows_dir, f"{name}.py")
                 os.makedirs(os.path.dirname(target), exist_ok=True)
                 shutil.move(extracted, target)
+                try:
+                    await git.commit(
+                        f"workflows/{name}.py", f"Import workflow {name}",
+                        author_name=author_name, author_email=author_email,
+                    )
+                except RuntimeError as e:
+                    warnings.append(str(e))
                 imported["workflows"].append(name)
 
     # Reload workflows
@@ -198,8 +277,17 @@ async def import_entities(request: Request, file: UploadFile):
     job_manager.set_metas(workflows)
     await scheduler.reload(workflows)
 
-    return {
+    await audit_service.record(
+        db, user=user, action="transfer.import", resource_type="transfer",
+        resource_id=file.filename or "", request=request,
+        detail={"imported": imported, "conflicts_overwritten": len(conflicts) if force else 0},
+    )
+
+    result = {
         "status": "imported",
         "imported": imported,
         "conflicts_overwritten": len(conflicts) if force else 0,
     }
+    if warnings:
+        result["warnings"] = warnings
+    return result
