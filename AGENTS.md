@@ -1,4 +1,4 @@
-# AGENTS.md — SOAR Project v0.13
+# AGENTS.md — SOAR Project v0.14
 
 > Это индекс. Детали вынесены в сателлитные файлы под `docs/agents/` и в `CHANGELOG.md` —
 > открывай их только когда задача реально их касается (см. Token optimization внизу).
@@ -120,8 +120,8 @@ soar/
 ├── connectors/                 # 24 коннектора (23 интеграции + file), автообнаружение через ConnectorRegistry — полный список см. File map; каждый объявляет class-level HIDDEN_FIELDS для редакции секретов в config API
 ├── actions/__init__.py         # ActionsRegistry — автообнаружение actions
 ├── workflows/                  # __init__.py (WorkflowRegistry), base.py (BaseWorkflow/ScheduledWorkflow/WebhookWorkflow/ManualWorkflow)
-├── tools/                      # openapi.py (OpenAPIGenerator), watermark.py (WatermarkStore/SeenStore), http_client.py (HttpClient singleton — логирование безусловно, кэш опционален) — см. File map
-├── runner.py                   # Точка входа для subprocess workflows — см. Runner contract; также инициализирует soar.tools.http_client singleton из SOAR_CONFIG
+├── tools/                      # openapi.py (OpenAPIGenerator, заполняет HIDDEN_FIELDS из securitySchemes), watermark.py (WatermarkStore/SeenStore), http_client.py (HttpClient async + SyncHttpClient — тот же контракт логирования/кэша/SSRF-guard, sync для вызова из синхронных коннекторов) — см. File map
+├── runner.py                   # Точка входа для subprocess workflows — см. Runner contract; собирает http_client/http_client_sync из SOAR_CONFIG до workflows.init()/connectors.init()/actions.init() — верхнеуровневый `from soar.tools import http_client` в пользовательском коде видит сконфигурированный инстанс
 └── examples/nadproject_integration.py
 
 ui/src/                         # Vue 3 SPA, полный список views — см. File map
@@ -318,7 +318,7 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 | URLhaus | `soar/connectors/urlhaus/` — URL/host/payload lookups |
 | crt.sh | `soar/connectors/crtsh/` — certificate/domain/identity search |
 | Watermark / дедуп событий | `soar/tools/watermark.py` — WatermarkStore, SeenStore (durable JSON, generic) |
-| HTTP client (логирование + опциональный кэш) | `soar/tools/http_client.py` — HttpClient singleton, `http_client:` секция конфига, см. `docs/agents/config-reference.md` |
+| HTTP client (логирование + опциональный кэш) | `soar/tools/http_client.py` — `HttpClient` (async) + `SyncHttpClient` (sync-фасад для коннекторов, `http_client_sync` синглтон), `http_client:` секция конфига, см. `docs/agents/config-reference.md` |
 | Connector config schema / секреты | `orchestrator/core/introspect.py` (`_fields`/`_hidden_fields`), `orchestrator/api/connectors.py` (`GET /schema`, редакция config/history/diff), `HIDDEN_FIELDS` на каждом коннекторе |
 | Новый action | `soar/actions/`, один файл = одна функция |
 | Новый workflow | `soar/workflows/`, наследовать от `ScheduledWorkflow`/`WebhookWorkflow`/`ManualWorkflow` |
@@ -453,7 +453,35 @@ API (UI или LLM-агентом) **без передеплоя**. Три шт�
 
 Полная история версий — **[CHANGELOG.md](CHANGELOG.md)**.
 
-Текущая версия: **v0.13** (2026-07-27) — `soarctl` on-site install + update:
+Текущая версия: **v0.14** (2026-07-28) — `docs/concepts/BAGFIX_PLAN.md` закрыт
+целиком: все 4 блокера пилота (B1-B4), все 8 существенных пункта (S1-S8),
+все 8 расхождений документации (D1-D8) из pre-production ревью
+2026-07-27. Кратко: деактивация пользователя реально отзывает refresh-токены
+(B1); `/config/diff` больше не палит секреты через контекстные строки diff'а
+(B2); `agent` больше не может обнулить `HIDDEN_FIELDS` коннектора, переписав
+код (B3); `server.trusted_proxies` заведён для nginx-деплоя — rate-limit и
+`AuditLog.client_ip` больше не общие на весь трафик (B4); `SyncHttpClient` —
+синхронный `HttpClient` для коннекторов, 3 TI-коннектора мигрированы как
+образец (S1); порядок инициализации `soar/runner.py` починен — `http_client`
+конфигурируется до импорта пользовательского кода (S2); `/transfer/export`
+и `/import` редактируют секреты, пишут audit, валидируют и коммитят код
+(S3); `POST /jobs`/`POST /webhooks/{name}` пишут `job.create` в audit-лог
+(S4); `purge_old()` чистит файлы логов вместе со строками БД (S5);
+партиальный индекс `workflow_jobs` гарантирован на любой инсталляции,
+миграции уважают `table_prefix` (S6); тест-сьют полностью зелёный (S7);
+новые коннекторы получают `HIDDEN_FIELDS` по умолчанию, вручную и через
+генератор (S8). Каждый пункт — отдельный цикл спека→план→отчёт, в
+изолированной git-ветке, смерджен после прогона тестов. Полный набор:
+756 passed, 1 skipped (преэкзистентный, не связан). См.
+`docs/concepts/BAGFIX_PLAN.md`, `docs/compose/specs/2026-07-28-*-design.md`,
+отчёты — `docs/compose/reports/{auth-deactivation-revocation,
+connector-diff-redaction-fix,connector-code-agent-lockdown,trusted-proxies,
+http-client-sync-facade,http-client-init-order,
+transfer-export-import-hardening,job-webhook-audit-logging,job-log-purge,
+workflow-jobs-index-table-prefix,test-suite-green,
+new-connector-hidden-fields-default}.md`.
+
+Предыдущая версия: **v0.13** (2026-07-27) — `soarctl` on-site install + update:
 `soarctl install --repo <url-or-path> [--ref REF]` собирает образы локально
 из git-чекаута вместо air-gap bundle (`docker load`), переиспользуя
 `bundle.build_images()`; `soarctl init --interactive`/`--cors-origin` заводит
@@ -482,8 +510,3 @@ merge-on-write + admin-only смена реального значения); `SQ
 untracked-файлах). P15/P17 — приняты как есть (recovery через CLI / чеклист
 деплоя), без изменений кода. Отчёты: `docs/compose/reports/{http-client,
 connector-secrets-schema,sql-job-queue,git-manager-nothing-to-commit}.md`.
-
-Предыдущая версия: **v0.11** (2026-07-22) — Agent Dev-Loop Этап 1: validation перед записью
-кода (workflows/actions/connectors), traceback в WorkflowResult, history/diff/restore
-(`orchestrator/core/history.py`), единый `orchestrator/core/workflow_state.py` для
-`orchestrator_state.yaml`.

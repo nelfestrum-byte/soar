@@ -28,8 +28,8 @@ async def test_webhook_invalid_token():
 
 @pytest.mark.asyncio
 async def test_webhook_not_webhook_type():
-    from orchestrator.models.workflow_meta import WorkflowMeta
     from orchestrator.models import ConcurrencyPolicy
+    from orchestrator.models.workflow_meta import WorkflowMeta
 
     meta = WorkflowMeta(
         name="manual_wf",
@@ -49,8 +49,8 @@ async def test_webhook_not_webhook_type():
 
 @pytest.mark.asyncio
 async def test_webhook_disabled():
-    from orchestrator.models.workflow_meta import WorkflowMeta
     from orchestrator.models import ConcurrencyPolicy
+    from orchestrator.models.workflow_meta import WorkflowMeta
 
     meta = WorkflowMeta(
         name="disabled_wh",
@@ -82,8 +82,8 @@ async def test_webhook_disabled():
 
 @pytest.mark.asyncio
 async def test_webhook_success_writes_audit_log():
-    from orchestrator.models.workflow_meta import WorkflowMeta
     from orchestrator.models import ConcurrencyPolicy
+    from orchestrator.models.workflow_meta import WorkflowMeta
 
     meta = WorkflowMeta(
         name="audited_wh",

@@ -17,18 +17,23 @@
 
 | Уровень | Всего | Закрыто |
 |---------|-------|---------|
-| B (блокеры) | 4 | 0 |
-| S (существенные) | 8 | 0 |
+| B (блокеры) | 4 | 4 |
+| S (существенные) | 8 | 8 |
 | M (мелкие) | 12 | 0 |
-| D (документация) | 8 | 0 |
+| D (документация) | 8 | 8 |
 
-**Критерий выхода на пилот: все B закрыты.** S/M/D чинятся во время пилота.
+**Критерий выхода на пилот: все B закрыты.** ✅ Достигнуто 2026-07-28 — все
+B1-B4 и, вместе с ними, все S1-S8 и D1-D8 реализованы через цикл
+`specs/ → plans/ → reports/` (см. ссылки на отчёты в каждом пункте ниже).
+M чинятся во время пилота, вне этого прохода.
 
 ---
 
 ## B. Блокеры — до включения на живой инфраструктуре
 
-### - [ ] B1. Деактивация пользователя не отзывает доступ
+### - [x] B1. Деактивация пользователя не отзывает доступ
+
+> Закрыто 2026-07-28 — отчёт: [`auth-deactivation-revocation.md`](../compose/reports/auth-deactivation-revocation.md).
 
 **Где:** `orchestrator/auth/service.py:63-93` (`rotate_refresh_token`),
 `orchestrator/auth/router.py:57-72` (`POST /auth/refresh`),
@@ -46,13 +51,15 @@ access-токен и новый refresh на 7 дней. Ни `PATCH /auth/users
 P15 (`UPGRADE-v2.md`), который прямо опирается на работающую деактивацию.
 
 **Фикс:**
-- [ ] тест: деактивированный пользователь получает 401 на `/auth/refresh`
-- [ ] тест: `update_user(is_active=False)` помечает `revoked_at` всем живым refresh-токенам
-- [ ] `rotate_refresh_token()` — вернуть `None`, если `user is None or not user.is_active`
-- [ ] `update_user()` — при `is_active=False` (и при смене роли) проставить `revoked_at` активным токенам пользователя
-- [ ] то же поведение для `set_user_active()` (путь CLI)
+- [x] тест: деактивированный пользователь получает 401 на `/auth/refresh`
+- [x] тест: `update_user(is_active=False)` помечает `revoked_at` всем живым refresh-токенам
+- [x] `rotate_refresh_token()` — вернуть `None`, если `user is None or not user.is_active`
+- [x] `update_user()` — при `is_active=False` (и при смене роли) проставить `revoked_at` активным токенам пользователя
+- [x] то же поведение для `set_user_active()` (путь CLI)
 
-### - [ ] B2. `GET /connectors/{name}/config/diff` отдаёт секреты роли `viewer`
+### - [x] B2. `GET /connectors/{name}/config/diff` отдаёт секреты роли `viewer`
+
+> Закрыто 2026-07-28 — отчёт: [`connector-diff-redaction-fix.md`](../compose/reports/connector-diff-redaction-fix.md).
 
 **Где:** `orchestrator/api/connectors.py:34` (`_DIFF_KV_RE`), `124-139`
 (`_redact_diff`), `592-601` (роут на `_RO`).
@@ -77,11 +84,13 @@ P15 (`UPGRADE-v2.md`), который прямо опирается на раб�
 роль `viewer`.
 
 **Фикс:**
-- [ ] тест: diff двух версий, где hidden-поле **не менялось**, а менялось соседнее → значение замаскировано
-- [ ] тест: diff, где hidden-поле менялось (`+`/`-`) → обе стороны замаскированы (регрессия существующего поведения)
-- [ ] `_DIFF_KV_RE` → `^([+\- ])(\s*)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$`, сохранить исходный префиксный символ в выводе
+- [x] тест: diff двух версий, где hidden-поле **не менялось**, а менялось соседнее → значение замаскировано
+- [x] тест: diff, где hidden-поле менялось (`+`/`-`) → обе стороны замаскированы (регрессия существующего поведения)
+- [x] `_DIFF_KV_RE` → `^([+\- ])(\s*)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$`, сохранить исходный префиксный символ в выводе
 
-### - [ ] B3. Роль `agent` обходит редакцию секретов, переписав `HIDDEN_FIELDS`
+### - [x] B3. Роль `agent` обходит редакцию секретов, переписав `HIDDEN_FIELDS`
+
+> Закрыто 2026-07-28 — отчёт: [`connector-code-agent-lockdown.md`](../compose/reports/connector-code-agent-lockdown.md).
 
 **Где:** `orchestrator/api/connectors.py:31` (`_ADMIN = ("admin", "agent")`),
 `91-104` (`_hidden_fields_for`), `512-547` (`PUT /{name}/code`),
@@ -100,16 +109,18 @@ P15 (`UPGRADE-v2.md`), который прямо опирается на раб�
 управляет контролируемый субъект.
 
 **Фикс (минимальный, выбран для пилота):**
-- [ ] тест: `agent` получает 403 на `PUT /connectors/{name}/code`
-- [ ] тест: `admin` по-прежнему может писать код коннектора
-- [ ] `PUT /connectors/{name}/code` — литеральный `("admin",)` вместо `_ADMIN`, как уже сделано для `/transfer/*` и `PUT /prompts/user`
-- [ ] отразить сужение прав `agent` в `docs/agents/security-patterns.md` (см. D2)
+- [x] тест: `agent` получает 403 на `PUT /connectors/{name}/code`
+- [x] тест: `admin` по-прежнему может писать код коннектора
+- [x] `PUT /connectors/{name}/code` — литеральный `("admin",)` вместо `_ADMIN`, как уже сделано для `/transfer/*` и `PUT /prompts/user`
+- [x] отразить сужение прав `agent` в `docs/agents/security-patterns.md` (см. D2)
 
 > Альтернатива, если правка коннекторов агентом реально понадобится: запрет
 > сужения `HIDDEN_FIELDS` относительно предыдущей версии файла. Дороже,
 > отдельная спека, **не в этот трек**.
 
-### - [ ] B4. За nginx все клиенты выглядят одним IP
+### - [x] B4. За nginx все клиенты выглядят одним IP
+
+> Закрыто 2026-07-28 — отчёт: [`trusted-proxies.md`](../compose/reports/trusted-proxies.md).
 
 **Где:** `deploy/prod/nginx.conf:15-17`, `orchestrator/core/net.py:9-17`,
 `deploy/prod/config.yaml.template` и `deploy/stage/config.yaml` (нет секции
@@ -127,16 +138,18 @@ P15 (`UPGRADE-v2.md`), который прямо опирается на раб�
 атрибуции в audit trail, который пишется под комплаенс.
 
 **Фикс (конфиг, не код):**
-- [ ] `deploy/prod/config.yaml.template` — секция `server.trusted_proxies` с IP/подсетью docker-сети nginx и комментарием
-- [ ] `deploy/stage/config.yaml` — то же
-- [ ] `deploy/prod/README.md` — пункт чеклиста запуска рядом с `auth.cors_origins` (P17)
-- [ ] тест: `resolve_client_ip()` берёт `X-Real-IP`, когда peer в `trusted_proxies`, и игнорирует, когда нет (проверить, что покрытие уже есть)
+- [x] `deploy/prod/config.yaml.template` — секция `server.trusted_proxies` с IP/подсетью docker-сети nginx и комментарием
+- [x] `deploy/stage/config.yaml` — то же
+- [x] `deploy/prod/README.md` — пункт чеклиста запуска рядом с `auth.cors_origins` (P17)
+- [x] тест: `resolve_client_ip()` берёт `X-Real-IP`, когда peer в `trusted_proxies`, и игнорирует, когда нет (проверить, что покрытие уже есть)
 
 ---
 
 ## S. Существенные — долг пилота
 
-### - [ ] S1. P12 закрыт формально: `HttpClient` не используется ни одним call-site
+### - [x] S1. P12 закрыт формально: `HttpClient` не используется ни одним call-site
+
+> Закрыто 2026-07-28 — отчёт: [`http-client-sync-facade.md`](../compose/reports/http-client-sync-facade.md).
 
 **Где:** `soar/tools/http_client.py`, `soar/connectors/*`, `soar/actions/` (пуст).
 
@@ -152,7 +165,9 @@ P15 (`UPGRADE-v2.md`), который прямо опирается на раб�
 **Требует спеки.** Пометить P12 в `UPGRADE-v2.md` как «тул поставлен, адаптация
 не сделана» (см. D5).
 
-### - [ ] S2. `from soar.tools import http_client` даёт неинициализированный экземпляр
+### - [x] S2. `from soar.tools import http_client` даёт неинициализированный экземпляр
+
+> Закрыто 2026-07-28 — отчёт: [`http-client-init-order.md`](../compose/reports/http-client-init-order.md).
 
 **Где:** `soar/runner.py:36-37` vs `:63`, `soar/tools/__init__.py:4-6`.
 
@@ -163,10 +178,12 @@ P15 (`UPGRADE-v2.md`), который прямо опирается на раб�
 `soar/tools/__init__.py` обещает ровно обратное.
 
 **Фикс:**
-- [ ] тест: action-модуль, импортирующий `http_client` верхним уровнем, видит сконфигурированный экземпляр
-- [ ] перенести построение синглтона выше `workflows.init()`/`connectors.init()`/`actions.init()` (либо ленивый module-level `__getattr__`)
+- [x] тест: action-модуль, импортирующий `http_client` верхним уровнем, видит сконфигурированный экземпляр
+- [x] перенести построение синглтона выше `workflows.init()`/`connectors.init()`/`actions.init()` (либо ленивый module-level `__getattr__`)
 
-### - [ ] S3. `POST /transfer/export` отдаёт секреты без редакции и без audit-записи
+### - [x] S3. `POST /transfer/export` отдаёт секреты без редакции и без audit-записи
+
+> Закрыто 2026-07-28 — отчёт: [`transfer-export-import-hardening.md`](../compose/reports/transfer-export-import-hardening.md).
 
 **Где:** `orchestrator/api/transfer.py:38-39` (yml как есть), весь роутер —
 ни одного `audit_service.record()`.
@@ -178,14 +195,16 @@ P15 (`UPGRADE-v2.md`), который прямо опирается на раб�
 не коммитит импортированные файлы (недоступны git-история и rollback из P8).
 
 **Фикс:**
-- [ ] тест: экспортированный `{name}.yml` содержит `********` вместо hidden-полей
-- [ ] тест: `/export` и `/import` пишут `audit_log`
-- [ ] тест: `/import` отклоняет невалидный код воркфлоу/экшена/коннектора
-- [ ] применить `_redact_yaml` к yml в экспорте (переиспользовать, не дублировать)
-- [ ] `audit_service.record()` в обоих роутах
-- [ ] `/import` — `validate_*_code` перед записью + `git.commit()` после
+- [x] тест: экспортированный `{name}.yml` содержит `********` вместо hidden-полей
+- [x] тест: `/export` и `/import` пишут `audit_log`
+- [x] тест: `/import` отклоняет невалидный код воркфлоу/экшена/коннектора
+- [x] применить `_redact_yaml` к yml в экспорте (переиспользовать, не дублировать)
+- [x] `audit_service.record()` в обоих роутах
+- [x] `/import` — `validate_*_code` перед записью + `git.commit()` после
 
-### - [ ] S4. Запуск workflow не пишется в audit-log
+### - [x] S4. Запуск workflow не пишется в audit-log
+
+> Закрыто 2026-07-28 — отчёт: [`job-webhook-audit-logging.md`](../compose/reports/job-webhook-audit-logging.md).
 
 **Где:** `orchestrator/api/jobs.py:23-38` (`POST /jobs`),
 `orchestrator/api/webhooks.py:11-43`.
@@ -195,11 +214,13 @@ P15 (`UPGRADE-v2.md`), который прямо опирается на раб�
 AGENTS.md утверждает, что `record()` вызывается «из каждого мутирующего роута».
 
 **Фикс:**
-- [ ] тест: `POST /jobs` пишет `job.create` с `workflow_name` и `job_id`
-- [ ] тест: успешный вебхук пишет `job.create` с `actor_type` вебхука
-- [ ] `audit_service.record()` в обоих роутах (для вебхука — синтетический актор, у него нет `CurrentUser`; решить формат до реализации)
+- [x] тест: `POST /jobs` пишет `job.create` с `workflow_name` и `job_id`
+- [x] тест: успешный вебхук пишет `job.create` с `actor_type` вебхука
+- [x] `audit_service.record()` в обоих роутах (для вебхука — синтетический актор, у него нет `CurrentUser`; решить формат до реализации)
 
-### - [ ] S5. Логи джобов не чистятся никогда
+### - [x] S5. Логи джобов не чистятся никогда
+
+> Закрыто 2026-07-28 — отчёт: [`job-log-purge.md`](../compose/reports/job-log-purge.md).
 
 **Где:** `orchestrator/store/sql_job_store.py:102-115` (`purge_old`),
 `orchestrator/core/scheduler.py:22-32` (retention job).
@@ -210,10 +231,12 @@ AGENTS.md утверждает, что `record()` вызывается «из к
 `retention_days: 90` — гарантированное заполнение диска.
 
 **Фикс:**
-- [ ] тест: `purge_old` удаляет файлы логов удаляемых джобов
-- [ ] собрать `log_path` перед `DELETE`, удалить файлы после успешного коммита транзакции; ошибки удаления файла логировать, не ронять cleanup
+- [x] тест: `purge_old` удаляет файлы логов удаляемых джобов
+- [x] собрать `log_path` перед `DELETE`, удалить файлы после успешного коммита транзакции; ошибки удаления файла логировать, не ронять cleanup
 
-### - [ ] S6. Партиальный индекс из спеки P14 не создаётся на штатной установке прода
+### - [x] S6. Партиальный индекс из спеки P14 не создаётся на штатной установке прода
+
+> Закрыто 2026-07-28 — отчёт: [`workflow-jobs-index-table-prefix.md`](../compose/reports/workflow-jobs-index-table-prefix.md).
 
 **Где:** `alembic/versions/42fbd47b0d46_add_workflow_jobs_pending_index.py`,
 `orchestrator/store/models.py:10-14`, `deploy/soarctl_lib/migrate.py:26-27`.
@@ -230,7 +253,9 @@ AGENTS.md утверждает, что `record()` вызывается «из к
 индексы». Решить заодно, чинить ли `table_prefix` в миграциях или закрепить
 как ограничение.
 
-### - [ ] S7. Тест-сьют на `main` красный
+### - [x] S7. Тест-сьют на `main` красный
+
+> Закрыто 2026-07-28 — отчёт: [`test-suite-green.md`](../compose/reports/test-suite-green.md).
 
 **Где:** `tests/soar/tools/test_openapi.py::test_generate_config`,
 `soar/tools/openapi.py:227-232`.
@@ -243,10 +268,14 @@ AGENTS.md утверждает, что `record()` вызывается «из к
 не код; зафиксировать как требование dev-окружения или пометить `skipif`.)
 
 **Фикс:**
-- [ ] выбрать целевое имя инстанса и синхронизировать код с тестом
-- [ ] `skipif` по наличию опциональной зависимости в 5 модулях коннекторов
+- [x] выбрать целевое имя инстанса и синхронизировать код с тестом
+- [x] `skipif` по наличию опциональной зависимости в 5 модулях коннекторов
+      (уточнение по факту: пятый пакет — `smbprotocol`, не `impacket`, как
+      было названо выше — см. отчёт)
 
-### - [ ] S8. Новые коннекторы не получают `HIDDEN_FIELDS`
+### - [x] S8. Новые коннекторы не получают `HIDDEN_FIELDS`
+
+> Закрыто 2026-07-28 — отчёт: [`new-connector-hidden-fields-default.md`](../compose/reports/new-connector-hidden-fields-default.md).
 
 **Где:** `orchestrator/api/connectors.py:50-64` (`CONNECTOR_TEMPLATE`),
 `soar/tools/openapi.py` (генератор), `openapi.py:239-248` (`_generate_config`
@@ -257,10 +286,10 @@ AGENTS.md утверждает, что `record()` вызывается «из к
 коннекторы и будут создаваться в проде.
 
 **Фикс:**
-- [ ] тест: коннектор, созданный через `POST /connectors/{name}`, имеет `HIDDEN_FIELDS` в шаблоне
-- [ ] тест: сгенерированный из OpenAPI-спеки коннектор объявляет в `HIDDEN_FIELDS` поля из `securitySchemes`
-- [ ] `HIDDEN_FIELDS: ClassVar[set[str]] = set()` в `CONNECTOR_TEMPLATE`
-- [ ] `OpenAPIGenerator` заполняет `HIDDEN_FIELDS` именами auth-полей
+- [x] тест: коннектор, созданный через `POST /connectors/{name}`, имеет `HIDDEN_FIELDS` в шаблоне
+- [x] тест: сгенерированный из OpenAPI-спеки коннектор объявляет в `HIDDEN_FIELDS` поля из `securitySchemes`
+- [x] `HIDDEN_FIELDS: ClassVar[set[str]] = set()` в `CONNECTOR_TEMPLATE`
+- [x] `OpenAPIGenerator` заполняет `HIDDEN_FIELDS` именами auth-полей
 
 ---
 
@@ -286,14 +315,14 @@ AGENTS.md утверждает, что `record()` вызывается «из к
 Правятся **вместе** с соответствующим кодовым пунктом, не раньше (правило
 `CLAUDE.md`: не обновлять агентские файлы заранее).
 
-- [ ] **D1.** `docs/agents/security-patterns.md`: «значения hidden-полей маскируются в `GET /config`, `/config/history[/{commit}]`, `/config/diff` для всех ролей, включая admin» — неверно дважды (B2: diff отдаёт контекстные строки; S3: `/transfer/export` без редакции). Обновить с B2 и S3
-- [ ] **D2.** `docs/agents/security-patterns.md`: «`agent` получает 403 при попытке сменить credential» — обходится через B3. Обновить с B3
-- [ ] **D3.** `AGENTS.md`: audit пишется «из каждого мутирующего роута» — нет для `POST /jobs`, `POST /webhooks/{name}`, `/transfer/{export,import}`. Обновить с S3/S4
-- [ ] **D4.** `soar/tools/__init__.py:4-6`: «actions can always `from soar.tools import http_client`» — не работает. Обновить с S2
-- [ ] **D5.** `UPGRADE-v2.md` P12 помечен «Реализовано» — тул поставлен, ни одного call-site нет, адаптация невозможна без синхронного фасада. Переформулировать статус с S1. Там же: «Actions для VT, AbuseCh, Kaspersky…» — таких actions не существует, это коннекторы (`soar/actions/` пуст)
-- [ ] **D6.** `UPGRADE-v2.md` P15: recovery от self-lockout опирается на деактивацию, которая не работает (B1). Перепроверить формулировку принятого риска после B1
-- [ ] **D7.** `alembic/versions/42fbd47b0d46_*.py` ссылается на «known-limitation #9» — номер после перенумерации в v0.12 не существует (актуальный — #8). Поправить ссылку
-- [ ] **D8.** `UPGRADE-v2.md` P14 / спека `2026-07-27-sql-job-queue-design.md` [S5]: партиальный индекс на штатной установке прода не создаётся. Обновить с S6
+- [x] **D1.** `docs/agents/security-patterns.md`: «значения hidden-полей маскируются в `GET /config`, `/config/history[/{commit}]`, `/config/diff` для всех ролей, включая admin» — неверно дважды (B2: diff отдаёт контекстные строки; S3: `/transfer/export` без редакции). Обновить с B2 и S3 — **закрыто**, оба уточнения внесены (B2: диф покрывает и контекстные строки; S3: `/transfer/export` покрыт тем же write-only периметром)
+- [x] **D2.** `docs/agents/security-patterns.md`: «`agent` получает 403 при попытке сменить credential» — обходится через B3. Обновить с B3 — **закрыто**, дополнено «и при попытке переписать код коннектора»
+- [x] **D3.** `AGENTS.md`: audit пишется «из каждого мутирующего роута» — нет для `POST /jobs`, `POST /webhooks/{name}`, `/transfer/{export,import}`. Обновить с S3/S4 — **закрыто**, все три пути теперь пишут audit-запись, формулировка обновлена
+- [x] **D4.** `soar/tools/__init__.py:4-6`: «actions can always `from soar.tools import http_client`» — не работает. Обновить с S2 — **закрыто**: после S2 утверждение докстринга стало фактически верным, правка текста не потребовалась
+- [x] **D5.** `UPGRADE-v2.md` P12 помечен «Реализовано» — тул поставлен, ни одного call-site нет, адаптация невозможна без синхронного фасада. Переформулировать статус с S1. Там же: «Actions для VT, AbuseCh, Kaspersky…» — таких actions не существует, это коннекторы (`soar/actions/` пуст) — **закрыто**, статус и формулировка поправлены
+- [x] **D6.** `UPGRADE-v2.md` P15: recovery от self-lockout опирается на деактивацию, которая не работает (B1). Перепроверить формулировку принятого риска после B1 — **закрыто**
+- [x] **D7.** `alembic/versions/42fbd47b0d46_*.py` ссылается на «known-limitation #9» — номер после перенумерации в v0.12 не существует (актуальный — #8). Поправить ссылку — **закрыто попутно в S6**: докстринг миграции переписан целиком (см. отчёт S6), сталая ссылка на «#9» в нём больше не встречается
+- [x] **D8.** `UPGRADE-v2.md` P14 / спека `2026-07-27-sql-job-queue-design.md` [S5]: партиальный индекс на штатной установке прода не создаётся. Обновить с S6 — **закрыто**
 
 ---
 
