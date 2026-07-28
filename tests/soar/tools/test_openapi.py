@@ -144,6 +144,31 @@ def test_extract_no_security():
     assert sec["header_setup"] == ""
 
 
+def test_extract_security_hidden_fields_api_key():
+    gen = OpenAPIGenerator(SPEC_API_KEY_HEADER)
+    sec = gen._extract_security()
+    assert sec["hidden_fields"] == {"X-API-Key"}
+
+
+def test_extract_security_hidden_fields_bearer():
+    gen = OpenAPIGenerator(SPEC_BEARER)
+    sec = gen._extract_security()
+    assert sec["hidden_fields"] == {"token"}
+
+
+def test_extract_security_hidden_fields_basic():
+    gen = OpenAPIGenerator(SPEC_BASIC)
+    sec = gen._extract_security()
+    assert sec["hidden_fields"] == {"password"}
+    assert "username" not in sec["hidden_fields"]
+
+
+def test_extract_security_no_hidden_fields():
+    gen = OpenAPIGenerator(MINIMAL_SPEC)
+    sec = gen._extract_security()
+    assert sec["hidden_fields"] == set()
+
+
 def test_param_signature_empty():
     gen = OpenAPIGenerator(MINIMAL_SPEC)
     result = gen._param_signature([])
@@ -235,6 +260,31 @@ def test_generate_class_with_auth():
     code = gen._generate_class("secure_api")
     assert "X-API-Key" in code
     assert "headers[\"X-API-Key\"]" in code
+
+
+def test_generate_class_hidden_fields_api_key():
+    gen = OpenAPIGenerator(SPEC_API_KEY_HEADER)
+    code = gen._generate_class("secure_api")
+    assert 'HIDDEN_FIELDS: ClassVar[set[str]] = {"X-API-Key"}' in code
+
+
+def test_generate_class_hidden_fields_bearer():
+    gen = OpenAPIGenerator(SPEC_BEARER)
+    code = gen._generate_class("bearer_api")
+    assert 'HIDDEN_FIELDS: ClassVar[set[str]] = {"token"}' in code
+
+
+def test_generate_class_hidden_fields_basic():
+    gen = OpenAPIGenerator(SPEC_BASIC)
+    code = gen._generate_class("basic_api")
+    assert 'HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}' in code
+    assert '"username"' not in code
+
+
+def test_generate_class_no_security_empty_hidden_fields():
+    gen = OpenAPIGenerator(MINIMAL_SPEC)
+    code = gen._generate_class("my_api")
+    assert "HIDDEN_FIELDS: ClassVar[set[str]] = set()" in code
 
 
 def test_generate_init():

@@ -146,6 +146,15 @@ async def test_connector_template_custom():
 
 
 @pytest.mark.asyncio
+async def test_connector_template_has_hidden_fields():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/connectors/template")
+        assert r.status_code == 200
+        assert "HIDDEN_FIELDS: ClassVar[set[str]] = set()" in r.json()["code"]
+
+
+@pytest.mark.asyncio
 async def test_create_connector():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
