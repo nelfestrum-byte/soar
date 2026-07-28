@@ -79,7 +79,7 @@ class OpenAPIGenerator:
 
     def _extract_security(self) -> dict:  # type: ignore[type-arg]
         """Parse securitySchemes into auth config for __init__ and _connect_impl."""
-        result = {"params": "", "fields": "", "header_setup": "", "config_lines": []}
+        result = {"params": "", "fields": "", "header_setup": "", "config_lines": [], "hidden_fields": set()}
         if not self.security_schemes:
             return result
 
@@ -89,6 +89,7 @@ class OpenAPIGenerator:
                 location = scheme.get("in", "header")
                 result["params"] += f"{param_name}: str = \"\",\n        "
                 result["fields"] += f"self.{param_name} = {param_name}\n        "
+                result["hidden_fields"].add(param_name)
                 if location == "header":
                     result["header_setup"] += f'headers["{param_name}"] = self.{param_name}\n        '
                 # Query apiKey added per-request, not in headers
@@ -97,10 +98,12 @@ class OpenAPIGenerator:
                 if scheme.get("scheme") == "bearer":
                     result["params"] += "token: str = \"\",\n        "
                     result["fields"] += "self.token = token\n        "
+                    result["hidden_fields"].add("token")
                     result['header_setup'] += 'headers["Authorization"] = f"Bearer {self.token}"\n        '
                 elif scheme.get("scheme") == "basic":
                     result["params"] += 'username: str = "",\n        password: str = "",\n        '
                     result["fields"] += "self.username = username\n        self.password = password\n        "
+                    result["hidden_fields"].add("password")  # username is not a secret, matches basic-auth convention elsewhere
                     result["header_setup"] += "auth = httpx.BasicAuth(self.username, self.password)\n        "
 
             elif scheme.get("type") == "oauth2":
@@ -179,15 +182,19 @@ class OpenAPIGenerator:
                 methods.append(method_body)
 
         methods_str = "\n\n".join(methods) if methods else "    pass"
+        hidden_repr = "{" + ", ".join(f'"{f}"' for f in sorted(sec["hidden_fields"])) + "}" if sec["hidden_fields"] else "set()"
 
         return f'''"""Auto-generated from OpenAPI spec: {title}"""
 from __future__ import annotations
+from typing import ClassVar
 import httpx
 from soar.connectors.base import BaseConnector
 
 
 class {class_name}(BaseConnector):
     """Connector for {title}"""
+
+    HIDDEN_FIELDS: ClassVar[set[str]] = {hidden_repr}
 
     def __init__(
         self,
@@ -226,10 +233,7 @@ __all__ = ["{class_name}"]
 
     def _generate_config(self, name: str) -> str:
         """Generate .example.yml from securitySchemes + servers."""
-        class_name = "".join(w.capitalize() for w in name.split("_")) + "Connector"
-        instance_name = f"{class_name}1"
-
-        lines = ["instances:", f"  {instance_name}:"]
+        lines = ["instances:", f"  {name}:"]
 
         # Add base_url
         base_url = self.servers[0].get("url", "https://api.example.com") if self.servers else "https://api.example.com"
