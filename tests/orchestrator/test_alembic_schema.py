@@ -53,3 +53,55 @@ def test_alembic_upgrade_head_matches_orm_metadata(tmp_path):
         assert reflected_columns == expected_columns, table_name
 
     sync_engine.dispose()
+
+
+def test_alembic_upgrade_head_respects_table_prefix(tmp_path):
+    """Regression test for BAGFIX_PLAN S6: 3067dea7c75b and 42fbd47b0d46 used to
+    hardcode literal table/index names, silently ignoring database.table_prefix
+    (unlike ea0bb43fc071, which already used prefixed()/fk() throughout)."""
+    db_path = tmp_path / "alembic_schema_prefix_test.db"
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        f"database:\n"
+        f"  url: sqlite+aiosqlite:///{db_path.as_posix()}\n"
+        f"  table_prefix: test_\n"
+    )
+
+    env = {**os.environ, "SOAR_CONFIG": str(config_path)}
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=str(_REPO_ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    sync_engine = create_engine(f"sqlite:///{db_path.as_posix()}")
+    inspector = inspect(sync_engine)
+
+    reflected_tables = set(inspector.get_table_names()) - {"alembic_version"}
+    assert reflected_tables == {
+        "test_api_keys",
+        "test_users",
+        "test_workflow_jobs",
+        "test_refresh_tokens",
+        "test_audit_log",
+    }
+
+    all_index_names = {
+        index["name"]
+        for table_name in reflected_tables
+        for index in inspector.get_indexes(table_name)
+    }
+    unprefixed_bug_names = {
+        "ix_workflow_jobs_pending_triggered_at",
+        "ix_audit_log_action",
+        "ix_audit_log_created_at",
+        "ix_audit_log_resource_id",
+        "ix_audit_log_resource_type",
+    }
+    assert not (all_index_names & unprefixed_bug_names)
+
+    sync_engine.dispose()

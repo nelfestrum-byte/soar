@@ -166,6 +166,20 @@ def downgrade() -> None:
 учитывают `table_prefix` (known-limitation #9), эта миграция следует тому
 же прецеденту, не расширяет и не чинит его.
 
+> **Обновление (BAGFIX_PLAN S6,
+> `docs/compose/specs/2026-07-28-workflow-jobs-index-table-prefix-design.md`):**
+> этот индекс, объявленный только здесь (в миграции), молча не создавался
+> на штатной последовательности первой установки — `soarctl migrate
+> --fresh` выполняет `alembic stamp head`, который не запускает DDL.
+> Исправлено: `orchestrator/store/models.py::JobRecord.__table_args__`
+> теперь тоже объявляет тот же индекс (`Index(...)`, то же имя через
+> `prefixed()`), так что `create_all()` создаёт его на любой свежей
+> инсталляции. Эта миграция остаётся нужной и корректной — она создаёт
+> индекс при апгрейде уже существующей инсталляции, где `create_all()`
+> таблицу не трогает. Заодно исправлен литерал `workflow_jobs` на
+> `prefixed("workflow_jobs")` — индекс гарантированно создаётся на любом
+> пути установки, не только апгрейд-пути.
+
 ## [S6] Retention: `jobs.retention_days`
 
 `orchestrator/config.py::JobsConfig`:
