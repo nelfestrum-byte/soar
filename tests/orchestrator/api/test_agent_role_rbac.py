@@ -114,13 +114,23 @@ async def test_agent_can_write_and_delete_action_code(as_agent):
 
 
 @pytest.mark.asyncio
-async def test_agent_can_write_and_delete_connector_code(as_agent):
+async def test_agent_can_create_and_delete_connector(as_agent):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
-        r = await c.put("/connectors/agent_conn/code", content=VALID_CONNECTOR_CODE)
+        r = await c.post("/connectors/agent_conn")
         assert r.status_code == 200
         r2 = await c.delete("/connectors/agent_conn")
         assert r2.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_agent_cannot_write_connector_code(as_agent):
+    # B3: PUT /connectors/{name}/code is admin-only — HIDDEN_FIELDS is the
+    # redaction policy itself, not code agent should be able to rewrite.
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.put("/connectors/agent_conn_code/code", content=VALID_CONNECTOR_CODE)
+        assert r.status_code == 403
 
 
 @pytest.mark.asyncio

@@ -516,7 +516,7 @@ async def restore_connector_code(
 @router.put("/{name}/code")
 async def save_connector_code(
     name: str, request: Request,
-    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    user: CurrentUser = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     validate_name(name)

@@ -210,6 +210,45 @@ async def test_save_connector_code_invalid():
 
 
 @pytest.mark.asyncio
+async def test_agent_forbidden_from_connector_code_write():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/agent_code_conn")
+        await c.put("/connectors/agent_code_conn/code", content=HIDDEN_FIELD_CONNECTOR_CODE)
+
+        app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+            id=3, role="agent", type="user", username="test_agent"
+        )
+        try:
+            r = await c.put(
+                "/connectors/agent_code_conn/code", content=VALID_CONNECTOR_CODE
+            )
+            assert r.status_code == 403
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+                id=1, role="admin", type="user", username="test_admin"
+            )
+
+    filepath = os.path.join(
+        app.state.config.soar.connectors_dir, "agent_code_conn", "agent_code_conn.py"
+    )
+    with open(filepath) as f:
+        raw = f.read()
+    assert "HIDDEN_FIELDS" in raw
+
+
+@pytest.mark.asyncio
+async def test_admin_can_write_connector_code_after_lockdown():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/admin_code_conn")
+        r = await c.put("/connectors/admin_code_conn/code", content=VALID_CONNECTOR_CODE)
+        assert r.status_code == 200
+        assert r.json()["status"] == "saved"
+        assert r.json()["commit"]
+
+
+@pytest.mark.asyncio
 async def test_get_connector_config():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
