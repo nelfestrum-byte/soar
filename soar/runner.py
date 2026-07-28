@@ -32,10 +32,6 @@ except Exception as e:
     import sys
     print(f"Warning: Failed to load config from {config_path}: {e}", file=sys.stderr)
 
-workflows.init(external_dir=external_dirs.get("workflows"))
-connectors.init(external_dir=external_dirs.get("connectors"))
-actions.init(external_dir=external_dirs.get("actions"))
-
 
 def _build_cache(http_cfg: dict, queue_cfg: dict) -> CacheBackend | None:
     cache_backend = http_cfg.get("cache_backend", "memory")
@@ -73,8 +69,17 @@ def _build_http_client_sync(http_client: HttpClient) -> SyncHttpClient:
     )
 
 
+# Must run before workflows.init()/connectors.init()/actions.init() below:
+# those import all user workflow/action/connector modules, and any such
+# module doing a top-level `from soar.tools import http_client` binds to
+# whatever soar.tools.http_client already is at that moment (see
+# docs/compose/specs/2026-07-28-http-client-init-order-design.md [S1]).
 tools.http_client = _build_http_client(config)
 tools.http_client_sync = _build_http_client_sync(tools.http_client)
+
+workflows.init(external_dir=external_dirs.get("workflows"))
+connectors.init(external_dir=external_dirs.get("connectors"))
+actions.init(external_dir=external_dirs.get("actions"))
 
 
 def main():
