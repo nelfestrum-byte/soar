@@ -1,8 +1,8 @@
 from typing import ClassVar
-
-import requests
+from urllib.parse import urlencode
 
 from soar.connectors.base import BaseConnector
+from soar.tools import http_client_sync
 
 
 class KasperskyOpenTipConnector(BaseConnector):
@@ -15,26 +15,18 @@ class KasperskyOpenTipConnector(BaseConnector):
         self.api_key = api_key
         self.base_url = base_url or self.DEFAULT_BASE_URL
         self.verify_ssl = verify_ssl
-        self._session: requests.Session | None = None
 
     def _connect_impl(self):
-        self._session = requests.Session()
-        self._session.headers["User-Agent"] = "SOAR-Connector/1.0"
-        self._session.headers["X-Api-Key"] = self.api_key
+        pass  # http_client_sync opens a connection per request, nothing to hold open
 
-    def disconnect(self):
-        if self._session:
-            self._session.close()
-            self._session = None
-            self._connected = False
-            self._logger.info(f"Disconnected from {self.instance_name}")
+    def _headers(self) -> dict:
+        return {"X-Api-Key": self.api_key, "User-Agent": "SOAR-Connector/1.0"}
 
     def _get(self, path: str) -> dict:
         self._ensure_connected()
-        assert self._session is not None
-        resp = self._session.get(f"{self.base_url}{path}", verify=self.verify_ssl, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
+        return http_client_sync.get_json(
+            f"{self.base_url}{path}", headers=self._headers(), verify=self.verify_ssl
+        )
 
     def check_ip(self, ip: str) -> dict:
         return self._get(f"/api/v1/ip/{ip}")
@@ -44,15 +36,12 @@ class KasperskyOpenTipConnector(BaseConnector):
 
     def check_url(self, url: str) -> dict:
         self._ensure_connected()
-        assert self._session is not None
-        resp = self._session.get(
-            f"{self.base_url}/api/v1/url",
-            params={"url": url},
+        query = urlencode({"url": url})
+        return http_client_sync.get_json(
+            f"{self.base_url}/api/v1/url?{query}",
+            headers=self._headers(),
             verify=self.verify_ssl,
-            timeout=30,
         )
-        resp.raise_for_status()
-        return resp.json()
 
     def check_hash(self, hash_value: str) -> dict:
         return self._get(f"/api/v1/file/{hash_value}")

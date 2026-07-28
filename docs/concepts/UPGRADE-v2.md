@@ -31,7 +31,7 @@
 документации (`AGENTS.md`, `CLAUDE.md`, `docs/compose/specs/2026-07-03-v06-upgrade-design.md`),
 не в коде. Это уже специфицированная, но не реализованная фича из
 v0.6-спеки (Feature 1) — сама спека написана 2026-07-03 и с тех пор не
-исполнена. Actions для VT, AbuseCh, Kaspersky, RST, URLhaus, Shodan, Fofa,
+исполнена. Коннекторы VT, AbuseCh, Kaspersky, RST, URLhaus, Shodan, Fofa,
 Censys, crt.sh, MISP делают HTTP-запросы напрямую, без кэша (повторные
 одинаковые запросы на каждый прогон workflow) и без единого лога
 (нет трассировки enrichment-вызовов при разборе инцидента постфактум).
@@ -165,8 +165,24 @@ per-call флаг `cached`. Заменяет Feature 1 v0.6-спеки
 (`2026-07-03-v06-upgrade-design.md`, `[S4]`) — та спека помечена
 превзойдённой в этой части, Feature 2/3 остаются в её собственном скоупе.
 
+Первая версия (v0.12) поставила только async-класс — ни один из 24
+коннекторов не мог его вызвать (`BaseWorkflow.run()`/`soar/runner.py`
+синхронны, `await` вне `async def` не работает), формально «реализовано»,
+по факту без потребителей (S1 в `docs/concepts/BAGFIX_PLAN.md`).
+`docs/compose/specs/2026-07-28-http-client-sync-facade-design.md`
+добавляет `SyncHttpClient` (тот же контракт логирования/кэша/SSRF-guard
+поверх `httpx.Client`) и переводит на него 3 TI-коннектора как образец —
+`abusech` (POST, без auth), `rstcloud` (GET, `Authorization: Bearer`),
+`kaspersky_opentip` (GET, `X-Api-Key`), оба с сохранённым `verify_ssl`.
+Реальные потребители теперь есть. `urlhaus`/`crtsh` и SDK-based
+коннекторы (`virus_total`/`shodan`/`fofa`/`censys`/`misp`) — не
+мигрированы, задокументированный backlog по тому же образцу, не блокер
+для закрытия P12.
+
 **Реализовано** — план: `docs/compose/plans/2026-07-27-http-client.md`,
-отчёт: `docs/compose/reports/http-client.md`.
+отчёт: `docs/compose/reports/http-client.md`; sync-фасад и миграция — план:
+`docs/compose/plans/2026-07-28-http-client-sync-facade.md`, отчёт:
+`docs/compose/reports/http-client-sync-facade.md`.
 
 ### P13 → Connector Config Schema + Secret Redaction
 
