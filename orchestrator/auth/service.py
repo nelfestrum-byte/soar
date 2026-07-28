@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import bcrypt
 from jose import JWTError, jwt
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from orchestrator.auth.models import ApiKey, RefreshToken, User
@@ -76,6 +76,11 @@ async def rotate_refresh_token(
     if token.expires_at.replace(tzinfo=UTC) < datetime.now(UTC):
         return None
 
+    user_result = await db.execute(select(User).where(User.id == token.user_id))
+    user = user_result.scalar_one_or_none()
+    if user is None or not user.is_active:
+        return None
+
     token.revoked_at = datetime.now(UTC)
 
     new_raw = secrets.token_urlsafe(48)
@@ -86,11 +91,16 @@ async def rotate_refresh_token(
     )
     db.add(new_token)
 
-    user_result = await db.execute(select(User).where(User.id == token.user_id))
-    user = user_result.scalar_one_or_none()
-
     await db.commit()
     return user, new_raw
+
+
+async def _revoke_all_refresh_tokens(db: AsyncSession, user_id: int) -> None:
+    await db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at == None)  # noqa: E711
+        .values(revoked_at=datetime.now(UTC))
+    )
 
 
 async def revoke_refresh_token(db: AsyncSession, raw_token: str) -> bool:
@@ -155,6 +165,8 @@ async def set_user_active(db: AsyncSession, username: str, is_active: bool) -> U
     if not user:
         raise LookupError(f"No such user: {username}")
     user.is_active = is_active
+    if is_active is False:
+        await _revoke_all_refresh_tokens(db, user.id)
     await db.commit()
     await db.refresh(user)
     return user
@@ -177,12 +189,15 @@ async def update_user(
     user = await get_user_by_id(db, user_id)
     if not user:
         raise LookupError(f"No such user id: {user_id}")
+    role_changed = role is not None and role != user.role
     if role is not None:
         user.role = role
     if is_active is not None:
         user.is_active = is_active
     if password is not None:
         user.password_hash = hash_password(password)
+    if is_active is False or role_changed:
+        await _revoke_all_refresh_tokens(db, user_id)
     await db.commit()
     await db.refresh(user)
     return user

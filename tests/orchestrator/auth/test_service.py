@@ -1,12 +1,15 @@
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from orchestrator.auth.models import ApiKey, RefreshToken, User  # noqa: F401 — registers tables
 from orchestrator.auth.service import (
     authenticate_user,
+    create_refresh_token,
     create_user,
     get_user_by_id,
     list_users,
+    rotate_refresh_token,
     set_user_active,
     update_user,
 )
@@ -95,3 +98,82 @@ async def test_update_user_no_fields_is_noop(db_session):
 async def test_update_user_unknown_id_raises(db_session):
     with pytest.raises(LookupError):
         await update_user(db_session, 999, role="admin")
+
+
+# ── B1: deactivation revokes live refresh-token sessions ───────────────
+
+async def test_rotate_refresh_token_returns_none_for_inactive_user(db_session):
+    user = await create_user(db_session, "alice", "pw", role="analyst")
+    raw = await create_refresh_token(db_session, user.id, ttl=3600)
+    await set_user_active(db_session, "alice", False)
+    assert await rotate_refresh_token(db_session, raw, ttl=3600) is None
+
+
+async def test_rotate_refresh_token_does_not_revoke_token_when_user_inactive(db_session):
+    # set_user_active()/update_user() always mass-revoke on deactivation (see below),
+    # so to isolate rotate_refresh_token()'s own is_active guard — a live token on an
+    # inactive user — flip the flag directly, bypassing the service-level revoke.
+    user = await create_user(db_session, "alice", "pw", role="analyst")
+    raw = await create_refresh_token(db_session, user.id, ttl=3600)
+    user.is_active = False
+    await db_session.commit()
+    await rotate_refresh_token(db_session, raw, ttl=3600)
+
+    result = await db_session.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
+    token = result.scalar_one()
+    assert token.revoked_at is None
+
+
+async def test_update_user_deactivate_revokes_all_refresh_tokens(db_session):
+    user = await create_user(db_session, "alice", "pw", role="analyst")
+    raw = await create_refresh_token(db_session, user.id, ttl=3600)
+    await update_user(db_session, user.id, is_active=False)
+
+    result = await db_session.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
+    token = result.scalar_one()
+    assert token.revoked_at is not None
+    assert await rotate_refresh_token(db_session, raw, ttl=3600) is None
+
+
+async def test_update_user_deactivate_does_not_touch_other_users_tokens(db_session):
+    alice = await create_user(db_session, "alice", "pw", role="analyst")
+    bob = await create_user(db_session, "bob", "pw", role="analyst")
+    bob_raw = await create_refresh_token(db_session, bob.id, ttl=3600)
+
+    await update_user(db_session, alice.id, is_active=False)
+
+    result = await db_session.execute(select(RefreshToken).where(RefreshToken.user_id == bob.id))
+    bob_token = result.scalar_one()
+    assert bob_token.revoked_at is None
+    assert await rotate_refresh_token(db_session, bob_raw, ttl=3600) is not None
+
+
+async def test_update_user_role_change_revokes_refresh_tokens(db_session):
+    user = await create_user(db_session, "alice", "pw", role="analyst")
+    raw = await create_refresh_token(db_session, user.id, ttl=3600)
+    await update_user(db_session, user.id, role="viewer")
+
+    result = await db_session.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
+    token = result.scalar_one()
+    assert token.revoked_at is not None
+    assert await rotate_refresh_token(db_session, raw, ttl=3600) is None
+
+
+async def test_update_user_reactivate_does_not_restore_revoked_tokens(db_session):
+    user = await create_user(db_session, "alice", "pw", role="analyst")
+    raw = await create_refresh_token(db_session, user.id, ttl=3600)
+    await update_user(db_session, user.id, is_active=False)
+    await update_user(db_session, user.id, is_active=True)
+
+    assert await rotate_refresh_token(db_session, raw, ttl=3600) is None
+
+
+async def test_set_user_active_false_revokes_refresh_tokens(db_session):
+    user = await create_user(db_session, "alice", "pw", role="analyst")
+    raw = await create_refresh_token(db_session, user.id, ttl=3600)
+    await set_user_active(db_session, "alice", False)
+
+    result = await db_session.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
+    token = result.scalar_one()
+    assert token.revoked_at is not None
+    assert await rotate_refresh_token(db_session, raw, ttl=3600) is None
