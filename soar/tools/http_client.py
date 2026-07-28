@@ -105,6 +105,18 @@ def _validate_external_url(url: str) -> None:
             raise ValueError("Requests to internal IPs are not allowed")
 
 
+def _cache_key(url: str, headers: dict) -> str:
+    raw = url + str(sorted(headers.items()))
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _ttl_for(domain_ttl: dict[str, int], default_ttl: int, url: str, ttl: int | None) -> int:
+    if ttl is not None:
+        return ttl
+    domain = httpx.URL(url).host
+    return domain_ttl.get(domain, default_ttl)
+
+
 class HttpClient:
     def __init__(
         self,
@@ -117,14 +129,10 @@ class HttpClient:
         self._domain_ttl = domain_ttl or {}
 
     def _key(self, url: str, headers: dict) -> str:
-        raw = url + str(sorted(headers.items()))
-        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+        return _cache_key(url, headers)
 
     def _ttl_for(self, url: str, ttl: int | None) -> int:
-        if ttl is not None:
-            return ttl
-        domain = httpx.URL(url).host
-        return self._domain_ttl.get(domain, self._default_ttl)
+        return _ttl_for(self._domain_ttl, self._default_ttl, url, ttl)
 
     async def get_json(
         self, url: str, headers: dict | None = None,
@@ -154,6 +162,60 @@ class HttpClient:
         start = time.monotonic()
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(url, json=payload, headers=headers or {}, follow_redirects=False)
+            resp.raise_for_status()
+        duration_ms = int((time.monotonic() - start) * 1000)
+        _log.info(f"http POST {url} status={resp.status_code} duration_ms={duration_ms}")
+        return resp.json()
+
+
+class SyncHttpClient:
+    """Синхронный близнец HttpClient — тот же контракт логирования/кэша/
+    SSRF-guard, для вызова из синхронных методов коннекторов (весь
+    существующий рантайм workflow/actions/connectors сегодня синхронный,
+    см. soar/workflows/base.py::BaseWorkflow.run). Не обёртка над
+    HttpClient через asyncio.run() — см. docs/compose/specs/
+    2026-07-28-http-client-sync-facade-design.md [S2] почему."""
+
+    def __init__(
+        self,
+        cache: CacheBackend | None = None,
+        default_ttl: int = 3600,
+        domain_ttl: dict[str, int] | None = None,
+    ) -> None:
+        self._cache = cache
+        self._default_ttl = default_ttl
+        self._domain_ttl = domain_ttl or {}
+
+    def get_json(
+        self, url: str, headers: dict | None = None,
+        ttl: int | None = None, cached: bool = True, verify: bool = True,
+    ) -> dict:
+        headers = headers or {}
+        _validate_external_url(url)
+        key = _cache_key(url, headers) if self._cache and cached else None
+        if key:
+            if (hit := self._cache.get(key)) is not None:
+                _log.debug(f"http cache hit: {url}")
+                return hit
+        start = time.monotonic()
+        with httpx.Client(timeout=30, verify=verify) as client:
+            resp = client.get(url, headers=headers, follow_redirects=False)
+            resp.raise_for_status()
+        duration_ms = int((time.monotonic() - start) * 1000)
+        _log.info(f"http GET {url} status={resp.status_code} duration_ms={duration_ms}")
+        data = resp.json()
+        if key:
+            self._cache.set(key, data, _ttl_for(self._domain_ttl, self._default_ttl, url, ttl))
+        return data
+
+    def post_json(
+        self, url: str, payload: dict, headers: dict | None = None, verify: bool = True,
+    ) -> dict:
+        # POST не кэшируется — мутация по определению
+        _validate_external_url(url)
+        start = time.monotonic()
+        with httpx.Client(timeout=30, verify=verify) as client:
+            resp = client.post(url, json=payload, headers=headers or {}, follow_redirects=False)
             resp.raise_for_status()
         duration_ms = int((time.monotonic() - start) * 1000)
         _log.info(f"http POST {url} status={resp.status_code} duration_ms={duration_ms}")
