@@ -4,7 +4,9 @@ from sqlalchemy import select
 
 from orchestrator.audit.models import AuditLog
 from orchestrator.main import app
+from orchestrator.models import ConcurrencyPolicy
 from orchestrator.models.job import WorkflowJob
+from orchestrator.models.workflow_meta import WorkflowMeta
 
 
 @pytest.mark.asyncio
@@ -73,3 +75,63 @@ async def test_create_job_wrong_body():
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         r = await c.post("/jobs", json={"wrong": "field"})
         assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_job_writes_audit_log():
+    meta = WorkflowMeta(
+        name="audited_create_wf", type="manual", enabled=True,
+        path="audited_create_wf", timeout=300, concurrency=ConcurrencyPolicy.ALLOW,
+    )
+    app.state.job_manager.set_metas([meta])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.post("/jobs", json={"workflow_name": "audited_create_wf", "context": {}})
+        assert r.status_code == 202
+        job_id = r.json()["id"]
+
+    async with app.state.db_session_factory() as session:
+        result = await session.execute(
+            select(AuditLog).where(AuditLog.resource_type == "job", AuditLog.resource_id == job_id)
+        )
+        rows = list(result.scalars())
+    assert len(rows) == 1
+    assert rows[0].action == "job.create"
+    assert rows[0].detail["workflow_name"] == "audited_create_wf"
+
+
+@pytest.mark.asyncio
+async def test_create_job_not_found_writes_no_audit_log():
+    async with app.state.db_session_factory() as session:
+        before = len(list((await session.execute(select(AuditLog))).scalars()))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.post("/jobs", json={"workflow_name": "NonExistent", "context": {}})
+        assert r.status_code == 404
+
+    async with app.state.db_session_factory() as session:
+        after = len(list((await session.execute(select(AuditLog))).scalars()))
+    assert after == before
+
+
+@pytest.mark.asyncio
+async def test_create_job_disabled_writes_no_audit_log():
+    meta = WorkflowMeta(
+        name="disabled_create_wf", type="manual", enabled=False,
+        path="disabled_create_wf", timeout=300, concurrency=ConcurrencyPolicy.ALLOW,
+    )
+    app.state.job_manager.set_metas([meta])
+
+    async with app.state.db_session_factory() as session:
+        before = len(list((await session.execute(select(AuditLog))).scalars()))
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.post("/jobs", json={"workflow_name": "disabled_create_wf", "context": {}})
+        assert r.status_code == 409
+
+    async with app.state.db_session_factory() as session:
+        after = len(list((await session.execute(select(AuditLog))).scalars()))
+    assert after == before

@@ -20,8 +20,12 @@ class JobRequest(BaseModel):
     context: dict = {}
 
 
-@router.post("", status_code=202, dependencies=[Depends(require_role(*_RW))])
-async def create_job(body: JobRequest, request: Request):
+@router.post("", status_code=202)
+async def create_job(
+    body: JobRequest, request: Request,
+    user: CurrentUser = Depends(require_role(*_RW)),
+    db: AsyncSession = Depends(get_db),
+):
     job_manager = request.app.state.job_manager
     try:
         job = await job_manager.enqueue(
@@ -35,6 +39,11 @@ async def create_job(body: JobRequest, request: Request):
         raise HTTPException(status_code=409, detail="Workflow is disabled") from None
     except Exception:
         raise HTTPException(status_code=409, detail="Failed to enqueue job") from None
+    await audit_service.record(
+        db, user=user, action="job.create", resource_type="job",
+        resource_id=job.id, request=request,
+        detail={"workflow_name": job.workflow_name},
+    )
     return job.to_dict()
 
 
