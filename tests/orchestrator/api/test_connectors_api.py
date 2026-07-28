@@ -598,6 +598,47 @@ async def test_config_history_and_diff_mask_hidden_field(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_config_diff_redacts_unchanged_hidden_field_context_line(tmp_path):
+    # B2: password unchanged across both revisions must not leak via the
+    # unchanged context line unified diff produces around the edited `host`.
+    (tmp_path / ".gitkeep").write_text("")
+    real_git = GitManager(repo_path=str(tmp_path), author_name="Test", author_email="test@test.com")
+    await real_git.ensure_repo()
+    app.state.git = real_git
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/ctx_redact_conn")
+        await c.put("/connectors/ctx_redact_conn/code", content=HIDDEN_FIELD_CONNECTOR_CODE)
+        r1 = await c.put(
+            "/connectors/ctx_redact_conn/config",
+            content=b"instances:\n  a:\n    host: host1\n    password: contextsecret\n",
+        )
+        first_commit = r1.json()["commit"]
+        await c.put(
+            "/connectors/ctx_redact_conn/config",
+            content=b"instances:\n  a:\n    host: host2\n    password: contextsecret\n",
+        )
+
+        r = await c.get("/connectors/ctx_redact_conn/config/history")
+        entries = r.json()
+
+        app.dependency_overrides[get_current_user] = _viewer
+        try:
+            r = await c.get(
+                f"/connectors/ctx_redact_conn/config/diff?a={first_commit}&b={entries[0]['hash']}"
+            )
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: CurrentUser(
+                id=1, role="admin", type="user", username="test_admin"
+            )
+        assert r.status_code == 200
+        diff = r.json()["diff"]
+        assert "contextsecret" not in diff
+        assert "********" in diff
+
+
+@pytest.mark.asyncio
 async def test_put_config_merge_on_write_keeps_old_secret():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:

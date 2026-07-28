@@ -31,7 +31,7 @@ _RW = ("analyst", "admin", "agent")
 _ADMIN = ("admin", "agent")
 
 _MASK = "********"
-_DIFF_KV_RE = re.compile(r"^([+-])(\s*)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
+_DIFF_KV_RE = re.compile(r"^([+\- ])(\s*)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
 
 
 class GenerateRequest(BaseModel):
