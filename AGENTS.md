@@ -209,6 +209,11 @@ resource_id=..., request=..., detail=...)` из каждого мутирующ�
 успешной мутации, тем же паттерном, что и существующий `git.commit(...)`), не
 generic-перехватчиком — только сам роут знает семантику ресурса и что не стоит
 логировать (секреты в теле). Читается через `GET /audit-log` (admin-only).
+`POST /transfer/export` и `POST /transfer/import` (S3) теперь тоже пишут
+(`transfer.export`/`transfer.import`, только имена сущностей в `detail`, не
+содержимое файлов; conflict-preflight `/import` без `force` — read-only,
+audit не пишет). `POST /jobs` и `POST /webhooks/{name}` — ещё нет, отдельные
+треки.
 
 ### Subprocess execution
 Workflows запускаются как отдельные процессы через `soar.runner`:
