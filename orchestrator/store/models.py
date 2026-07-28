@@ -1,17 +1,32 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from orchestrator.db.base import Base, prefixed
 
 
 class JobRecord(Base):
-    # NOTE: a partial index on (status, triggered_at) WHERE status='PENDING' is
-    # added via alembic migration (not declared here) — keeps SQLQueue.pop()'s
-    # claim query cheap regardless of historical COMPLETED/FAILED row volume.
-    # See docs/compose/specs/2026-07-27-sql-job-queue-design.md [S5].
+    # Partial index on (status, triggered_at) WHERE status='PENDING' — keeps
+    # SQLQueue.pop()'s claim query cheap regardless of historical
+    # COMPLETED/FAILED row volume. Declared here (not just in the
+    # 42fbd47b0d46 migration) so create_all() creates it on fresh installs too
+    # — `soarctl migrate --fresh` only stamps the alembic revision, it never
+    # runs migration DDL. Same index name in both places by design: fresh
+    # installs get it from create_all(), upgrades of pre-existing installs get
+    # it from the migration; see
+    # docs/compose/specs/2026-07-27-sql-job-queue-design.md [S5] and
+    # docs/compose/specs/2026-07-28-workflow-jobs-index-table-prefix-design.md.
     __tablename__ = prefixed("workflow_jobs")
+    __table_args__ = (
+        Index(
+            f"ix_{prefixed('workflow_jobs')}_pending_triggered_at",
+            "status",
+            "triggered_at",
+            postgresql_where=text("status = 'PENDING'"),
+            sqlite_where=text("status = 'PENDING'"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     workflow_name: Mapped[str] = mapped_column(String(255), index=True)

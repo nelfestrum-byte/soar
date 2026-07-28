@@ -221,8 +221,22 @@ UPDATE SKIP LOCKED` на Postgres, сериализация записи на SQ
 деплое. `deploy/prod/config.yaml.template`/`deploy/stage/config.yaml`
 переключаются с `queue.backend: redis` на `sql`.
 
+Партиальный индекс изначально создавался только миграцией
+`42fbd47b0d46` — на штатной последовательности первой установки
+(`soarctl up && soarctl migrate --fresh`) он молча отсутствовал, `--fresh`
+лишь проставляет ревизию, не выполняет DDL (BAGFIX_PLAN S6). Исправлено:
+`orchestrator/store/models.py::JobRecord.__table_args__` теперь тоже
+объявляет тот же индекс (`Index(...)`), `create_all()` создаёт его на
+любой свежей инсталляции независимо от `stamp head`/`upgrade head`;
+миграция остаётся источником DDL для апгрейда существующих инсталляций.
+Индекс гарантированно создаётся на любом пути установки, не только
+апгрейд-пути. См.
+`docs/compose/specs/2026-07-28-workflow-jobs-index-table-prefix-design.md`.
+
 **Реализовано** — план: `docs/compose/plans/2026-07-27-sql-job-queue.md`,
-отчёт: `docs/compose/reports/sql-job-queue.md`.
+отчёт: `docs/compose/reports/sql-job-queue.md` (индекс на fresh-install —
+`docs/compose/plans/2026-07-28-workflow-jobs-index-table-prefix.md`,
+`docs/compose/reports/workflow-jobs-index-table-prefix.md`).
 
 ## Часть 3 — Реестр рисков (дополняет реестр `UPGRADE.md`)
 
