@@ -226,10 +226,7 @@ __all__ = ["{class_name}"]
 
     def _generate_config(self, name: str) -> str:
         """Generate .example.yml from securitySchemes + servers."""
-        class_name = "".join(w.capitalize() for w in name.split("_")) + "Connector"
-        instance_name = f"{class_name}1"
-
-        lines = ["instances:", f"  {instance_name}:"]
+        lines = ["instances:", f"  {name}:"]
 
         # Add base_url
         base_url = self.servers[0].get("url", "https://api.example.com") if self.servers else "https://api.example.com"

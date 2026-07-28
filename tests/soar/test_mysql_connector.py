@@ -2,6 +2,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytest.importorskip("pymysql")
+
 from soar.connectors.mysql.mysql import MySQLConnector
 
 

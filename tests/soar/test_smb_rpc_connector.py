@@ -1,5 +1,9 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+pytest.importorskip("smbprotocol")
+
 from soar.connectors.smb_rpc.smb_rpc import SMBRPCConnector
 
 

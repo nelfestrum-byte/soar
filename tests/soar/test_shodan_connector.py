@@ -1,5 +1,9 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+pytest.importorskip("shodan")
+
 from soar.connectors.shodan.shodan import ShodanConnector
 
 
