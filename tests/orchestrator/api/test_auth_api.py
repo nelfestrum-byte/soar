@@ -190,6 +190,23 @@ async def test_refresh_invalid_token(auth_client):
     assert r.status_code == 401
 
 
+@pytest.mark.asyncio
+async def test_refresh_fails_after_deactivation(auth_client, admin_user, viewer_user):
+    admin_token = await _login(auth_client, "admin", "adminpass")
+
+    r = await auth_client.post("/auth/login", json={"username": "viewer", "password": "viewerpass"})
+    refresh_token = r.json()["refresh_token"]
+    r2 = await auth_client.post("/auth/refresh", json={"refresh_token": refresh_token})
+    assert r2.status_code == 200
+
+    r3 = await auth_client.patch(f"/auth/users/{viewer_user.id}", json={"is_active": False},
+                                 headers={"Authorization": f"Bearer {admin_token}"})
+    assert r3.status_code == 200
+
+    r4 = await auth_client.post("/auth/refresh", json={"refresh_token": r2.json()["refresh_token"]})
+    assert r4.status_code == 401
+
+
 # ── logout ──────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
