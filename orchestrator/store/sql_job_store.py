@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime, timedelta
 
 from loguru import logger
@@ -102,6 +103,15 @@ class SQLJobStore(AbstractJobStore):
     async def purge_old(self, retention_days: int) -> int:
         threshold = datetime.now(UTC) - timedelta(days=retention_days)
         async with self._session_factory() as session:
+            to_delete = await session.execute(
+                select(JobRecord.log_path).where(
+                    JobRecord.status.in_(_TERMINAL_STATUSES),
+                    JobRecord.finished_at < threshold,
+                    JobRecord.log_path.is_not(None),
+                )
+            )
+            log_paths = [row[0] for row in to_delete if row[0]]
+
             result = await session.execute(
                 delete(JobRecord).where(
                     JobRecord.status.in_(_TERMINAL_STATUSES),
@@ -110,6 +120,15 @@ class SQLJobStore(AbstractJobStore):
             )
             await session.commit()
             count = result.rowcount or 0
+
+        for path in log_paths:
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                logger.warning(f"Retention cleanup: failed to remove log file {path}: {e}")
+
         if count > 0:
             logger.info(f"Retention cleanup: purged {count} job records older than {retention_days}d")
         return count

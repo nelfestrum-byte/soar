@@ -193,3 +193,54 @@ async def test_sql_job_store_purge_old_returns_zero_when_nothing_old(store):
 
     deleted = await store.purge_old(retention_days=90)
     assert deleted == 0
+
+
+async def test_sql_job_store_purge_old_removes_log_files(store, tmp_path):
+    log_file = tmp_path / "job.log"
+    log_file.write_text("log contents")
+
+    job = WorkflowJob(workflow_name="test", status=JobStatus.COMPLETED)
+    job.finished_at = datetime.now(UTC) - timedelta(days=100)
+    job.log_path = str(log_file)
+    await store.save(job)
+
+    deleted = await store.purge_old(retention_days=90)
+
+    assert deleted == 1
+    assert await store.get(job.id) is None
+    assert not log_file.exists()
+
+
+async def test_sql_job_store_purge_old_survives_missing_log_file(store, tmp_path):
+    missing_log = tmp_path / "already_gone.log"
+
+    job = WorkflowJob(workflow_name="test", status=JobStatus.COMPLETED)
+    job.finished_at = datetime.now(UTC) - timedelta(days=100)
+    job.log_path = str(missing_log)
+    await store.save(job)
+
+    other_log = tmp_path / "other.log"
+    other_log.write_text("log contents")
+    other = WorkflowJob(workflow_name="other", status=JobStatus.COMPLETED)
+    other.finished_at = datetime.now(UTC) - timedelta(days=100)
+    other.log_path = str(other_log)
+    await store.save(other)
+
+    deleted = await store.purge_old(retention_days=90)
+
+    assert deleted == 2
+    assert await store.get(job.id) is None
+    assert await store.get(other.id) is None
+    assert not other_log.exists()
+
+
+async def test_sql_job_store_purge_old_ignores_null_log_path(store):
+    job = WorkflowJob(workflow_name="test", status=JobStatus.COMPLETED)
+    job.finished_at = datetime.now(UTC) - timedelta(days=100)
+    job.log_path = None
+    await store.save(job)
+
+    deleted = await store.purge_old(retention_days=90)
+
+    assert deleted == 1
+    assert await store.get(job.id) is None
