@@ -31,7 +31,7 @@ _RW = ("analyst", "admin", "agent")
 _ADMIN = ("admin", "agent")
 
 _MASK = "********"
-_DIFF_KV_RE = re.compile(r"^([+-])(\s*)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
+_DIFF_KV_RE = re.compile(r"^([+\- ])(\s*)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
 
 
 class GenerateRequest(BaseModel):
@@ -47,10 +47,14 @@ class PreviewRequest(BaseModel):
 class RestoreRequest(BaseModel):
     commit: str
 
-CONNECTOR_TEMPLATE = '''from soar.connectors.base import BaseConnector
+CONNECTOR_TEMPLATE = '''from typing import ClassVar
+
+from soar.connectors.base import BaseConnector
 
 
 class {class_name}(BaseConnector):
+    HIDDEN_FIELDS: ClassVar[set[str]] = set()
+
     def __init__(self, instance_name: str, **kwargs):
         super().__init__(instance_name)
         # TODO: add parameters
@@ -512,7 +516,7 @@ async def restore_connector_code(
 @router.put("/{name}/code")
 async def save_connector_code(
     name: str, request: Request,
-    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    user: CurrentUser = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     validate_name(name)
