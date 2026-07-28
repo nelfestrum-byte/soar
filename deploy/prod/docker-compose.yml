@@ -1,7 +1,15 @@
+networks:
+  soar-net:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
 services:
   redis:
     image: redis:7-alpine
     container_name: soar-redis
+    networks:
+      - soar-net
     volumes:
       - redis-data:/data
     restart: unless-stopped
@@ -14,6 +22,8 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: soar-postgres
+    networks:
+      - soar-net
     environment:
       - POSTGRES_DB=soar
       - POSTGRES_USER=soar
@@ -30,6 +40,8 @@ services:
   orchestrator:
     image: soar-orchestrator:${SOAR_VERSION:?run soarctl init first}
     container_name: soar-orchestrator
+    networks:
+      - soar-net
     ports:
       - "8000:8000"
     volumes:
@@ -54,6 +66,12 @@ services:
   ui:
     image: soar-ui:${SOAR_VERSION:?run soarctl init first}
     container_name: soar-ui
+    # Static IP so orchestrator's server.trusted_proxies (config.yaml.template)
+    # can trust this exact peer for X-Real-IP/X-Forwarded-For — see B4 in
+    # docs/concepts/BAGFIX_PLAN.md. Keep in sync with trusted_proxies.
+    networks:
+      soar-net:
+        ipv4_address: 172.28.0.10
     ports:
       - "3000:80"
     depends_on:

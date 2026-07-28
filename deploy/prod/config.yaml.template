@@ -44,3 +44,12 @@ auth:
   # `soarctl init --interactive` (or `--cors-origin URL`) fills this in for
   # you; plain `soarctl init` leaves the placeholder below for manual edit.
   cors_origins: ${CORS_ORIGINS_JSON}
+
+server:
+  # IP of the `ui` (nginx) container on the `soar-net` docker network — see
+  # docker-compose.yml networks.soar-net.ipam and ui.networks.soar-net.
+  # ipv4_address. Keep both in sync when changing the network. Without this,
+  # resolve_client_ip() sees nginx's own IP as client_ip for all traffic —
+  # a global login rate-limit and a useless AuditLog.client_ip, see B4 in
+  # docs/concepts/BAGFIX_PLAN.md.
+  trusted_proxies: ["172.28.0.10"]

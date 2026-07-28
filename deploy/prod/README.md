@@ -38,6 +38,12 @@ template as-is and does not know your domain. Skipping this leaves the
 code default (`localhost:3000`/`5173`), and the UI will fail to log in
 (browser CORS rejection) once accessed from its real address.
 
+Check `server.trusted_proxies` in `config.yaml` — it must contain the `ui`
+container's IP on `soar-net` (see `docker-compose.yml`). Don't change one
+without the other: a mismatch makes the rate limiter/audit log either
+global again (IP doesn't match) or trust the wrong peer (if the subnet was
+changed by hand).
+
 ```bash
 python soarctl up
 python soarctl migrate --fresh   # first boot only, see note below

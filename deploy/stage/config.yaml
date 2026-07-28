@@ -36,3 +36,12 @@ database:
 
 auth:
   secret_key: "9904b7877c04ea347ee937488601b0158e433cfb4b78932e06c8920f6e3b7dcc"  # stage-only test secret — do not reuse for prod
+
+server:
+  # IP of the `ui` (nginx) container on the `soar-net` docker network — see
+  # docker-compose.yml networks.soar-net.ipam and ui.networks.soar-net.
+  # ipv4_address. Keep both in sync when changing the network. Without this,
+  # resolve_client_ip() sees nginx's own IP as client_ip for all traffic —
+  # a global login rate-limit and a useless AuditLog.client_ip, see B4 in
+  # docs/concepts/BAGFIX_PLAN.md.
+  trusted_proxies: ["172.28.0.10"]
