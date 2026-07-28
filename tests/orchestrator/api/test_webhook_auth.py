@@ -2,7 +2,9 @@ from unittest.mock import MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
+from orchestrator.audit.models import AuditLog
 from orchestrator.config import OrchestratorConfig
 from orchestrator.core.job_manager import JobManager
 from orchestrator.core.queue.memory import InMemoryQueue
@@ -60,6 +62,9 @@ async def test_webhook_valid_token():
 
 @pytest.mark.asyncio
 async def test_webhook_wrong_token():
+    async with app.state.db_session_factory() as session:
+        before = len(list((await session.execute(select(AuditLog))).scalars()))
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
@@ -69,18 +74,33 @@ async def test_webhook_wrong_token():
         )
         assert resp.status_code == 403
 
+    async with app.state.db_session_factory() as session:
+        after = len(list((await session.execute(select(AuditLog))).scalars()))
+    assert after == before
+
 
 @pytest.mark.asyncio
 async def test_webhook_missing_token():
+    async with app.state.db_session_factory() as session:
+        before = len(list((await session.execute(select(AuditLog))).scalars()))
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post("/webhooks/TestWebhook", json={})
         assert resp.status_code == 403
 
+    async with app.state.db_session_factory() as session:
+        after = len(list((await session.execute(select(AuditLog))).scalars()))
+    assert after == before
+
 
 @pytest.mark.asyncio
 async def test_webhook_disabled_workflow():
     app.state.job_manager._metas["TestWebhook"].enabled = False
+
+    async with app.state.db_session_factory() as session:
+        before = len(list((await session.execute(select(AuditLog))).scalars()))
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
@@ -89,6 +109,10 @@ async def test_webhook_disabled_workflow():
             headers={"X-Webhook-Token": "secret-token-abc"},
         )
         assert resp.status_code == 409
+
+    async with app.state.db_session_factory() as session:
+        after = len(list((await session.execute(select(AuditLog))).scalars()))
+    assert after == before
     app.state.job_manager._metas["TestWebhook"].enabled = True
 
 

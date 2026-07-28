@@ -205,15 +205,18 @@ action/connector — без reload, как и текущие `PUT`.
 ### Audit trail (orchestrator/audit/)
 Отдельно от access-лога — таблица `audit_log` (та же БД, что job-история и auth),
 пишется явным вызовом `audit.service.record(db, user=..., action=..., resource_type=...,
-resource_id=..., request=..., detail=...)` из каждого мутирующего роута (после
-успешной мутации, тем же паттерном, что и существующий `git.commit(...)`), не
+resource_id=..., request=..., detail=...)` из мутирующего роута (после успешной
+мутации, тем же паттерном, что и существующий `git.commit(...)`), не
 generic-перехватчиком — только сам роут знает семантику ресурса и что не стоит
 логировать (секреты в теле). Читается через `GET /audit-log` (admin-only).
 `POST /transfer/export` и `POST /transfer/import` (S3) теперь тоже пишут
 (`transfer.export`/`transfer.import`, только имена сущностей в `detail`, не
 содержимое файлов; conflict-preflight `/import` без `force` — read-only,
-audit не пишет). `POST /jobs` и `POST /webhooks/{name}` — ещё нет, отдельные
-треки.
+audit не пишет). `POST /jobs` и `POST /webhooks/{name}` (S4) пишут
+`job.create` — у вебхука нет `CurrentUser` (нет JWT/RBAC на этом роуте),
+поэтому актор синтетический: `CurrentUser(id=0, role="service", type="webhook",
+username=f"webhook:{workflow_name}")`, третье значение `actor_type` (кроме
+`"user"`/`"service"`).
 
 ### Subprocess execution
 Workflows запускаются как отдельные процессы через `soar.runner`:
