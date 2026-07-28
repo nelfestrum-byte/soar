@@ -4,36 +4,37 @@
 
 ## Tests first
 
-- [ ] Добавить `test_git_manager_commit_nothing_with_untracked_file` в
+- [x] Добавить `test_git_manager_commit_nothing_with_untracked_file` в
       `tests/orchestrator/test_git_manager.py` — создать untracked-файл
       (`__pycache__/x.pyc`) в `git_repo` до вызова `commit("test.txt", ...)`
       без изменений `test.txt`; ожидать `commit_hash == ""`. Подтвердить,
       что тест падает (`RuntimeError`) на текущем коде.
-- [ ] Добавить `test_git_manager_commit_real_error_still_raises` — вызвать
+- [x] Добавить `test_git_manager_commit_real_error_still_raises` — вызвать
       `commit()` с несуществующим/незастейженным путём файла, убедиться,
       что `RuntimeError` поднимается и на текущем, и на новом коде (не
       регрессия в тихий no-op).
-- [ ] Подтвердить, что существующий `test_git_manager_commit_nothing`
+- [x] Подтвердить, что существующий `test_git_manager_commit_nothing`
       остаётся зелёным без изменений.
 
 ## Implementation
 
-- [ ] Заменить тело `GitManager.commit()` в
+- [x] Заменить тело `GitManager.commit()` в
       `orchestrator/core/git_manager.py` на версию из спеки [S2]: после
       `git add -- filepath` проверять `git diff --cached --quiet --
       filepath` через exit-код; `returncode == 0` → return `""` (реальный
       no-op); иначе выполнять `git commit` как раньше, но без
       string-match по stderr — любой ненулевой код после этого момента
       считается настоящей ошибкой и поднимает `RuntimeError`.
-- [ ] Убедиться, что `restore()` (использует `commit()` внутри) не требует
+- [x] Убедиться, что `restore()` (использует `commit()` внутри) не требует
       изменений — получает фикс "бесплатно" по [S3].
 
 ## Verification
 
-- [ ] Запустить новые тесты — оба проходят после фикса.
-- [ ] Запустить полный `python -m pytest` — все тесты зелёные.
+- [x] Запустить новые тесты — оба проходят после фикса.
+- [x] Запустить полный `python -m pytest` — все тесты зелёные (4 несвязанных
+      падения — внешний Redis/openapi, см. отчёт).
 
 ## Report
 
-- [ ] Написать `docs/compose/reports/git-manager-nothing-to-commit.md`
+- [x] Написать `docs/compose/reports/git-manager-nothing-to-commit.md`
       после завершения.
