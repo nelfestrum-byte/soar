@@ -22,7 +22,9 @@ You (the agent) interact with this system exclusively through the
 orchestrator's HTTP API — never by editing files on disk directly, so
 that every change goes through validation and gets git history.
 
-## 2. The three entity contracts
+## 2. Entity contracts
+
+Three of these are yours to write; the fourth is read-only.
 
 - **Action** — a single top-level function in
   `soar/actions/<name>.py`. The registry looks the function up **by file
@@ -39,13 +41,48 @@ that every change goes through validation and gets git history.
   `soar/workflows/<file>.py`. **The registry key is the file name, not
   the class name** — this is what `GET /workflows` returns as `name` and
   what every `/workflows/{name}/...` route expects.
+- **Tool** — a helper class in `soar/tools/` (e.g. `HttpClient`,
+  `WatermarkStore`/`SeenStore`, `OpenAPIGenerator`) that actions/workflows
+  import and use, but that you do not write through the API: no
+  `PUT`/`DELETE` route exists for it at all, on any role. Unlike the
+  other three, a Tool is generic infrastructure, not a specific
+  integration's behavior — it changes only by code release, not by an
+  API call. See §5 for how to discover what's available.
 
-All three are read/written through symmetric API groups: `GET /{kind}`,
-`GET /{kind}/{name}`, `GET /{kind}/{name}/code`, `PUT /{kind}/{name}/code`
-(admin), `DELETE` (admin). Every write is auto-committed to git by the
-orchestrator (`GitConfig.workflows_repo`) — you never call git yourself.
+Action/Connector/Workflow are read/written through symmetric API groups:
+`GET /{kind}`, `GET /{kind}/{name}`, `GET /{kind}/{name}/code`,
+`PUT /{kind}/{name}/code`, `DELETE`. Every write is auto-committed to git
+by the orchestrator (`GitConfig.workflows_repo`) — you never call git
+yourself. Who may call the write routes differs per entity — see §3,
+connector code is the one exception.
 
-## 3. Dev loop (Stage 1)
+## 3. Your access (role `agent`)
+
+You authenticate as the `agent` RBAC role. Its boundary in one line: **code
+and jobs, not administration.** You can read everything, and write/run
+almost everything an `admin` can on the three entity types plus jobs — but
+you cannot manage users, API keys, audit history, or config
+import/export. Concretely, these are all `403` for you regardless of
+credentials:
+
+- `/auth/*` — creating/listing/editing users or API keys
+- `GET /audit-log`
+- `/transfer/export`, `/transfer/import`
+- `PUT /prompts/user` (you can `GET` it, not change it)
+
+**One exception inside the surface you otherwise fully control:**
+`PUT /connectors/{name}/code` requires a human `admin` — this is the one
+write endpoint where you are deliberately excluded even though you can
+write workflow code, action code, and connector *config* freely. Reason:
+connector code is where a class declares `HIDDEN_FIELDS` (which config
+values get redacted from you and everyone else, see §7); if you could
+rewrite that file, you could silently strip your own redaction. Everything
+else on connectors remains yours: create (`POST /connectors`), delete,
+`PUT /config`, and restoring either code or config to a prior git commit.
+If you need a connector's code changed, describe the change and ask a
+human to apply it — don't try to route around this via config or restore.
+
+## 4. Dev loop (Stage 1)
 
 - **Validation before write.** `PUT .../code` runs `ast.parse` plus an
   entry-point check (base class present for workflow/connector, a
@@ -65,7 +102,7 @@ orchestrator (`GitConfig.workflows_repo`) — you never call git yourself.
   your identity) — use this instead of trying to reconstruct a previous
   version by hand.
 
-## 4. Self-description (Stage 2 — this stage)
+## 5. Self-description (Stage 2)
 
 Use these instead of reading source files:
 
@@ -81,6 +118,9 @@ Use these instead of reading source files:
   and the class docstring. This is the cheapest way to learn what a
   connector can do — reading a connector's raw `.py` is the single most
   expensive thing you can do context-wise (25+ built-in connectors).
+- `GET /connectors/{name}/schema` — typed constructor fields with a
+  `hidden: bool` flag on each; check this before `PUT /config` to know
+  which fields will come back as `"********"` (see §7).
 - `GET /workflows`, `GET /workflows/{name}` — now include `docstring`
   (the workflow class's docstring), in addition to type/schedule/
   enabled/path/token.
@@ -88,7 +128,7 @@ Use these instead of reading source files:
   installation-specific instructions layered on top of this one; check
   it too if it exists.
 
-## 5. Conventions worth knowing before you act
+## 6. Conventions worth knowing before you act
 
 - **Dry-run.** Set `context["dry_run"] = True` in the body of
   `POST /jobs` to run a workflow without it performing external mutating
@@ -103,13 +143,21 @@ Use these instead of reading source files:
   workflow's code does not rotate it, so registered webhook URLs keep
   working across edits.
 
-## 6. Known risks — do not assume otherwise
+## 7. Known risks — do not assume otherwise
 
-- **P6 — connector secrets are returned in plaintext.**
-  `GET /connectors/{name}/config` returns the YAML as-is, including
-  passwords/tokens/API keys. Treat anything you read from that endpoint
-  as sensitive; do not echo it into logs, job results, or workflow
-  output.
+- **Connector secrets are write-only, not readable — don't mistake the
+  placeholder for a value.** `GET /connectors/{name}/config` (and its
+  `history`/`diff` variants) mask every field a connector declares in
+  `HIDDEN_FIELDS` as the literal string `"********"`, for every role
+  including `admin` — you will never see a real password/token/API key
+  through this API. Two consequences: (1) don't treat `"********"` as the
+  actual configured value in any reasoning or output; (2) `PUT /config` is
+  merge-on-write — leaving a hidden field as `"********"` keeps whatever
+  is already on disk, so only send a real value for a field you are
+  actually changing. Changing a hidden field to a real value requires
+  literal `admin` — you (`agent`) get `403` on that specific field even
+  though you can freely edit non-hidden fields in the same request. See
+  §3 for the related `PUT /connectors/{name}/code` restriction.
 - **P10 — no concurrent-edit locking.** `PUT .../code` and
   `PUT .../config` are last-write-wins: if a human or another agent
   saves the same file between your read and your write, your write
