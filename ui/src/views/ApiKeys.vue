@@ -13,6 +13,7 @@
           <option value="service">service</option>
           <option value="viewer">viewer</option>
           <option value="analyst">analyst</option>
+          <option value="agent">agent</option>
           <option value="admin">admin</option>
         </select>
         <button class="btn btn-primary" @click="createKey" :disabled="!newName || creating">

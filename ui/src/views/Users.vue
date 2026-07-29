@@ -14,6 +14,7 @@
           <option value="viewer">viewer</option>
           <option value="analyst">analyst</option>
           <option value="service">service</option>
+          <option value="agent">agent</option>
           <option value="admin">admin</option>
         </select>
         <button class="btn btn-primary" @click="createUser" :disabled="!newUsername || newPassword.length < 8 || creating">
@@ -38,6 +39,7 @@
               <option value="viewer">viewer</option>
               <option value="analyst">analyst</option>
               <option value="service">service</option>
+              <option value="agent">agent</option>
               <option value="admin">admin</option>
             </select>
           </td>
