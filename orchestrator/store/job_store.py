@@ -40,9 +40,12 @@ class InMemoryJobStore(AbstractJobStore):
         jobs.sort(key=lambda j: j.triggered_at or datetime.min.replace(tzinfo=UTC), reverse=True)
         return jobs[offset: offset + limit]
 
-    async def count_by_status(self, workflow_name: str, statuses: list[JobStatus]) -> int:  # type: ignore[valid-type, no-redef]
+    async def count_by_status(
+        self, workflow_name: str, statuses: list[JobStatus], exclude_job_id: str | None = None  # type: ignore[valid-type, no-redef]
+    ) -> int:
         return sum(1 for j in self._jobs.values()  # type: ignore[misc]
-                   if j.workflow_name == workflow_name and j.status in statuses)  # type: ignore[misc, attr-defined]
+                   if j.workflow_name == workflow_name and j.status in statuses  # type: ignore[misc, attr-defined]
+                   and j.id != exclude_job_id)
 
     async def stats(self) -> dict:
         now = datetime.now(UTC)

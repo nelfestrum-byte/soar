@@ -20,6 +20,16 @@ class JobRequest(BaseModel):
     context: dict = {}
 
 
+def _job_dict(job, user: CurrentUser) -> dict:
+    """M12: `context` is the raw webhook payload (or user-supplied context) —
+    it can carry secrets and isn't subject to any redaction. Strip it for the
+    lowest-privilege read-only role; analyst and above still see it."""
+    data = job.to_dict()
+    if user.role == "viewer":
+        data.pop("context", None)
+    return data
+
+
 @router.post("", status_code=202)
 async def create_job(
     body: JobRequest, request: Request,
@@ -47,7 +57,7 @@ async def create_job(
     return job.to_dict()
 
 
-@router.get("", dependencies=[Depends(require_role(*_RO))])
+@router.get("")
 async def list_jobs(
     request: Request,
     workflow_name: str | None = None,
@@ -55,6 +65,7 @@ async def list_jobs(
     triggered_by: str | None = None,
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    user: CurrentUser = Depends(require_role(*_RO)),
 ):
     job_store = request.app.state.job_store
     status_enum = JobStatus(status) if status else None
@@ -65,16 +76,19 @@ async def list_jobs(
         limit=limit,
         offset=offset,
     )
-    return [j.to_dict() for j in jobs]
+    return [_job_dict(j, user) for j in jobs]
 
 
-@router.get("/{job_id}", dependencies=[Depends(require_role(*_RO))])
-async def get_job(job_id: str, request: Request):
+@router.get("/{job_id}")
+async def get_job(
+    job_id: str, request: Request,
+    user: CurrentUser = Depends(require_role(*_RO)),
+):
     job_store = request.app.state.job_store
     job = await job_store.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job.to_dict()
+    return _job_dict(job, user)
 
 
 @router.post("/{job_id}/cancel")

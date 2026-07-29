@@ -2,9 +2,11 @@
 now emit a logger.warning with useful bound fields (not asserting on message
 wording — that's brittle, assert on the fact + fields instead)."""
 import time
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from jose import jwt
 from loguru import logger
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -148,6 +150,30 @@ async def test_general_rate_limit_logs_warning(client, log_records):
         assert len(_warnings(log_records, "rate_limited")) == 1
     finally:
         rate_limiter._requests.pop("9.9.9.9", None)
+
+
+async def test_token_missing_sub_claim_returns_401_not_500(client, log_records):
+    """M8: a correctly-signed token without `sub` used to hit `int(payload["sub"])`
+    unguarded and crash with a 500 KeyError instead of 401."""
+    payload = {"role": "admin", "type": "user", "exp": datetime.now(UTC) + timedelta(minutes=30)}
+    token = jwt.encode(payload, _SECRET, algorithm="HS256")
+
+    resp = await client.get("/status", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401
+    assert len(_warnings(log_records, "auth.invalid_token_claims")) == 1
+
+
+async def test_token_non_numeric_sub_returns_401_not_500(client, log_records):
+    """M8: same guard, for a `sub` claim that isn't int-convertible."""
+    payload = {
+        "sub": "not-a-number", "role": "admin", "type": "user",
+        "exp": datetime.now(UTC) + timedelta(minutes=30),
+    }
+    token = jwt.encode(payload, _SECRET, algorithm="HS256")
+
+    resp = await client.get("/status", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401
+    assert len(_warnings(log_records, "auth.invalid_token_claims")) == 1
 
 
 async def test_webhook_invalid_token_logs_warning(client, log_records):

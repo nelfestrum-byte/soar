@@ -44,6 +44,12 @@ without the other: a mismatch makes the rate limiter/audit log either
 global again (IP doesn't match) or trust the wrong peer (if the subnet was
 changed by hand).
 
+`docker-compose.yml` publishes `orchestrator` on `8000:8000` with no TLS —
+JWTs and passwords travel in the clear on that port. Put a TLS-terminating
+LB/reverse proxy in front of it before exposing the instance beyond
+localhost/a trusted LAN; `soarctl` does not provision one (see M11 in
+`docs/concepts/BAGFIX_PLAN.md`).
+
 ```bash
 python soarctl up
 python soarctl migrate --fresh   # first boot only, see note below

@@ -23,7 +23,9 @@ class AbstractJobStore(ABC):
     ) -> list[WorkflowJob]: ...
 
     @abstractmethod
-    async def count_by_status(self, workflow_name: str, statuses: list[JobStatus]) -> int: ...  # type: ignore[valid-type]
+    async def count_by_status(
+        self, workflow_name: str, statuses: list[JobStatus], exclude_job_id: str | None = None  # type: ignore[valid-type]
+    ) -> int: ...
 
     @abstractmethod
     async def stats(self) -> dict: ...

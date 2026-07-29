@@ -77,8 +77,8 @@ class RestoreRequest(BaseModel):
     commit: str
 
 
-@router.get("", dependencies=[Depends(require_role(*_RO))])
-async def list_workflows(request: Request):
+@router.get("")
+async def list_workflows(request: Request, user: CurrentUser = Depends(require_role(*_RO))):
     job_manager = request.app.state.job_manager
     metas = job_manager.list_metas()
     result = []
@@ -94,14 +94,18 @@ async def list_workflows(request: Request):
             "concurrency": m.concurrency.value,
             "docstring": m.docstring,
         }
-        if hasattr(m, "token") and m.token:
+        # M13: the webhook token is the *only* thing guarding that workflow's
+        # trigger endpoint — don't hand it to the lowest-privilege read-only role.
+        if user.role in _RW and hasattr(m, "token") and m.token:
             item["token"] = m.token
         result.append(item)
     return result
 
 
-@router.get("/{name}", dependencies=[Depends(require_role(*_RO))])
-async def get_workflow(name: str, request: Request):
+@router.get("/{name}")
+async def get_workflow(
+    name: str, request: Request, user: CurrentUser = Depends(require_role(*_RO))
+):
     job_manager = request.app.state.job_manager
     meta = job_manager.get_meta(name)
     if not meta:
@@ -117,7 +121,7 @@ async def get_workflow(name: str, request: Request):
         "concurrency": meta.concurrency.value,
         "docstring": meta.docstring,
     }
-    if hasattr(meta, "token") and meta.token:
+    if user.role in _RW and hasattr(meta, "token") and meta.token:
         result["token"] = meta.token
     return result
 

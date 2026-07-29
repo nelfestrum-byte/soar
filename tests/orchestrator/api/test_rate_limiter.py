@@ -11,8 +11,41 @@ from orchestrator.core.queue.memory import InMemoryQueue
 from orchestrator.core.scheduler import OrchestratorScheduler
 from orchestrator.core.subprocess_runner import SubprocessRunner
 from orchestrator.core.worker_pool import WorkerPool
-from orchestrator.main import app
+from orchestrator.main import RateLimiter, app
 from orchestrator.store.job_store import JobStore
+
+
+# --- M2: RateLimiter._requests must not grow without bound ---
+
+
+def test_rate_limiter_sweeps_stale_keys(monkeypatch):
+    fake_now = [1000.0]
+    monkeypatch.setattr(time, "monotonic", lambda: fake_now[0])
+    limiter = RateLimiter(max_requests=5, window=60.0)
+
+    for i in range(50):
+        limiter.is_allowed(f"1.2.3.{i}")
+    assert len(limiter._requests) == 50
+
+    # Advance past the window and past the sweep interval — a fresh key's
+    # is_allowed() call should trigger a sweep that evicts the 50 stale entries.
+    fake_now[0] = 1000.0 + 61.0
+    limiter.is_allowed("9.9.9.9")
+    assert len(limiter._requests) == 1
+    assert "9.9.9.9" in limiter._requests
+
+
+def test_rate_limiter_keeps_active_keys_across_sweep(monkeypatch):
+    fake_now = [1000.0]
+    monkeypatch.setattr(time, "monotonic", lambda: fake_now[0])
+    limiter = RateLimiter(max_requests=5, window=60.0)
+
+    limiter.is_allowed("active")
+
+    fake_now[0] = 1000.0 + 61.0
+    limiter.is_allowed("active")  # still within its own new window
+    limiter.is_allowed("trigger-sweep")
+    assert "active" in limiter._requests
 
 
 def _setup_state(trusted_proxies: list[str]):

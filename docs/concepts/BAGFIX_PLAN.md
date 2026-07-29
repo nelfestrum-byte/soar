@@ -19,13 +19,14 @@
 |---------|-------|---------|
 | B (блокеры) | 4 | 4 |
 | S (существенные) | 8 | 8 |
-| M (мелкие) | 13 | 0 |
+| M (мелкие) | 13 | 13 |
 | D (документация) | 8 | 8 |
 
 **Критерий выхода на пилот: все B закрыты.** ✅ Достигнуто 2026-07-28 — все
 B1-B4 и, вместе с ними, все S1-S8 и D1-D8 реализованы через цикл
 `specs/ → plans/ → reports/` (см. ссылки на отчёты в каждом пункте ниже).
-M чинятся во время пилота, вне этого прохода.
+M1-M13 закрыты точечными правками 2026-07-29 (без отдельного цикла
+specs/plans/reports — см. правило в шапке файла), тесты — зелёные.
 
 ---
 
@@ -295,19 +296,23 @@ AGENTS.md утверждает, что `record()` вызывается «из к
 
 ## M. Мелкие — по ходу пилота
 
-- [ ] **M1.** `HttpClient` логирует полный URL с query-string — при переходе TI-коннекторов на него API-ключи вида `?apikey=...` попадут в лог. Редактировать query-параметры перед логированием. `soar/tools/http_client.py:145,159`
-- [ ] **M2.** `RateLimiter._requests` — `defaultdict`, ключи-IP никогда не удаляются, растёт неограниченно. `orchestrator/main.py:225-237`
-- [ ] **M3.** `GET /connectors/preview` вызывает `preview_spec(Request, body)` — передаёт **класс** `Request`, а не инстанс; работает только потому, что аргумент не используется. `orchestrator/api/connectors.py:332`
-- [ ] **M4.** SSRF-guard резолвит DNS, затем httpx резолвит повторно — окно DNS-rebinding (смягчено `follow_redirects=False`). `orchestrator/api/connectors.py:290-315`, `soar/tools/http_client.py:80-105`
-- [ ] **M5.** `stream_log` открывает `job.log_path` без проверки существования → 500 внутри SSE-генератора. `orchestrator/api/logs.py:39`
-- [ ] **M6.** `handle_webhook`: `await request.json()` без try → 500 на невалидном JSON от внешней системы. `orchestrator/api/webhooks.py:32`
-- [ ] **M7.** `ConcurrencyPolicy.QUEUE` + `SQLQueue` = вечный цикл: `pop()` уже ставит `RUNNING`, а busy-wait ждёт «нет RUNNING». Латентно — `load_workflow_metas` никогда не назначает `QUEUE`. `orchestrator/core/worker.py:47-49`, `orchestrator/core/queue/sql_queue.py:56-60`
-- [ ] **M8.** `decode_access_token` → `int(payload["sub"])` без защиты: токен, подписанный тем же ключом, но без `sub`, даёт 500 вместо 401. `orchestrator/auth/dependencies.py:42`
-- [ ] **M9.** `soar/connectors/irp/` — пустая директория (только `__pycache__`), светится в `GET /connectors` как коннектор без кода
-- [ ] **M10.** Redis остаётся в `deploy/prod/docker-compose.yml:3-13` после перехода на `queue.backend: sql` — неиспользуемый компонент в проде
-- [ ] **M11.** Прод публикует `8000:8000` без TLS; JWT и пароли ходят открытым текстом, если снаружи нет своего LB. Явный пункт runbook'а. `deploy/prod/docker-compose.yml:33-34`
-- [ ] **M12.** `job.context` (payload вебхука целиком) хранится в БД и отдаётся роли `viewer` через `GET /jobs`. `orchestrator/models/job.py:38-51`, `orchestrator/api/jobs.py:41`
-- [ ] **M13.** `GET /workflows` отдаёт webhook-токен (`token`, если задан) роли `viewer` — самой низкопривилегированной read-only роли достаётся credential уровня «запустить произвольный workflow без дальнейшей авторизации» (см. `orchestrator/api/webhooks.py:28` — токен единственная защита эндпоинта). Найдено при работе над `docs/compose/specs/2026-07-29-ui-control-visibility-design.md` (стадия 3, отображение webhook-URL в UI) — UI периметр не расширяет (значение и так читаемо через DevTools любым авторизованным `viewer`), но сама раздача токена такой роли — самостоятельный найденный баг бэкенда. `orchestrator/api/workflows.py:80,96-97` (`_RO`, `if hasattr(m, "token") and m.token: item["token"] = m.token`)
+> Закрыты 2026-07-29 точечными правками (без отдельного цикла specs/plans/reports,
+> как и предписано правилом в шапке файла) — тесты зелёные, полный прогон
+> `pytest tests/` не показал регрессий (780 passed, 1 skipped).
+
+- [x] **M1.** `HttpClient` логирует полный URL с query-string — при переходе TI-коннекторов на него API-ключи вида `?apikey=...` попадут в лог. Редактировать query-параметры перед логированием. `soar/tools/http_client.py:145,159` — **закрыто**: добавлена `_log_safe_url()` (обрезает query/fragment), применена во всех 4 местах логирования (`HttpClient`/`SyncHttpClient` × GET/POST), тесты на нередактированный `apikey` в `tests/soar/tools/test_http_client.py`.
+- [x] **M2.** `RateLimiter._requests` — `defaultdict`, ключи-IP никогда не удаляются, растёт неограниченно. `orchestrator/main.py:225-237` — **закрыто**: добавлен `_sweep()`, вызывается из `is_allowed()` не чаще раза за `window`, удаляет ключи с полностью устаревшими таймстемпами; тесты в `tests/orchestrator/api/test_rate_limiter.py`.
+- [x] **M3.** `GET /connectors/preview` вызывает `preview_spec(Request, body)` — передаёт **класс** `Request`, а не инстанс; работает только потому, что аргумент не используется. `orchestrator/api/connectors.py:332` — **закрыто**: `preview_spec_url` теперь принимает `request: Request` и передаёт реальный инстанс; regression-тест `test_preview_spec_url` в `tests/orchestrator/api/test_connectors_api.py`.
+- [x] **M4.** SSRF-guard резолвит DNS, затем httpx резолвит повторно — окно DNS-rebinding (смягчено `follow_redirects=False`). `orchestrator/api/connectors.py:290-315`, `soar/tools/http_client.py:80-105` — **закрыто как принятый остаточный риск** (по аналогии с P5/P6/P10/P11/P15): полноценный фикс требует IP-pinning (кастомный transport поверх httpx) ради TOCTOU-окна, эксплуатируемого только при контроле над DNS того же вызывающего процесса — не сочтено оправданным на фоне сложности/хрупкости; решение задокументировано в докстрингах обеих `_validate_external_url`.
+- [x] **M5.** `stream_log` открывает `job.log_path` без проверки существования → 500 внутри SSE-генератора. `orchestrator/api/logs.py:39` — **закрыто**: генератор ждёт появления файла (тот же поллинг-паттерн, что и ожидание новых строк), выходит без ошибки, если джоба уже в терминальном статусе и файл так и не появился; тест `test_log_stream_file_not_yet_created_terminal_job_ends_cleanly`.
+- [x] **M6.** `handle_webhook`: `await request.json()` без try → 500 на невалидном JSON от внешней системы. `orchestrator/api/webhooks.py:32` — **закрыто**: обёрнуто в `try/except ValueError` → 400; тест `test_webhook_invalid_json_body_returns_400`.
+- [x] **M7.** `ConcurrencyPolicy.QUEUE` + `SQLQueue` = вечный цикл: `pop()` уже ставит `RUNNING`, а busy-wait ждёт «нет RUNNING». Латентно — `load_workflow_metas` никогда не назначает `QUEUE`. `orchestrator/core/worker.py:47-49`, `orchestrator/core/queue/sql_queue.py:56-60` — **закрыто**: `count_by_status` получил `exclude_job_id`, busy-wait в `worker.py` исключает свою же джобу из подсчёта `RUNNING`; regression-тест `test_queue_policy_does_not_deadlock_on_sql_queue_self_claim` (без фикса зависал бы — обёрнут в `asyncio.wait_for`).
+- [x] **M8.** `decode_access_token` → `int(payload["sub"])` без защиты: токен, подписанный тем же ключом, но без `sub`, даёт 500 вместо 401. `orchestrator/auth/dependencies.py:42` — **закрыто**: `int(payload["sub"])` обёрнут в `try/except (KeyError, TypeError, ValueError)` → 401 + `auth.invalid_token_claims`; тесты на отсутствующий и нечисловой `sub` в `tests/orchestrator/auth/test_security_event_logging.py`.
+- [x] **M9.** `soar/connectors/irp/` — пустая директория (только `__pycache__`), светится в `GET /connectors` как коннектор без кода — **уже закрыто до этого прохода**: директория отсутствует в дереве (см. `docs/compose/plans/2026-07-10-remove-irp-tools-api.md`), проверено `git`/`glob` — нечего чинить.
+- [x] **M10.** Redis остаётся в `deploy/prod/docker-compose.yml:3-13` после перехода на `queue.backend: sql` — неиспользуемый компонент в проде — **закрыто документацией, не удалением**: сервис остаётся намеренно доступным для опционального `soar.http_client.cache_backend: redis` (см. прецедент в `deploy/stage/README.md` → «Queue Backend Configuration»); добавлен аналогичный поясняющий комментарий в `deploy/prod/docker-compose.yml`.
+- [x] **M11.** Прод публикует `8000:8000` без TLS; JWT и пароли ходят открытым текстом, если снаружи нет своего LB. Явный пункт runbook'а. `deploy/prod/docker-compose.yml:33-34` — **закрыто**: явный пункт добавлен в `deploy/prod/README.md` рядом с чеклистом `cors_origins`/`trusted_proxies`.
+- [x] **M12.** `job.context` (payload вебхука целиком) хранится в БД и отдаётся роли `viewer` через `GET /jobs`. `orchestrator/models/job.py:38-51`, `orchestrator/api/jobs.py:41` — **закрыто**: `GET /jobs` и `GET /jobs/{id}` теперь резолвят `CurrentUser` и вырезают `context` из ответа для роли `viewer` (`analyst`+ видят как раньше); тесты в `tests/orchestrator/api/test_jobs_api.py`.
+- [x] **M13.** `GET /workflows` отдаёт webhook-токен (`token`, если задан) роли `viewer` — самой низкопривилегированной read-only роли достаётся credential уровня «запустить произвольный workflow без дальнейшей авторизации» (см. `orchestrator/api/webhooks.py:28` — токен единственная защита эндпоинта). Найдено при работе над `docs/compose/specs/2026-07-29-ui-control-visibility-design.md` (стадия 3, отображение webhook-URL в UI) — UI периметр не расширяет (значение и так читаемо через DevTools любым авторизованным `viewer`), но сама раздача токена такой роли — самостоятельный найденный баг бэкенда. `orchestrator/api/workflows.py:80,96-97` (`_RO`, `if hasattr(m, "token") and m.token: item["token"] = m.token`) — **закрыто**: `token` теперь включается только если `user.role in _RW` (`analyst`/`admin`/`agent`); тесты в `tests/orchestrator/api/test_workflows_api.py`.
 
 ---
 

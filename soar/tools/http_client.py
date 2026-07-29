@@ -78,7 +78,18 @@ def _is_private_ip(ip_str: str) -> bool:
 
 
 def _validate_external_url(url: str) -> None:
-    """Block requests to internal/private IP ranges, including via DNS."""
+    """Block requests to internal/private IP ranges, including via DNS.
+
+    M4 (docs/concepts/BAGFIX_PLAN.md): this resolves the hostname to validate
+    it, then httpx resolves it *again* when it actually connects — a DNS
+    answer that changes between the two lookups (rebinding) could still slip
+    an internal IP through. `follow_redirects=False` closes the more
+    practical redirect-based variant of this; the two-lookup TOCTOU window
+    itself is accepted as residual risk rather than fixed via IP pinning
+    (would require overriding httpx's connection target, e.g. a custom
+    transport, and is judged not worth that complexity/fragility for a
+    same-process trusted-workflow caller — see accepted-risk precedent for
+    P5/P6/P10/P11/P15 in docs/concepts/UPGRADE-v2.md)."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError("Only HTTP/HTTPS URLs allowed")
@@ -103,6 +114,12 @@ def _validate_external_url(url: str) -> None:
         addr_ip = result[4][0]
         if _is_private_ip(addr_ip):
             raise ValueError("Requests to internal IPs are not allowed")
+
+
+def _log_safe_url(url: str) -> str:
+    """Strip query string before logging — TI APIs commonly pass API keys
+    as `?apikey=...`/`?token=...` query params (M1)."""
+    return urlparse(url)._replace(query="", fragment="").geturl()
 
 
 def _cache_key(url: str, headers: dict) -> str:
@@ -143,14 +160,14 @@ class HttpClient:
         key = self._key(url, headers) if self._cache and cached else None
         if key:
             if (hit := self._cache.get(key)) is not None:
-                _log.debug(f"http cache hit: {url}")
+                _log.debug(f"http cache hit: {_log_safe_url(url)}")
                 return hit
         start = time.monotonic()
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(url, headers=headers, follow_redirects=False)
             resp.raise_for_status()
         duration_ms = int((time.monotonic() - start) * 1000)
-        _log.info(f"http GET {url} status={resp.status_code} duration_ms={duration_ms}")
+        _log.info(f"http GET {_log_safe_url(url)} status={resp.status_code} duration_ms={duration_ms}")
         data = resp.json()
         if key:
             self._cache.set(key, data, self._ttl_for(url, ttl))
@@ -164,7 +181,7 @@ class HttpClient:
             resp = await client.post(url, json=payload, headers=headers or {}, follow_redirects=False)
             resp.raise_for_status()
         duration_ms = int((time.monotonic() - start) * 1000)
-        _log.info(f"http POST {url} status={resp.status_code} duration_ms={duration_ms}")
+        _log.info(f"http POST {_log_safe_url(url)} status={resp.status_code} duration_ms={duration_ms}")
         return resp.json()
 
 
@@ -195,14 +212,14 @@ class SyncHttpClient:
         key = _cache_key(url, headers) if self._cache and cached else None
         if key:
             if (hit := self._cache.get(key)) is not None:
-                _log.debug(f"http cache hit: {url}")
+                _log.debug(f"http cache hit: {_log_safe_url(url)}")
                 return hit
         start = time.monotonic()
         with httpx.Client(timeout=30, verify=verify) as client:
             resp = client.get(url, headers=headers, follow_redirects=False)
             resp.raise_for_status()
         duration_ms = int((time.monotonic() - start) * 1000)
-        _log.info(f"http GET {url} status={resp.status_code} duration_ms={duration_ms}")
+        _log.info(f"http GET {_log_safe_url(url)} status={resp.status_code} duration_ms={duration_ms}")
         data = resp.json()
         if key:
             self._cache.set(key, data, _ttl_for(self._domain_ttl, self._default_ttl, url, ttl))
@@ -218,5 +235,5 @@ class SyncHttpClient:
             resp = client.post(url, json=payload, headers=headers or {}, follow_redirects=False)
             resp.raise_for_status()
         duration_ms = int((time.monotonic() - start) * 1000)
-        _log.info(f"http POST {url} status={resp.status_code} duration_ms={duration_ms}")
+        _log.info(f"http POST {_log_safe_url(url)} status={resp.status_code} duration_ms={duration_ms}")
         return resp.json()

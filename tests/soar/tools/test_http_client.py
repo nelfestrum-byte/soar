@@ -222,6 +222,21 @@ async def test_get_json_validates_url_before_request():
         await http_client.get_json("http://10.0.0.1/x")
 
 
+async def test_get_json_logs_redact_query_string(log_records):
+    client_ctx, _ = _mock_async_client({"result": "ok"})
+    http_client = HttpClient()
+    url = "https://api.example.com/v1/ip/1.2.3.4?apikey=SUPERSECRET"
+
+    with patch("soar.tools.http_client.httpx.AsyncClient", return_value=client_ctx), \
+            patch("socket.getaddrinfo", return_value=_make_addrinfo("8.8.8.8")):
+        await http_client.get_json(url)
+
+    info_records = [r for r in log_records if r["level"].name == "INFO"]
+    assert len(info_records) == 1
+    assert "SUPERSECRET" not in info_records[0]["message"]
+    assert "apikey" not in info_records[0]["message"]
+
+
 # --- HttpClient.post_json ---
 
 
@@ -311,6 +326,21 @@ def test_sync_get_json_validates_url_before_request():
     http_client = SyncHttpClient()
     with pytest.raises(ValueError):
         http_client.get_json("http://10.0.0.1/x")
+
+
+def test_sync_get_json_logs_redact_query_string(log_records):
+    client_ctx, _ = _mock_sync_client({"result": "ok"})
+    http_client = SyncHttpClient()
+    url = "https://api.example.com/v1/ip/1.2.3.4?apikey=SUPERSECRET"
+
+    with patch("soar.tools.http_client.httpx.Client", return_value=client_ctx), \
+            patch("socket.getaddrinfo", return_value=_make_addrinfo("8.8.8.8")):
+        http_client.get_json(url)
+
+    info_records = [r for r in log_records if r["level"].name == "INFO"]
+    assert len(info_records) == 1
+    assert "SUPERSECRET" not in info_records[0]["message"]
+    assert "apikey" not in info_records[0]["message"]
 
 
 def test_sync_get_json_default_verify_true():

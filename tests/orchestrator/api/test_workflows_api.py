@@ -41,6 +41,68 @@ async def test_get_workflow_not_found():
         assert r.status_code == 404
 
 
+def _viewer() -> CurrentUser:
+    return CurrentUser(id=9, role="viewer", type="user", username="test_viewer")
+
+
+def _analyst() -> CurrentUser:
+    return CurrentUser(id=2, role="analyst", type="user", username="test_analyst")
+
+
+@pytest.mark.asyncio
+async def test_get_workflow_hides_token_from_viewer():
+    """M13: the webhook token is the only thing guarding that workflow's
+    trigger endpoint — `viewer` (the lowest-privilege read-only role) must
+    not receive it."""
+    from orchestrator.models import ConcurrencyPolicy
+    from orchestrator.models.workflow_meta import WorkflowMeta
+
+    meta = WorkflowMeta(
+        name="token_wf", type="webhook", enabled=True,
+        path="/webhook/token_wf", token="super-secret-token",
+        timeout=300, concurrency=ConcurrencyPolicy.ALLOW,
+    )
+    app.state.job_manager.set_metas([meta])
+
+    app.dependency_overrides[get_current_user] = _viewer
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            r = await c.get("/workflows/token_wf")
+            assert r.status_code == 200
+            assert "token" not in r.json()
+
+            r = await c.get("/workflows")
+            assert r.status_code == 200
+            item = next(w for w in r.json() if w["name"] == "token_wf")
+            assert "token" not in item
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.mark.asyncio
+async def test_get_workflow_keeps_token_for_analyst():
+    from orchestrator.models import ConcurrencyPolicy
+    from orchestrator.models.workflow_meta import WorkflowMeta
+
+    meta = WorkflowMeta(
+        name="token_wf_analyst", type="webhook", enabled=True,
+        path="/webhook/token_wf_analyst", token="super-secret-token",
+        timeout=300, concurrency=ConcurrencyPolicy.ALLOW,
+    )
+    app.state.job_manager.set_metas([meta])
+
+    app.dependency_overrides[get_current_user] = _analyst
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            r = await c.get("/workflows/token_wf_analyst")
+            assert r.status_code == 200
+            assert r.json()["token"] == "super-secret-token"
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
 @pytest.mark.asyncio
 async def test_enable_workflow_not_found():
     transport = ASGITransport(app=app)

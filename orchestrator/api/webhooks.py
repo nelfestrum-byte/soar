@@ -33,7 +33,11 @@ async def handle_webhook(workflow_name: str, request: Request, db: AsyncSession 
     if not meta.enabled:
         raise HTTPException(status_code=409, detail="Workflow is disabled")
 
-    body = await request.json()
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid JSON body") from None
+
     try:
         job = await job_manager.enqueue(
             workflow_name=workflow_name,

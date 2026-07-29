@@ -81,6 +81,34 @@ async def test_webhook_disabled():
 
 
 @pytest.mark.asyncio
+async def test_webhook_invalid_json_body_returns_400():
+    """M6: `await request.json()` had no error handling — malformed JSON from
+    an external caller crashed with a 500 instead of a clean 400."""
+    from orchestrator.models import ConcurrencyPolicy
+    from orchestrator.models.workflow_meta import WorkflowMeta
+
+    meta = WorkflowMeta(
+        name="bad_json_wh",
+        type="webhook",
+        enabled=True,
+        path="bad_json_wh",
+        token="validtoken",
+        timeout=300,
+        concurrency=ConcurrencyPolicy.ALLOW,
+    )
+    app.state.job_manager.set_metas([meta])
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.post(
+            "/webhooks/bad_json_wh",
+            content=b"{not valid json",
+            headers={"X-Webhook-Token": "validtoken", "Content-Type": "application/json"},
+        )
+        assert r.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_webhook_success_writes_audit_log():
     from orchestrator.models import ConcurrencyPolicy
     from orchestrator.models.workflow_meta import WorkflowMeta

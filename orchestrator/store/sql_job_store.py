@@ -55,11 +55,15 @@ class SQLJobStore(AbstractJobStore):
             result = await session.execute(stmt)
             return [record_to_job(r) for r in result.scalars().all()]
 
-    async def count_by_status(self, workflow_name: str, statuses: list[JobStatus]) -> int:  # type: ignore[valid-type]
+    async def count_by_status(
+        self, workflow_name: str, statuses: list[JobStatus], exclude_job_id: str | None = None  # type: ignore[valid-type]
+    ) -> int:
         stmt = select(func.count()).select_from(JobRecord).where(
             JobRecord.workflow_name == workflow_name,
             JobRecord.status.in_([s.value for s in statuses]),  # type: ignore[attr-defined]
         )
+        if exclude_job_id:
+            stmt = stmt.where(JobRecord.id != exclude_job_id)
         async with self._session_factory() as session:
             result = await session.execute(stmt)
             return int(result.scalar_one())

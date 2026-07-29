@@ -3,10 +3,26 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from orchestrator.audit.models import AuditLog
+from orchestrator.auth.dependencies import CurrentUser, get_current_user
 from orchestrator.main import app
 from orchestrator.models import ConcurrencyPolicy
 from orchestrator.models.job import WorkflowJob
 from orchestrator.models.workflow_meta import WorkflowMeta
+
+
+def _viewer() -> CurrentUser:
+    return CurrentUser(id=9, role="viewer", type="user", username="test_viewer")
+
+
+def _analyst() -> CurrentUser:
+    return CurrentUser(id=2, role="analyst", type="user", username="test_analyst")
+
+
+@pytest.fixture
+def as_viewer():
+    app.dependency_overrides[get_current_user] = _viewer
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.mark.asyncio
@@ -114,6 +130,49 @@ async def test_create_job_not_found_writes_no_audit_log():
     async with app.state.db_session_factory() as session:
         after = len(list((await session.execute(select(AuditLog))).scalars()))
     assert after == before
+
+
+@pytest.mark.asyncio
+async def test_get_job_strips_context_for_viewer(as_viewer):
+    """M12: job.context is the raw webhook payload / user-supplied context —
+    it may carry secrets and isn't redacted. The lowest-privilege read-only
+    role must not see it; analyst+ still do."""
+    job = WorkflowJob(workflow_name="ctx_wf", context={"secret": "shhh"})
+    await app.state.job_store.save(job)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get(f"/jobs/{job.id}")
+        assert r.status_code == 200
+        assert "context" not in r.json()
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_strips_context_for_viewer(as_viewer):
+    job = WorkflowJob(workflow_name="ctx_wf_list", context={"secret": "shhh"})
+    await app.state.job_store.save(job)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/jobs", params={"workflow_name": "ctx_wf_list"})
+        assert r.status_code == 200
+        assert all("context" not in j for j in r.json())
+
+
+@pytest.mark.asyncio
+async def test_get_job_keeps_context_for_analyst():
+    app.dependency_overrides[get_current_user] = _analyst
+    try:
+        job = WorkflowJob(workflow_name="ctx_wf_analyst", context={"secret": "shhh"})
+        await app.state.job_store.save(job)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            r = await c.get(f"/jobs/{job.id}")
+            assert r.status_code == 200
+            assert r.json()["context"] == {"secret": "shhh"}
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 @pytest.mark.asyncio

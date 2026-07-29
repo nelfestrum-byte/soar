@@ -43,9 +43,14 @@ class Worker:
             logger.info(f"Skipping cancelled job {job.id}")
             return
 
-        # QUEUE policy: wait until no other job of this workflow is RUNNING
+        # QUEUE policy: wait until no *other* job of this workflow is RUNNING.
+        # SQLQueue.pop() claims by setting this job's own row to RUNNING before
+        # it ever reaches the worker (unlike InMemoryQueue) — counting without
+        # exclude_job_id would count the job against itself and spin forever (M7).
         if job.concurrency == ConcurrencyPolicy.QUEUE:
-            while await self.job_store.count_by_status(job.workflow_name, [JobStatus.RUNNING]) > 0:
+            while await self.job_store.count_by_status(
+                job.workflow_name, [JobStatus.RUNNING], exclude_job_id=job.id
+            ) > 0:
                 await asyncio.sleep(1.0)
             # Re-check job wasn't cancelled while waiting
             current = await self.job_store.get(job.id)

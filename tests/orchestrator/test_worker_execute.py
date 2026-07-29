@@ -8,6 +8,7 @@ import pytest
 
 from orchestrator.core.queue.memory import InMemoryQueue
 from orchestrator.core.worker import Worker
+from orchestrator.models import ConcurrencyPolicy
 from orchestrator.models.job import JobStatus, WorkflowJob
 from orchestrator.store.job_store import JobStore
 
@@ -181,3 +182,34 @@ async def test_execute_cancel_not_overwritten_by_failed(worker_deps):
     saved = await job_store.get("j_cancel")
     assert saved is not None
     assert saved.status == JobStatus.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_queue_policy_does_not_deadlock_on_sql_queue_self_claim(worker_deps):
+    """M7: SQLQueue.pop() claims a job by setting its own row to RUNNING
+    *before* handing it to the worker (unlike InMemoryQueue, which claims
+    later inside _execute). For ConcurrencyPolicy.QUEUE this used to make the
+    busy-wait `count_by_status(workflow_name, [RUNNING]) > 0` count the job
+    against itself forever. Reproduce that pre-claimed state directly and
+    assert _execute completes instead of spinning."""
+    queue, job_store, runner = worker_deps
+    worker = Worker(0, queue, runner, job_store, default_timeout=30)
+
+    proc = AsyncMock()
+    proc.pid = 55
+    proc.communicate.return_value = (b"", b"")
+    proc.returncode = 0
+    runner.start.return_value = proc
+
+    job = WorkflowJob(
+        id="j_queue_self",
+        workflow_name="queue_wf",
+        context={},
+        concurrency=ConcurrencyPolicy.QUEUE,
+        status=JobStatus.RUNNING,  # already claimed by SQLQueue.pop() before _execute runs
+    )
+    await job_store.save(job)
+
+    await asyncio.wait_for(worker._execute(job), timeout=5.0)
+
+    assert job.status == JobStatus.COMPLETED

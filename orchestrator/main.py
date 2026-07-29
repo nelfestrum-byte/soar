@@ -227,14 +227,27 @@ class RateLimiter:
         self._requests: dict[str, list[float]] = defaultdict(list)
         self._max = max_requests
         self._window = window
+        self._last_sweep = time.monotonic()
 
     def is_allowed(self, key: str) -> bool:
         now = time.monotonic()
         self._requests[key] = [t for t in self._requests[key] if now - t < self._window]
-        if len(self._requests[key]) >= self._max:
-            return False
-        self._requests[key].append(now)
-        return True
+        allowed = len(self._requests[key]) < self._max
+        if allowed:
+            self._requests[key].append(now)
+        self._sweep(now)
+        return allowed
+
+    def _sweep(self, now: float) -> None:
+        # Every distinct key (client IP) is a permanent dict entry once seen —
+        # without eviction this grows without bound (M2). At most once per
+        # window, drop keys whose requests have all aged out.
+        if now - self._last_sweep < self._window:
+            return
+        self._last_sweep = now
+        stale = [k for k, ts in self._requests.items() if not ts or now - ts[-1] >= self._window]
+        for k in stale:
+            del self._requests[k]
 
 
 # Use specific origins when credentials are involved (browsers reject "*" + credentials)

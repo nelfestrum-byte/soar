@@ -292,7 +292,11 @@ def _is_private_ip(ip_str: str) -> bool:
 
 
 def _validate_external_url(url: str) -> None:
-    """Block requests to internal/private IP ranges, including via DNS."""
+    """Block requests to internal/private IP ranges, including via DNS.
+
+    M4 (docs/concepts/BAGFIX_PLAN.md): same DNS-rebinding TOCTOU window as
+    `soar/tools/http_client.py::_validate_external_url` — see that docstring
+    for why it's accepted as residual risk rather than fixed via IP pinning."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise HTTPException(status_code=400, detail="Only HTTP/HTTPS URLs allowed")
@@ -320,7 +324,7 @@ def _validate_external_url(url: str) -> None:
 
 
 @router.get("/preview", dependencies=[Depends(require_role(*_RW))])
-async def preview_spec_url(url: str):
+async def preview_spec_url(url: str, request: Request):
     _validate_external_url(url)
     import httpx
     try:
@@ -333,7 +337,7 @@ async def preview_spec_url(url: str):
 
     # Reuse POST preview logic
     body = PreviewRequest(spec=spec_text)
-    return await preview_spec(Request, body)
+    return await preview_spec(request, body)
 
 
 @router.post("/generate")

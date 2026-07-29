@@ -1,5 +1,7 @@
 import json
 import os
+import socket
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -425,6 +427,35 @@ async def test_preview_invalid_spec():
             json={"spec": "not valid"},
         )
         assert r.status_code == 400
+
+
+def _make_addrinfo(ip: str):
+    return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", (ip, 80))]
+
+
+@pytest.mark.asyncio
+async def test_preview_spec_url():
+    """M3: GET /connectors/preview passed the `Request` class instead of the
+    request instance into preview_spec() — harmless only because preview_spec
+    never reads that argument. Regression-guard the URL-fetch path end to end."""
+    resp = MagicMock()
+    resp.text = SAMPLE_SPEC_JSON
+    resp.raise_for_status = MagicMock()
+    fetch_client = AsyncMock()
+    fetch_client.get = AsyncMock(return_value=resp)
+    ctx = AsyncMock()
+    ctx.__aenter__.return_value = fetch_client
+    ctx.__aexit__.return_value = False
+
+    transport = ASGITransport(app=app)
+    with patch("httpx.AsyncClient", return_value=ctx), \
+            patch("socket.getaddrinfo", return_value=_make_addrinfo("8.8.8.8")):
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            r = await c.get("/connectors/preview", params={"url": "https://spec.example.com/openapi.json"})
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["title"] == "Test API"
 
 
 @pytest.mark.asyncio

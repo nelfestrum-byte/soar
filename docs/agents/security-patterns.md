@@ -84,7 +84,8 @@ credential, но по-прежнему правит не-hidden поля нар�
 
 ### API hardening
 - `DELETE /workflows/{name}/code` — cleanup `orchestrator_state.yaml` перед reload
-- `GET /workflows/{name}` и `GET /workflows` — webhook token в response dict
+- `GET /workflows/{name}` и `GET /workflows` — webhook token в response dict, но только если `user.role in _RW` (`analyst`/`admin`/`agent`) — `viewer` его не видит (M13, `docs/concepts/BAGFIX_PLAN.md`): токен — единственная защита `POST /webhooks/{name}`, отдавать его read-only роли было равносильно выдаче credential на запуск произвольного workflow
+- `GET /jobs` и `GET /jobs/{id}` — `job.context` (сырой payload вебхука/пользовательский context, не редактируется как hidden-поля коннекторов) вырезается из ответа для `viewer` (M12); `analyst`+ видят как раньше
 - `POST /jobs` — отдельный 409 для disabled workflow (`WorkflowDisabledError`)
 - `POST /transfer/import` — Zip Slip protection (path traversal + `..` check), name validation
 - `GET /connectors/preview` — SSRF protection: блокировка internal/private IPs и localhost

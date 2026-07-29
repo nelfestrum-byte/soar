@@ -38,8 +38,17 @@ async def get_current_user(request: Request) -> CurrentUser:
     # Try JWT first — no DB needed
     payload = decode_access_token(token, config.auth.secret_key, config.auth.algorithm)
     if payload and payload.get("type") == "user":
+        try:
+            user_id = int(payload["sub"])
+        except (KeyError, TypeError, ValueError):
+            # Correctly signed token missing/malformed `sub` (M8) — treat as
+            # invalid credentials (401) instead of a raw KeyError/ValueError (500).
+            logger.bind(client_ip=resolve_client_ip(request), path=request.url.path).warning(
+                "auth.invalid_token_claims"
+            )
+            raise HTTPException(status_code=401, detail="Invalid credentials") from None
         return _remember_identity(request, CurrentUser(
-            id=int(payload["sub"]),
+            id=user_id,
             role=payload.get("role", "viewer"),
             type="user",
         ))

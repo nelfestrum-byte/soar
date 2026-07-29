@@ -36,6 +36,16 @@ async def stream_log(job_id: str, request: Request):
         raise HTTPException(status_code=404, detail="No log path for job")
 
     async def event_generator():
+        # log_path is assigned at enqueue time but the file itself is only
+        # created once the worker picks up the job (SubprocessRunner.start) —
+        # a stream opened while the job is still PENDING would otherwise hit
+        # open()'s FileNotFoundError mid-generator (M5).
+        while not os.path.exists(job.log_path):
+            current_job = await job_store.get(job_id)
+            if current_job and current_job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
+                return
+            await asyncio.sleep(0.5)
+
         with open(job.log_path) as f:
             while True:
                 line = f.readline()
