@@ -2,7 +2,7 @@
   <div>
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
       <h2 style="margin:0;">Workflows</h2>
-      <button class="btn btn-primary" @click="showNew = true">New Workflow</button>
+      <button v-if="canWrite" class="btn btn-primary" @click="showNew = true">New Workflow</button>
     </div>
 
     <div v-if="showNew" class="card" style="margin-bottom:12px;">
@@ -26,29 +26,62 @@
     <template v-else>
       <div class="card">
         <table>
-          <tr><th>Name</th><th>Type</th><th>Status</th><th>Actions</th></tr>
-          <tr v-for="wf in fileWorkflows" :key="wf.name">
-            <td style="font-family:monospace;">{{ wf.name }}.py</td>
-            <td><span class="badge" :class="'badge-'+wf.type">{{ wf.type }}</span></td>
-            <td>
-              <template v-if="wf.meta">
-                <span v-if="wf.meta.enabled" class="badge badge-completed">enabled</span>
-                <span v-else class="badge badge-cancelled">disabled</span>
-              </template>
-              <span v-else class="loading">—</span>
-            </td>
-            <td style="white-space:nowrap;">
-              <template v-if="wf.meta">
-                <button v-if="wf.meta.enabled" class="btn btn-danger" style="font-size:11px;" @click="toggle(wf.className, false)">Disable</button>
-                <button v-else class="btn btn-success" style="font-size:11px;" @click="toggle(wf.className, true)">Enable</button>
-              </template>
-              <button class="btn btn-primary" style="font-size:11px;" @click="editWorkflow(wf.name)">Edit</button>
-              <button v-if="wf.type === 'manual'" class="btn btn-success" style="font-size:11px;" @click="showRun(wf.className)">Run</button>
-              <router-link v-if="auth.role === 'admin'" class="btn" style="font-size:11px; text-decoration:none;"
-                           :to="{ path: '/audit-log', query: { resource_type: 'workflow', resource_id: wf.name } }">Audit</router-link>
-              <button class="btn btn-danger" style="font-size:11px;" @click="removeWorkflow(wf.name)">Delete</button>
-            </td>
-          </tr>
+          <tr><th></th><th>Name</th><th>Type</th><th>Status</th><th>Actions</th></tr>
+          <template v-for="wf in fileWorkflows" :key="wf.name">
+            <tr>
+              <td style="cursor:pointer; width:16px;" @click="toggleDetail(wf.name)">{{ isOpen(wf.name) ? '▾' : '▸' }}</td>
+              <td style="font-family:monospace; cursor:pointer;" @click="toggleDetail(wf.name)">{{ wf.name }}.py</td>
+              <td><span class="badge" :class="'badge-'+wf.type">{{ wf.type }}</span></td>
+              <td>
+                <template v-if="wf.meta">
+                  <span v-if="wf.meta.enabled" class="badge badge-completed">enabled</span>
+                  <span v-else class="badge badge-cancelled">disabled</span>
+                </template>
+                <span v-else class="loading">—</span>
+              </td>
+              <td style="white-space:nowrap;">
+                <template v-if="wf.meta && canToggle">
+                  <button v-if="wf.meta.enabled" class="btn btn-danger" style="font-size:11px;" @click="toggle(wf.className, false)">Disable</button>
+                  <button v-else class="btn btn-success" style="font-size:11px;" @click="toggle(wf.className, true)">Enable</button>
+                </template>
+                <button class="btn btn-primary" style="font-size:11px;" @click="editWorkflow(wf.name)">{{ canWrite ? 'Edit' : 'View' }}</button>
+                <button v-if="wf.type === 'manual' && canRun" class="btn btn-success" style="font-size:11px;" @click="showRun(wf.className)">Run</button>
+                <router-link class="btn" style="font-size:11px; text-decoration:none;" :to="{ path: '/jobs', query: { workflow_name: wf.name } }">Jobs</router-link>
+                <router-link v-if="can(auth.role, 'audit.read')" class="btn" style="font-size:11px; text-decoration:none;"
+                             :to="{ path: '/audit-log', query: { resource_type: 'workflow', resource_id: wf.name } }">Audit</router-link>
+                <button v-if="canWrite" class="btn btn-danger" style="font-size:11px;" @click="removeWorkflow(wf.name)">Delete</button>
+              </td>
+            </tr>
+            <tr v-if="isOpen(wf.name)" data-test="detail-row">
+              <td></td>
+              <td colspan="4" style="background:#fafafa; font-size:13px;">
+                <p v-if="wf.meta && wf.meta.docstring" style="white-space:pre-wrap; color:#555;">{{ wf.meta.docstring }}</p>
+                <p v-else style="color:#999;">No docstring</p>
+
+                <div v-if="wf.meta" style="display:flex; gap:16px; flex-wrap:wrap; color:#666; margin-bottom:8px;">
+                  <span v-if="wf.meta.schedule">schedule: <code>{{ wf.meta.schedule }}</code></span>
+                  <span v-if="wf.meta.interval">interval: {{ wf.meta.interval }}s</span>
+                  <span v-if="wf.meta.timeout">timeout: {{ wf.meta.timeout }}s</span>
+                  <span v-if="wf.meta.concurrency">concurrency: {{ wf.meta.concurrency }}</span>
+                  <span v-if="nextRunFor(wf.name)">next run: {{ new Date(nextRunFor(wf.name)).toLocaleString() }}</span>
+                </div>
+
+                <div v-if="wf.type === 'webhook' && wf.meta && wf.meta.token">
+                  <div style="display:flex; gap:8px; align-items:center; margin-bottom:4px;">
+                    <code>{{ webhookUrl(location.origin, wf.name) }}</code>
+                    <button class="btn" style="font-size:11px;" @click="copy(webhookUrl(location.origin, wf.name))">Copy URL</button>
+                    <button class="btn" style="font-size:11px;" @click="tokenVisible[wf.name] = !tokenVisible[wf.name]">
+                      {{ tokenVisible[wf.name] ? 'Hide token' : 'Show token' }}
+                    </button>
+                  </div>
+                  <template v-if="tokenVisible[wf.name]">
+                    <pre style="white-space:pre-wrap;">{{ webhookCurl(location.origin, wf.name, wf.meta.token) }}</pre>
+                    <button class="btn" style="font-size:11px;" @click="copy(webhookCurl(location.origin, wf.name, wf.meta.token))">Copy curl</button>
+                  </template>
+                </div>
+              </td>
+            </tr>
+          </template>
         </table>
       </div>
 
@@ -56,17 +89,22 @@
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <h2 style="margin:0;">{{ editName }}.py</h2>
           <div style="display:flex; gap:8px;">
-            <button class="btn btn-primary" @click="saveWorkflow" :disabled="saving">
+            <button class="btn" :class="editTab==='code' ? 'btn-primary' : ''" @click="editTab='code'">Code</button>
+            <button class="btn" :class="editTab==='history' ? 'btn-primary' : ''" @click="editTab='history'">History</button>
+            <button v-if="canWrite && editTab==='code'" class="btn btn-primary" @click="saveWorkflow" :disabled="saving">
               {{ saving ? 'Saving...' : 'Save' }}
             </button>
             <button class="btn" @click="editMode = false">Close</button>
           </div>
         </div>
-        <textarea v-model="content" style="width:100%; min-height:400px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:4;"></textarea>
-        <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
-          <span v-if="saveResult.success" style="color:#2e7d32;">Saved (commit: {{ saveResult.commit }})</span>
-          <span v-else style="color:#c62828;">Error: {{ saveResult.error }}</span>
-        </div>
+        <template v-if="editTab==='code'">
+          <textarea v-model="content" :readonly="!canWrite" style="width:100%; min-height:400px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:4;"></textarea>
+          <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
+            <span v-if="saveResult.success" style="color:#2e7d32;">Saved (commit: {{ saveResult.commit }})</span>
+            <span v-else style="color:#c62828;">Error: {{ saveResult.error }}</span>
+          </div>
+        </template>
+        <HistoryPanel v-else entity="workflow" :name="editName" @restored="editWorkflow(editName)" />
       </div>
 
       <div v-if="runMode" class="card" style="margin-top:12px;">
@@ -91,16 +129,55 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { api } from '../api.js'
 import { auth } from '../store/auth.js'
+import { can } from '../permissions.js'
+import { notify } from '../store/toast.js'
+import HistoryPanel from '../components/HistoryPanel.vue'
+import { webhookUrl, webhookCurl } from '../webhook.js'
+
+const canWrite = computed(() => can(auth.role, 'code.write'))
+const canToggle = computed(() => can(auth.role, 'workflow.toggle'))
+const canRun = computed(() => can(auth.role, 'job.create'))
+
+const location = window.location
 
 const fileWorkflows = ref([])
 const metaMap = ref({})
 const loading = ref(true)
 const error = ref(null)
+const nextRuns = ref([])
+const openNames = ref(new Set())
+const tokenVisible = ref({})
+
+function isOpen(name) {
+  return openNames.value.has(name)
+}
+
+function toggleDetail(name) {
+  const next = new Set(openNames.value)
+  if (next.has(name)) next.delete(name)
+  else next.add(name)
+  openNames.value = next
+}
+
+function nextRunFor(name) {
+  const run = nextRuns.value.find((r) => r.workflow === name)
+  return run ? run.at : null
+}
+
+async function copy(text) {
+  try {
+    await navigator.clipboard.writeText(text)
+    notify.success('Copied')
+  } catch {
+    notify.error('Clipboard unavailable — copy manually')
+  }
+}
 
 const editMode = ref(false)
+const editTab = ref('code')
 const editName = ref('')
 const content = ref('')
 const saving = ref(false)
@@ -134,11 +211,19 @@ async function loadAll() {
     }))
   } catch (e) { error.value = e.message }
   loading.value = false
+
+  try {
+    const status = await api.getStatus()
+    nextRuns.value = status.scheduler.next_runs
+  } catch {
+    // scheduler panel is a nice-to-have here — Status.vue is the source of truth
+  }
 }
 
 async function editWorkflow(name) {
   editName.value = name
   editMode.value = true
+  editTab.value = 'code'
   saveResult.value = null
   try {
     const res = await api.getWorkflowCode(name)
@@ -188,7 +273,7 @@ async function toggle(name, enable) {
     if (enable) await api.enableWorkflow(name)
     else await api.disableWorkflow(name)
     metaMap.value[name].enabled = enable
-  } catch (e) { alert(e.message) }
+  } catch (e) { notify.error(e.message) }
 }
 
 function showRun(name) {

@@ -19,7 +19,7 @@
 |---------|-------|---------|
 | B (блокеры) | 4 | 4 |
 | S (существенные) | 8 | 8 |
-| M (мелкие) | 12 | 0 |
+| M (мелкие) | 13 | 0 |
 | D (документация) | 8 | 8 |
 
 **Критерий выхода на пилот: все B закрыты.** ✅ Достигнуто 2026-07-28 — все
@@ -307,6 +307,7 @@ AGENTS.md утверждает, что `record()` вызывается «из к
 - [ ] **M10.** Redis остаётся в `deploy/prod/docker-compose.yml:3-13` после перехода на `queue.backend: sql` — неиспользуемый компонент в проде
 - [ ] **M11.** Прод публикует `8000:8000` без TLS; JWT и пароли ходят открытым текстом, если снаружи нет своего LB. Явный пункт runbook'а. `deploy/prod/docker-compose.yml:33-34`
 - [ ] **M12.** `job.context` (payload вебхука целиком) хранится в БД и отдаётся роли `viewer` через `GET /jobs`. `orchestrator/models/job.py:38-51`, `orchestrator/api/jobs.py:41`
+- [ ] **M13.** `GET /workflows` отдаёт webhook-токен (`token`, если задан) роли `viewer` — самой низкопривилегированной read-only роли достаётся credential уровня «запустить произвольный workflow без дальнейшей авторизации» (см. `orchestrator/api/webhooks.py:28` — токен единственная защита эндпоинта). Найдено при работе над `docs/compose/specs/2026-07-29-ui-control-visibility-design.md` (стадия 3, отображение webhook-URL в UI) — UI периметр не расширяет (значение и так читаемо через DevTools любым авторизованным `viewer`), но сама раздача токена такой роли — самостоятельный найденный баг бэкенда. `orchestrator/api/workflows.py:80,96-97` (`_RO`, `if hasattr(m, "token") and m.token: item["token"] = m.token`)
 
 ---
 

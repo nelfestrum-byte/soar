@@ -1,3 +1,6 @@
+import { getSessionRole } from './session.js'
+import { HISTORY_PATHS } from './history-paths.js'
+
 const BASE = '/api'
 const ACCESS_KEY = 'soar_access_token'
 const REFRESH_KEY = 'soar_refresh_token'
@@ -44,25 +47,52 @@ async function tryRefresh() {
   }
 }
 
-async function request(path, options = {}, allowRetry = true) {
+async function rawRequest(path, options = {}, allowRetry = true) {
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     headers: { 'Content-Type': 'application/json', ...authHeaders(), ...options.headers },
   })
 
   if (res.status === 401 && allowRetry && path !== '/auth/login' && path !== '/auth/refresh') {
-    if (await tryRefresh()) return request(path, options, false)
+    if (await tryRefresh()) return rawRequest(path, options, false)
     clearTokens()
     if (onUnauthorized) onUnauthorized()
   }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    const e = new Error(err.detail || 'Request failed')
+    let message = err.detail || 'Request failed'
+    const role = getSessionRole()
+    if (res.status === 403 && role) {
+      message = `${message} — роль "${role}" не имеет прав на это действие`
+    }
+    const e = new Error(message)
     e.status = res.status
     throw e
   }
+  return res
+}
+
+async function request(path, options = {}, allowRetry = true) {
+  const res = await rawRequest(path, options, allowRetry)
   return res.json()
+}
+
+// Some routes answer with PlainTextResponse (GET /logs/{id}) — res.json() throws on those
+async function requestText(path, options = {}, allowRetry = true) {
+  const res = await rawRequest(path, options, allowRetry)
+  return res.text()
+}
+
+function historyApi(entity) {
+  const base = HISTORY_PATHS[entity]
+  return {
+    getHistory: (name) => request(`${base(name)}/history`),
+    getVersion: (name, commit) => request(`${base(name)}/history/${commit}`),
+    getDiff: (name, a, b) => request(`${base(name)}/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
+    restore: (name, commit) =>
+      request(`${base(name)}/restore`, { method: 'POST', body: JSON.stringify({ commit }) }),
+  }
 }
 
 export const api = {
@@ -87,11 +117,12 @@ export const api = {
   cancelJob: (id) => request(`/jobs/${id}/cancel`, { method: 'POST' }),
   getActions: () => request('/actions'),
   getAction: (name) => request(`/actions/${name}`),
+  getActionDescribe: (name) => request(`/actions/${name}/describe`),
   saveAction: (name, content) =>
     request(`/actions/${name}`, { method: 'PUT', body: JSON.stringify({ code: content }) }),
   deleteAction: (name) => request(`/actions/${name}`, { method: 'DELETE' }),
   getActionTemplate: (name) => request(`/actions/template?name=${name}`),
-  getLogs: (id) => request(`/logs/${id}`),
+  getLogs: (id) => requestText(`/logs/${id}`),
   getConnectors: () => request('/connectors'),
   getConnectorCode: (name) => request(`/connectors/${name}/code`),
   saveConnectorCode: (name, content) =>
@@ -100,6 +131,7 @@ export const api = {
   saveConnectorConfig: (name, content) =>
     request(`/connectors/${name}/config`, { method: 'PUT', body: content }),
   getConnectorSchema: (name) => request(`/connectors/${name}/schema`),
+  getConnectorDescribe: (name) => request(`/connectors/${name}/describe`),
   createConnector: (name, className = '') =>
     request(`/connectors/${name}?class_name=${className}`, { method: 'POST' }),
   deleteConnector: (name) => request(`/connectors/${name}`, { method: 'DELETE' }),
@@ -129,6 +161,18 @@ export const api = {
 
   getTools: () => request('/tools'),
   getTool: (name) => request(`/tools/${name}`),
+
+  getPromptSystem: () => request('/prompts/system'),
+  getPromptUser: () => request('/prompts/user'),
+  savePromptUser: (content) =>
+    request('/prompts/user', { method: 'PUT', body: JSON.stringify({ content }) }),
+
+  history: {
+    workflow: historyApi('workflow'),
+    action: historyApi('action'),
+    connectorCode: historyApi('connector_code'),
+    connectorConfig: historyApi('connector_config'),
+  },
 
   getAuditLog: (params = {}) => {
     const qs = new URLSearchParams(params).toString()

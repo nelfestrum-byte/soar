@@ -11,11 +11,7 @@
         <input v-model="newUsername" placeholder="username" style="flex:1; min-width:150px;" />
         <input v-model="newPassword" type="password" placeholder="password (min 8 chars)" style="flex:1; min-width:150px;" />
         <select v-model="newRole">
-          <option value="viewer">viewer</option>
-          <option value="analyst">analyst</option>
-          <option value="service">service</option>
-          <option value="agent">agent</option>
-          <option value="admin">admin</option>
+          <option v-for="r in ROLES" :key="r" :value="r">{{ r }}</option>
         </select>
         <button class="btn btn-primary" @click="createUser" :disabled="!newUsername || newPassword.length < 8 || creating">
           {{ creating ? 'Creating...' : 'Create' }}
@@ -36,11 +32,7 @@
           </td>
           <td>
             <select :value="u.role" @change="changeRole(u, $event.target.value)">
-              <option value="viewer">viewer</option>
-              <option value="analyst">analyst</option>
-              <option value="service">service</option>
-              <option value="agent">agent</option>
-              <option value="admin">admin</option>
+              <option v-for="r in ROLES" :key="r" :value="r">{{ r }}</option>
             </select>
           </td>
           <td>
@@ -79,6 +71,7 @@
 import { ref, onMounted } from 'vue'
 import { api } from '../api.js'
 import { auth } from '../store/auth.js'
+import { ROLES } from '../permissions.js'
 
 const users = ref([])
 const loading = ref(true)

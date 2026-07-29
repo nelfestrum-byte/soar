@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { api } from '../api.js'
+import { setSessionRole } from '../session.js'
 
 export const auth = reactive({
   checked: false,
@@ -31,6 +32,7 @@ export async function checkAuth() {
     }
   }
   auth.checked = true
+  setSessionRole(auth.role)
 }
 
 export function resetAuth() {
@@ -38,4 +40,5 @@ export function resetAuth() {
   auth.username = ''
   auth.role = ''
   auth.noAuthMode = false
+  setSessionRole('')
 }

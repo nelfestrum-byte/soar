@@ -2,7 +2,7 @@
   <div>
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
       <h2 style="margin:0;">Connectors</h2>
-      <button class="btn btn-primary" @click="showNew = true">New Connector</button>
+      <button v-if="canManage" class="btn btn-primary" @click="showNew = true">New Connector</button>
     </div>
 
     <div v-if="showNew" class="card" style="margin-bottom:12px;">
@@ -30,11 +30,11 @@
               <span v-else class="badge badge-cancelled">none</span>
             </td>
             <td style="white-space:nowrap;">
-              <button class="btn btn-primary" style="font-size:11px;" @click="editCode(c.name)">Edit</button>
+              <button class="btn btn-primary" style="font-size:11px;" @click="editCode(c.name)">{{ canWriteCode ? 'Edit' : 'View' }}</button>
               <button class="btn btn-success" style="font-size:11px;" @click="editConfig(c.name)">Setup</button>
-              <router-link v-if="auth.role === 'admin'" class="btn" style="font-size:11px; text-decoration:none;"
+              <router-link v-if="can(auth.role, 'audit.read')" class="btn" style="font-size:11px; text-decoration:none;"
                            :to="{ path: '/audit-log', query: { resource_type: 'connector', resource_id: c.name } }">Audit</router-link>
-              <button class="btn btn-danger" style="font-size:11px;" @click="removeConnector(c.name)">Delete</button>
+              <button v-if="canManage" class="btn btn-danger" style="font-size:11px;" @click="removeConnector(c.name)">Delete</button>
             </td>
           </tr>
         </table>
@@ -44,55 +44,82 @@
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <h2 style="margin:0;">{{ editName }}.py</h2>
           <div style="display:flex; gap:8px;">
-            <button class="btn btn-primary" @click="saveCode" :disabled="saving">
+            <button class="btn" :class="codeTab==='code' ? 'btn-primary' : ''" @click="codeTab='code'">Code</button>
+            <button class="btn" :class="codeTab==='signature' ? 'btn-primary' : ''" @click="showSignature">Signature</button>
+            <button class="btn" :class="codeTab==='history' ? 'btn-primary' : ''" @click="codeTab='history'">History</button>
+            <button v-if="canWriteCode && codeTab==='code'" class="btn btn-primary" @click="saveCode" :disabled="saving">
               {{ saving ? 'Saving...' : 'Save' }}
             </button>
             <button class="btn" @click="editMode = false">Close</button>
           </div>
         </div>
-        <textarea v-model="codeContent" style="width:100%; min-height:400px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:4;"></textarea>
-        <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
-          <span v-if="saveResult.success" style="color:#2e7d32;">Saved (commit: {{ saveResult.commit }})</span>
-          <span v-else style="color:#c62828;">Error: {{ saveResult.error }}</span>
-        </div>
+        <template v-if="codeTab==='code'">
+          <textarea v-model="codeContent" :readonly="!canWriteCode" style="width:100%; min-height:400px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:4;"></textarea>
+          <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
+            <span v-if="saveResult.success" style="color:#2e7d32;">Saved (commit: {{ saveResult.commit }})</span>
+            <span v-else style="color:#c62828;">Error: {{ saveResult.error }}</span>
+          </div>
+        </template>
+        <template v-else-if="codeTab==='signature'">
+          <div v-if="signatureError" class="error">{{ signatureError }}</div>
+          <template v-else-if="signature">
+            <h2 style="margin:0 0 4px;">{{ signature.name }}<span style="color:#666; font-family:monospace; font-weight:400;">{{ signature.constructor }}</span></h2>
+            <p v-if="signature.docstring" style="color:#555; white-space:pre-wrap;">{{ signature.docstring }}</p>
+            <table style="margin-top:12px;">
+              <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
+              <tr v-for="m in signature.methods" :key="m.name">
+                <td style="font-family:monospace;">{{ m.name }}</td>
+                <td style="font-family:monospace;">{{ m.signature }}</td>
+                <td>{{ m.docstring.split('\n')[0] }}</td>
+              </tr>
+            </table>
+            <div v-if="!signature.methods.length" class="loading">No public methods</div>
+          </template>
+        </template>
+        <HistoryPanel v-else entity="connector_code" :name="editName" @restored="editCode(editName)" />
       </div>
 
       <div v-if="configMode" class="card" style="margin-top:12px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <h2 style="margin:0;">{{ configName }}.yml</h2>
           <div style="display:flex; gap:8px;">
-            <button class="btn btn-primary" @click="saveConfig" :disabled="saving">
+            <button class="btn" :class="configTab==='config' ? 'btn-primary' : ''" @click="configTab='config'">Config</button>
+            <button class="btn" :class="configTab==='history' ? 'btn-primary' : ''" @click="configTab='history'">History</button>
+            <button v-if="canWriteConfig && configTab==='config'" class="btn btn-primary" @click="saveConfig" :disabled="saving">
               {{ saving ? 'Saving...' : 'Save' }}
             </button>
             <button class="btn" @click="configMode = false">Close</button>
           </div>
         </div>
 
-        <template v-if="!rawConfigMode">
-          <div style="margin-bottom:8px;">
-            <label style="font-size:12px; color:#666;">Instance ID</label><br />
-            <input v-model="instanceId" style="width:100%;" />
-          </div>
-          <div v-for="f in visibleSchemaFields" :key="f.name" style="margin-bottom:8px;">
-            <label style="font-size:12px; color:#666;">
-              {{ f.name }} <span style="opacity:0.6;">({{ f.type }})</span>
-              <span v-if="f.hidden" style="color:#c62828;"> — только admin может менять credentials</span>
-            </label><br />
-            <input v-if="f.type === 'bool'" type="checkbox" v-model="instanceValues[f.name]"
-                   :disabled="f.hidden && auth.role !== 'admin'" />
-            <input v-else-if="f.hidden" type="password" v-model="instanceValues[f.name]"
-                   placeholder="оставьте пустым, чтобы не менять" :disabled="auth.role !== 'admin'"
-                   style="width:100%;" />
-            <input v-else :type="f.type === 'int' || f.type === 'float' ? 'number' : 'text'"
-                   v-model="instanceValues[f.name]" style="width:100%;" />
+        <template v-if="configTab==='config'">
+          <template v-if="!rawConfigMode">
+            <div style="margin-bottom:8px;">
+              <label style="font-size:12px; color:#666;">Instance ID</label><br />
+              <input v-model="instanceId" style="width:100%;" />
+            </div>
+            <div v-for="f in visibleSchemaFields" :key="f.name" style="margin-bottom:8px;">
+              <label style="font-size:12px; color:#666;">
+                {{ f.name }} <span style="opacity:0.6;">({{ f.type }})</span>
+                <span v-if="f.hidden" style="color:#c62828;"> — только admin может менять credentials</span>
+              </label><br />
+              <input v-if="f.type === 'bool'" type="checkbox" v-model="instanceValues[f.name]"
+                     :disabled="!canWriteConfig || (f.hidden && auth.role !== 'admin')" />
+              <input v-else-if="f.hidden" type="password" v-model="instanceValues[f.name]"
+                     placeholder="оставьте пустым, чтобы не менять" :disabled="auth.role !== 'admin'"
+                     style="width:100%;" />
+              <input v-else :type="f.type === 'int' || f.type === 'float' ? 'number' : 'text'"
+                     v-model="instanceValues[f.name]" :disabled="!canWriteConfig" style="width:100%;" />
+            </div>
+          </template>
+          <textarea v-else v-model="configContent" :readonly="!canWriteConfig" style="width:100%; min-height:200px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:4;"></textarea>
+
+          <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
+            <span v-if="saveResult.success" style="color:#2e7d32;">Saved (commit: {{ saveResult.commit }})</span>
+            <span v-else style="color:#c62828;">Error: {{ saveResult.error }}</span>
           </div>
         </template>
-        <textarea v-else v-model="configContent" style="width:100%; min-height:200px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:4;"></textarea>
-
-        <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
-          <span v-if="saveResult.success" style="color:#2e7d32;">Saved (commit: {{ saveResult.commit }})</span>
-          <span v-else style="color:#c62828;">Error: {{ saveResult.error }}</span>
-        </div>
+        <HistoryPanel v-else entity="connector_config" :name="configName" @restored="editConfig(configName)" />
       </div>
     </template>
   </div>
@@ -102,6 +129,12 @@
 import { ref, computed, onMounted } from 'vue'
 import { api } from '../api.js'
 import { auth } from '../store/auth.js'
+import { can } from '../permissions.js'
+import HistoryPanel from '../components/HistoryPanel.vue'
+
+const canManage = computed(() => can(auth.role, 'connector.manage'))
+const canWriteCode = computed(() => can(auth.role, 'connector.code.write'))
+const canWriteConfig = computed(() => can(auth.role, 'connector.config.write'))
 
 const connectors = ref([])
 const loading = ref(true)
@@ -114,8 +147,20 @@ const creating = ref(false)
 const editMode = ref(false)
 const editName = ref('')
 const codeContent = ref('')
+const codeTab = ref('code')
+const signature = ref(null)
+const signatureError = ref(null)
+
+async function showSignature() {
+  codeTab.value = 'signature'
+  signature.value = null
+  signatureError.value = null
+  try { signature.value = await api.getConnectorDescribe(editName.value) }
+  catch (e) { signatureError.value = e.message }
+}
 
 const configMode = ref(false)
+const configTab = ref('config')
 const configName = ref('')
 const configContent = ref('')
 const schemaFields = ref([])
@@ -194,6 +239,7 @@ async function editCode(name) {
   editName.value = name
   editMode.value = true
   configMode.value = false
+  codeTab.value = 'code'
   saveResult.value = null
   try {
     const res = await api.getConnectorCode(name)
@@ -218,6 +264,7 @@ async function editConfig(name) {
   configName.value = name
   configMode.value = true
   editMode.value = false
+  configTab.value = 'config'
   saveResult.value = null
   schemaFields.value = []
   rawConfigMode.value = false

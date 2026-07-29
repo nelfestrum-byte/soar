@@ -8,11 +8,12 @@
       <router-link to="/actions">Actions</router-link>
       <router-link to="/connectors">Connectors</router-link>
       <router-link to="/tools">Tools</router-link>
-      <router-link to="/generate">Generate</router-link>
-      <router-link to="/settings">Settings</router-link>
-      <router-link v-if="auth.role === 'admin'" to="/users">Users</router-link>
-      <router-link v-if="auth.role === 'admin'" to="/api-keys">API Keys</router-link>
-      <router-link v-if="auth.role === 'admin'" to="/audit-log">Audit Log</router-link>
+      <router-link to="/prompts">Prompts</router-link>
+      <router-link v-if="can(auth.role, 'connector.manage')" to="/generate">Generate</router-link>
+      <router-link v-if="can(auth.role, 'transfer')" to="/settings">Settings</router-link>
+      <router-link v-if="can(auth.role, 'auth.admin')" to="/users">Users</router-link>
+      <router-link v-if="can(auth.role, 'auth.admin')" to="/api-keys">API Keys</router-link>
+      <router-link v-if="can(auth.role, 'audit.read')" to="/audit-log">Audit Log</router-link>
       <div style="flex:1;"></div>
       <span v-if="auth.checked && auth.authenticated" class="user-badge">
         {{ auth.username }} <span class="role">({{ auth.role }})</span>
@@ -21,6 +22,7 @@
               class="btn btn-logout" @click="doLogout">Logout</button>
     </nav>
     <main><router-view /></main>
+    <Toast />
   </div>
 </template>
 
@@ -28,6 +30,8 @@
 import { useRoute, useRouter } from 'vue-router'
 import { auth, resetAuth } from './store/auth.js'
 import { api } from './api.js'
+import { can } from './permissions.js'
+import Toast from './components/Toast.vue'
 
 const route = useRoute()
 const router = useRouter()

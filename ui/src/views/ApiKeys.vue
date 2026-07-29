@@ -10,11 +10,7 @@
       <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
         <input v-model="newName" placeholder="key name" style="flex:1; min-width:150px;" />
         <select v-model="newRole">
-          <option value="service">service</option>
-          <option value="viewer">viewer</option>
-          <option value="analyst">analyst</option>
-          <option value="agent">agent</option>
-          <option value="admin">admin</option>
+          <option v-for="r in ROLES" :key="r" :value="r">{{ r }}</option>
         </select>
         <button class="btn btn-primary" @click="createKey" :disabled="!newName || creating">
           {{ creating ? 'Creating...' : 'Create' }}
@@ -60,6 +56,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { api } from '../api.js'
+import { ROLES } from '../permissions.js'
 
 const keys = ref([])
 const loading = ref(true)

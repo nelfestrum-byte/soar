@@ -9,7 +9,11 @@ SOAR (Security Orchestration, Automation and Response) — система авт
 
 1. **`soar/`** — Python-пакет: enterprise-коннекторы (SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh, PostgreSQL/MySQL/MSSQL, Telegram, SMTP, VirusTotal, Abuse.ch, File, WinRM, SMB, Shodan, Fofa, Censys, MISP, RstCloud, Kaspersky OpenTip, URLhaus, crt.sh), actions, workflows, реестры
 2. **`orchestrator/`** — FastAPI сервис: очередь задач, воркеры, планировщик, git-версионирование
-3. **`ui/`** — Vue.js SPA: **заглушка для ручного тестирования, не часть продукта**. Основной API-доступ — напрямую на порту 8000 (orchestrator). UI нужен только для визуальной проверки workflows/actions/connectors в браузере
+3. **`ui/`** — Vue.js SPA: стенд для ручного тестирования, дорабатывается до
+   продакшен-юзабельности (точки контроля, видимость логов и аудита — см.
+   `docs/compose/specs/2026-07-29-ui-control-visibility-design.md`), но
+   остаётся вне основного продукта. Основной API-доступ — напрямую на порту
+   8000 (orchestrator). Тесты — vitest, `cd ui && npm test`
 
 ## Stack
 
@@ -346,7 +350,9 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 | Пользователи: bootstrap первого admin'а | `python -m orchestrator.auth.cli {create-user,deactivate-user,activate-user} --username X [--role admin]` |
 | Пользователи: управление через API/UI | `orchestrator/auth/router.py` (`/auth/users` POST/GET/PATCH), `ui/src/views/Users.vue` |
 | Конфиг | `orchestrator/config.py`, `orchestrator/config.yaml` |
-| UI | `ui/src/views/` — Status, Workflows, Jobs, Actions, Connectors, AuditLog, ApiKeys, Users, Tools, Generate, Settings, Login, Logs |
+| UI | `ui/src/views/` — Status, Workflows, Jobs, JobDetail, Actions, Connectors, AuditLog, ApiKeys, Users, Prompts, Tools, Generate, Settings, Login, Logs |
+| UI: права по роли | `ui/src/permissions.js` (`can(role, cap)` — зеркало ролевых кортежей `orchestrator/api/*.py`), `ui/src/router-guard.js` (закрывает прямой переход по URL, не только пункт меню) |
+| UI: история/diff/restore | `ui/src/components/HistoryPanel.vue` — общий компонент для workflow/action/connector(code+config), вкладка рядом с редактором |
 | Deploy (QA-стенд) | `deploy/stage/` — docker-compose.yml (build:), Dockerfiles |
 | Deploy (дистрибуция, air-gap) | `deploy/prod/` (docker-compose.yml с `image:`, config.yaml.template) + `deploy/soarctl`/`soarctl_lib/` — package/install/init/up/migrate/users/backup/doctor, см. `docs/compose/specs/2026-07-22-deploy-cli-design.md` |
 | Deploy (дистрибуция, on-site/с интернетом) | `soarctl install --repo <url-or-path> [--ref REF]` — сборка образов на месте, без bundle; `soarctl init --interactive`/`--cors-origin` — заполняет `auth.cors_origins` вместо плейсхолдера; `soarctl update [--ref REF] [--migrate fresh\|upgrade]` — git pull/checkout + пересборка + `up`, без `down`, postgres/redis не пересоздаются; `soarctl_lib/git_source.py`, `prompts.py`; см. `docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md` |
