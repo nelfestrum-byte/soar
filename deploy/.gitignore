@@ -5,5 +5,7 @@ __pycache__/
 *.log
 prod/config.yaml
 prod/.env
+prod/VERSION
+prod/source.json
 *.tar.gz
 /prod/build/

@@ -1,5 +1,13 @@
 # `soarctl`: on-site установка из git + `update` без пересоздания БД
 
+> **Superseded (2026-07-29)** — директорийная модель этого спека (`install
+> --repo`/`--dir` копирует `docker-compose.yml`/`config.yaml.template` в
+> отдельную instance-директорию, `--repo <url>` клонирует сам) заменена
+> `docs/compose/specs/2026-07-29-soarctl-inplace-onsite-design.md`: чекаут —
+> это инстанс, `install`/`update`/`--ref`/`source.json`-маркер и решение
+> "миграции без авто-детекта" остаются теми же по духу, изменилась только
+> файловая раскладка. Оставлен как референс истории решения.
+
 > Расширяет `docs/compose/specs/2026-07-22-deploy-cli-design.md`. Тот спек
 > проектировал **air-gapped** путь (`package` на машине с интернетом →
 > перенос tar-бандла → `install` без единого сетевого вызова на изолированной

@@ -117,31 +117,39 @@ without `--confirm`.
 ## On-site install (this machine has internet)
 
 An alternative to the build-machine/transfer flow above, for when the
-machine running the instance is the same one that has the git checkout (or
-can `git clone` it — internet is available here). No bundle, no
-`docker save`/`docker load` — images are built locally. See
-[`docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md`](../../docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md).
+machine running the instance is the same one that has (or can have) the git
+checkout — internet is available here, so no bundle, no
+`docker save`/`docker load`; images are built locally, in place. The
+checkout *is* the instance — no separate directory to track. See
+[`docs/compose/specs/2026-07-29-soarctl-inplace-onsite-design.md`](../../docs/compose/specs/2026-07-29-soarctl-inplace-onsite-design.md).
 
 ```bash
-python deploy/soarctl install --repo . --dir soar-prod   # or a git URL to clone
-cd soar-prod
-python soarctl doctor
-python soarctl init --interactive   # prompts for auth.cors_origins instead of a placeholder
-python soarctl up
-python soarctl migrate --fresh      # first boot only, same rule as above
-python soarctl users create --username admin --role admin
+git clone <url> soar && cd soar
+./soarctl doctor
+./soarctl install                   # git checkout <ref> if --ref given, docker build
+./soarctl init --interactive        # prompts for auth.cors_origins instead of a placeholder
+./soarctl up
+./soarctl migrate --fresh           # first boot only, same rule as above
+./soarctl users create --username admin --role admin
 ```
 
-`--repo` accepts a local path to an existing checkout (used as-is, nothing
-cloned) or a URL (cloned into `soar-prod/src`). The resolved version tag
-comes from `git describe --tags --always --dirty` — a `-dirty` suffix means
-the working tree had uncommitted changes at build time.
+`./soarctl` is a wrapper at the repo root (`git clone`-style: no
+`python deploy/soarctl` prefix, no PATH install step needed). Every
+subcommand auto-discovers the instance from wherever you're standing —
+`cd`ed into the repo root, or any subdirectory of it — the same way `git`
+finds its repo root; `--dir` remains as an explicit override if you ever
+need it. `install` defaults to the checkout you're standing in; pass
+`--repo <path>` to point at a different local checkout instead. There's no
+`--repo <url>` — clone it yourself first, `soarctl` only ever operates on an
+existing checkout. The resolved version tag comes from
+`git describe --tags --always --dirty` — a `-dirty` suffix means the
+working tree had uncommitted changes at build time.
 
 ### Updating an on-site instance
 
 ```bash
-python soarctl update --ref v1.3.0            # or omit --ref to pull the current branch
-python soarctl migrate --fresh                # only if the new version shipped one, see above
+./soarctl update --ref v1.3.0            # or omit --ref to pull the current branch
+./soarctl migrate --fresh                # only if the new version shipped one, see above
 ```
 
 `update` fetches/checks out the new code, rebuilds the `orchestrator`/`ui`
@@ -151,5 +159,5 @@ across an update, compose doesn't recreate those two containers either. Pass
 `--migrate fresh` or `--migrate upgrade` to apply migrations as part of the
 same command; without it, `update` leaves that decision to you (same
 stamp/upgrade rule as above). Only works for instances installed via
-`install --repo` — bundle-installed instances upgrade via the
+`soarctl install` on-site — bundle-installed instances upgrade via the
 `install <new-bundle>` flow documented earlier in this file.

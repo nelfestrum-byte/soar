@@ -1,4 +1,4 @@
-# AGENTS.md — SOAR Project v0.15
+# AGENTS.md — SOAR Project v0.16
 
 > Это индекс. Детали вынесены в сателлитные файлы под `docs/agents/` и в `CHANGELOG.md` —
 > открывай их только когда задача реально их касается (см. Token optimization внизу).
@@ -67,11 +67,15 @@ cd ui && npm run build
 # Stage deploy (Docker) — internal QA, build: from source
 cd deploy/stage && docker compose up --build
 
-# Prod deploy (Docker, distributable) — build machine, then transfer bundle
+# Prod deploy (Docker, distributable) — build machine, then transfer bundle (air-gap)
 python deploy/soarctl package --version X.Y.Z --output soar-bundle-X.Y.Z.tar.gz
 # target machine (offline from here on)
 python soarctl install soar-bundle-X.Y.Z.tar.gz --dir soar-prod && cd soar-prod
 python soarctl init && python soarctl up && python soarctl migrate --fresh
+
+# Prod deploy, on-site (target machine has internet) — checkout is the instance
+git clone <url> soar && cd soar
+./soarctl install && ./soarctl init && ./soarctl up && ./soarctl migrate --fresh
 ```
 
 ## Architecture
@@ -132,8 +136,10 @@ ui/src/                         # Vue 3 SPA, полный список views —
 alembic/                        # Alembic-миграции (auth + workflow_jobs + audit_log таблицы), см. docs/agents/config-reference.md
 deploy/stage/                   # QA docker-compose (build: from source) + Makefile
 deploy/prod/                    # Distributable profile — image: не build:, config.yaml не в git, см. deploy/prod/README.md
+soarctl                         # Root-level bash wrapper (`./soarctl ...`) — see deploy/soarctl below
 deploy/soarctl, soarctl_lib/    # Host-layer CLI: package/install/init/up/update/migrate/users/backup/doctor
-                                 # git_source.py — on-site install (--repo) + update, no bundle/air-gap
+                                 # git_source.py — on-site install, in-place in <checkout>/deploy/prod (no bundle/air-gap);
+                                 # paths.instance_dir() auto-discovers cwd/checkout the way `git` finds its repo root
 
 tests/
 ├── soar/                       # flat files: test_<connector>_connector.py (mocked), test_workflows.py, tools/
@@ -459,7 +465,34 @@ API (UI или LLM-агентом) **без передеплоя**. Три шт�
 
 Полная история версий — **[CHANGELOG.md](CHANGELOG.md)**.
 
-Текущая версия: **v0.15** (2026-07-29) — Docs-only: `orchestrator/prompts/
+Текущая версия: **v0.16** (2026-07-29) — `soarctl` on-site: checkout — это
+инстанс, без промежуточной директории. Реворк
+`docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md` — та версия
+оставляла `install --repo`/`update` копировать `docker-compose.yml`/
+`config.yaml.template` в отдельно названную `--dir`-директорию, никак
+структурно не связанную с чекаутом (и не копировала туда сам `soarctl` —
+задокументированный в README шаг `cd soar-prod && python soarctl doctor`
+падал бы с "file not found", не был проверен end-to-end). Теперь
+`git_source.install(checkout, ref)` пишет `VERSION`/`source.json` прямо в
+`<checkout>/deploy/prod/` (файлы уже там, в git — копировать нечего);
+`--repo <url>` (клонирование самим `soarctl`) убрано целиком — пользователь
+клонирует сам, `soarctl` работает только с уже существующим чекаутом.
+`paths.instance_dir()` теперь ищет рабочую директорию вверх от cwd тем же
+способом, что `git` ищет `.git` — `docker-compose.yml` напрямую (bundle) или
+`pyproject.toml` + `deploy/prod/docker-compose.yml` (on-site) — поэтому
+любая подкоманда работает из любой поддиректории чекаута, не только из его
+корня. Новый `./soarctl` — bash-обёртка в корне репозитория
+(`git update-index --chmod=+x`, `.gitattributes` фиксирует LF), убирает
+префикс `python deploy/soarctl`. Итоговый флоу: `git clone <url> soar && cd
+soar && ./soarctl install && ./soarctl init && ./soarctl up`. Air-gap
+bundle-путь (`package`/`install <bundle.tar.gz>`) не тронут. 115 тестов в
+`tests/deploy/` (было 106 — новые/переписанные вокруг `instance_dir()`,
+`git_source.install()`, `cli.py`), `ruff check` без находок. Спек/план/отчёт:
+`docs/compose/specs/2026-07-29-soarctl-inplace-onsite-design.md`,
+`docs/compose/plans/2026-07-29-soarctl-inplace-onsite.md`,
+`docs/compose/reports/soarctl-inplace-onsite.md`.
+
+Предыдущая версия: **v0.15** (2026-07-29) — Docs-only: `orchestrator/prompts/
 system_prompt.md` (встроенный системный промпт агента, `GET
 /prompts/system`) не обновлялся с Этапа 2 Agent Dev-Loop (2026-07-22) и
 содержал устаревшее/неверное утверждение, будто `GET

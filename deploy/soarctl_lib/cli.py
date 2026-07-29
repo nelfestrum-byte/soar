@@ -26,11 +26,13 @@ def build_parser() -> argparse.ArgumentParser:
     install = sub.add_parser(
         "install",
         help="Extract a bundle + docker load its images (air-gapped target), "
-        "or build from a git checkout on-site (--repo)",
+        "or build in place from a git checkout on-site (default: cwd)",
     )
     install.add_argument("bundle", nargs="?", default=None)
-    install.add_argument("--repo", default=None, help="Git URL or local checkout path to build from on-site")
-    install.add_argument("--ref", default=None, help="git ref to check out (branch/tag/sha), --repo only")
+    install.add_argument(
+        "--repo", default=None, help="On-site only: checkout path, if not cwd (git clone yourself first — soarctl doesn't)"
+    )
+    install.add_argument("--ref", default=None, help="git ref to check out (branch/tag/sha), on-site only")
     _add_dir_arg(install)
 
     init = sub.add_parser("init", help="Generate .env secrets + render config.yaml")
@@ -108,12 +110,22 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.cmd == "install":
-        if bool(args.bundle) == bool(args.repo):
-            parser.error("install requires exactly one of: a bundle path, or --repo")
-        if args.repo:
-            git_source.install(args.repo, args.ref, paths.instance_dir(args))
-        else:
+        if args.bundle and args.repo:
+            parser.error("install: pass either a bundle path or --repo, not both")
+        if args.bundle:
             bundle.install(Path(args.bundle), paths.instance_dir(args))
+        else:
+            if args.repo:
+                checkout = Path(args.repo).resolve()
+            else:
+                try:
+                    checkout = paths.repo_root(Path.cwd())
+                except RuntimeError:
+                    parser.error(
+                        "install: not inside a soar checkout — `cd` into one you've "
+                        "`git clone`d, pass --repo <path>, or pass a bundle path"
+                    )
+            git_source.install(checkout, args.ref)
         return
 
     if args.cmd == "init":

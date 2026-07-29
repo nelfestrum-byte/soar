@@ -38,9 +38,9 @@ docs/compose/reports/<feature>.md                    ← после заверш
 Активные спеки (написаны, не выполнены):
 
 - [`docs/compose/specs/2026-07-03-v06-upgrade-design.md`](docs/compose/specs/2026-07-03-v06-upgrade-design.md) — per-workflow метрики, dry-run конвенция (Feature 1/`CachedHttpClient` реализована как `HttpClient` в v0.12, см. `2026-07-27-http-client-design.md` и пометку в файле; Feature 2/3 остаются неактивными)
-- [`docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md`](docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md) — `soarctl`: on-site установка из git + `update` без пересоздания БД (расширяет `2026-07-22-deploy-cli-design.md`, не входит в `UPGRADE-v2.md`)
 
 `2026-07-03-bugfixes-design.md` — не активен, все 7 багов исправлены в v0.5 (см. `CHANGELOG.md`), спек оставлен как референс.
+`2026-07-27-soarctl-onsite-update-design.md` — не активен, реализован в v0.13 и затем заменён `2026-07-29-soarctl-inplace-onsite-design.md` (v0.16, checkout — инстанс, без отдельной директории), оставлен как референс.
 
 ## Что читать, что не читать
 

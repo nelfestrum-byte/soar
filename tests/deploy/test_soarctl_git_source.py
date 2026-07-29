@@ -32,49 +32,50 @@ def test_resolve_version_runs_git_describe(monkeypatch, tmp_path):
     assert calls == [["git", "-C", str(tmp_path), "describe", "--tags", "--always", "--dirty"]]
 
 
-def test_install_from_local_path_does_not_clone(monkeypatch, tmp_path):
+def test_install_writes_version_and_source_json_in_place(monkeypatch, tmp_path):
     checkout = _make_fake_checkout(tmp_path / "repo")
-    dest = tmp_path / "instance"
     calls = []
     monkeypatch.setattr(git_source, "run", _fake_run(calls))
     monkeypatch.setattr(git_source, "build_images", lambda repo_root, version: (f"soar-orchestrator:{version}", f"soar-ui:{version}"))
 
-    result = git_source.install(str(checkout), ref=None, dest_dir=dest)
+    result = git_source.install(checkout, ref=None)
 
-    assert result == dest
-    assert not any(c[:2] == ["git", "clone"] for c in calls)
-    assert (dest / "docker-compose.yml").exists()
-    assert (dest / "config.yaml.template").exists()
-    assert (dest / "VERSION").read_text().strip() == "v1.2.3-4-gabcdef"
+    instance = checkout / "deploy" / "prod"
+    assert result == instance
+    assert (instance / "VERSION").read_text().strip() == "v1.2.3-4-gabcdef"
 
-    source = json.loads((dest / "source.json").read_text())
-    assert source["repo"] == str(checkout)
-    assert source["checkout"] == str(checkout.resolve())
+    source = json.loads((instance / "source.json").read_text())
+    assert source == {"checkout": str(checkout.resolve())}
 
 
-def test_install_from_url_clones_into_dest_src(monkeypatch, tmp_path):
-    dest = tmp_path / "instance"
-    # simulate what `git clone` would have produced
-    _make_fake_checkout(dest / "src")
+def test_install_does_not_touch_existing_compose_files(monkeypatch, tmp_path):
+    checkout = _make_fake_checkout(tmp_path / "repo")
+    instance = checkout / "deploy" / "prod"
+    original_compose = (instance / "docker-compose.yml").read_text()
+    original_template = (instance / "config.yaml.template").read_text()
+    monkeypatch.setattr(git_source, "run", _fake_run([]))
+    monkeypatch.setattr(git_source, "build_images", lambda repo_root, version: ("o", "u"))
+
+    git_source.install(checkout, ref=None)
+
+    assert (instance / "docker-compose.yml").read_text() == original_compose
+    assert (instance / "config.yaml.template").read_text() == original_template
+
+
+def test_install_with_ref_checks_out_before_resolving_version(monkeypatch, tmp_path):
+    checkout = _make_fake_checkout(tmp_path / "repo")
     calls = []
     monkeypatch.setattr(git_source, "run", _fake_run(calls))
-    monkeypatch.setattr(git_source, "build_images", lambda repo_root, version: (f"soar-orchestrator:{version}", f"soar-ui:{version}"))
+    monkeypatch.setattr(git_source, "build_images", lambda repo_root, version: ("o", "u"))
 
-    git_source.install("https://example.com/soar.git", ref="v1.2.3", dest_dir=dest)
+    git_source.install(checkout, ref="v1.2.3")
 
-    clone_calls = [c for c in calls if c[:2] == ["git", "clone"]]
-    assert clone_calls == [["git", "clone", "https://example.com/soar.git", str(dest / "src")]]
-
-    checkout_calls = [c for c in calls if c[:3] == ["git", "-C", str(dest / "src")] and "checkout" in c]
-    assert checkout_calls == [["git", "-C", str(dest / "src"), "checkout", "v1.2.3"]]
-
-    source = json.loads((dest / "source.json").read_text())
-    assert source["checkout"] == str((dest / "src").resolve())
+    assert calls[0] == ["git", "-C", str(checkout), "checkout", "v1.2.3"]
+    assert calls[1] == ["git", "-C", str(checkout), "describe", "--tags", "--always", "--dirty"]
 
 
 def test_install_builds_images_tagged_with_resolved_version(monkeypatch, tmp_path):
     checkout = _make_fake_checkout(tmp_path / "repo")
-    dest = tmp_path / "instance"
     calls = []
     monkeypatch.setattr(git_source, "run", _fake_run(calls))
     build_calls = []
@@ -84,11 +85,12 @@ def test_install_builds_images_tagged_with_resolved_version(monkeypatch, tmp_pat
         lambda repo_root, version: build_calls.append((repo_root, version)) or (f"soar-orchestrator:{version}", f"soar-ui:{version}"),
     )
 
-    git_source.install(str(checkout), ref=None, dest_dir=dest)
+    git_source.install(checkout, ref=None)
 
     assert build_calls == [(checkout.resolve(), "v1.2.3-4-gabcdef")]
     assert not any(c[:2] == ["docker", "save"] for c in calls)
     assert not any(c[:2] == ["docker", "load"] for c in calls)
+    assert not any(c[:2] == ["git", "clone"] for c in calls)
 
 
 def test_update_without_source_json_raises_before_any_call(monkeypatch, tmp_path):
@@ -107,7 +109,7 @@ def test_update_with_ref_fetches_and_checks_out(monkeypatch, tmp_path):
     checkout = _make_fake_checkout(tmp_path / "repo")
     dest = tmp_path / "instance"
     dest.mkdir()
-    (dest / "source.json").write_text(json.dumps({"repo": str(checkout), "checkout": str(checkout)}))
+    (dest / "source.json").write_text(json.dumps({"checkout": str(checkout)}))
     (dest / ".env").write_text("SOAR_VERSION=0.1.0\n")
 
     calls = []
@@ -131,7 +133,7 @@ def test_update_without_ref_pulls_ff_only(monkeypatch, tmp_path):
     checkout = _make_fake_checkout(tmp_path / "repo")
     dest = tmp_path / "instance"
     dest.mkdir()
-    (dest / "source.json").write_text(json.dumps({"repo": str(checkout), "checkout": str(checkout)}))
+    (dest / "source.json").write_text(json.dumps({"checkout": str(checkout)}))
 
     calls = []
     monkeypatch.setattr(git_source, "run", _fake_run(calls))
@@ -149,7 +151,7 @@ def test_update_migrate_fresh_calls_stamp_head(monkeypatch, tmp_path):
     checkout = _make_fake_checkout(tmp_path / "repo")
     dest = tmp_path / "instance"
     dest.mkdir()
-    (dest / "source.json").write_text(json.dumps({"repo": str(checkout), "checkout": str(checkout)}))
+    (dest / "source.json").write_text(json.dumps({"checkout": str(checkout)}))
 
     monkeypatch.setattr(git_source, "run", _fake_run([]))
     monkeypatch.setattr(git_source, "build_images", lambda repo_root, version: ("o", "u"))
@@ -170,7 +172,7 @@ def test_update_migrate_upgrade_calls_upgrade_head(monkeypatch, tmp_path):
     checkout = _make_fake_checkout(tmp_path / "repo")
     dest = tmp_path / "instance"
     dest.mkdir()
-    (dest / "source.json").write_text(json.dumps({"repo": str(checkout), "checkout": str(checkout)}))
+    (dest / "source.json").write_text(json.dumps({"checkout": str(checkout)}))
 
     monkeypatch.setattr(git_source, "run", _fake_run([]))
     monkeypatch.setattr(git_source, "build_images", lambda repo_root, version: ("o", "u"))
@@ -191,7 +193,7 @@ def test_update_without_migrate_flag_runs_no_migration(monkeypatch, tmp_path):
     checkout = _make_fake_checkout(tmp_path / "repo")
     dest = tmp_path / "instance"
     dest.mkdir()
-    (dest / "source.json").write_text(json.dumps({"repo": str(checkout), "checkout": str(checkout)}))
+    (dest / "source.json").write_text(json.dumps({"checkout": str(checkout)}))
 
     monkeypatch.setattr(git_source, "run", _fake_run([]))
     monkeypatch.setattr(git_source, "build_images", lambda repo_root, version: ("o", "u"))

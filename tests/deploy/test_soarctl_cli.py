@@ -99,24 +99,50 @@ def test_install_repo_dispatches_to_git_source_install(monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli.git_source,
         "install",
-        lambda repo, ref, dest_dir: calls.update(repo=repo, ref=ref, dest_dir=dest_dir),
+        lambda checkout, ref: calls.update(checkout=checkout, ref=ref),
+    )
+    checkout = tmp_path / "repo"
+    checkout.mkdir()
+
+    cli.main(["install", "--repo", str(checkout), "--ref", "v1.0.0"])
+
+    assert calls == {"checkout": checkout.resolve(), "ref": "v1.0.0"}
+
+
+def test_install_without_bundle_or_repo_auto_discovers_checkout_from_cwd(monkeypatch, tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "pyproject.toml").write_text("[tool.x]\n")
+    monkeypatch.chdir(root)
+
+    calls = {}
+    monkeypatch.setattr(
+        cli.git_source,
+        "install",
+        lambda checkout, ref: calls.update(checkout=checkout, ref=ref),
     )
 
-    cli.main(["install", "--repo", "https://example.com/soar.git", "--ref", "v1.0.0", "--dir", str(tmp_path / "instance")])
+    cli.main(["install"])
 
-    assert calls == {"repo": "https://example.com/soar.git", "ref": "v1.0.0", "dest_dir": tmp_path / "instance"}
+    assert calls == {"checkout": root.resolve(), "ref": None}
 
 
-def test_install_requires_exactly_one_of_bundle_or_repo(tmp_path):
+def test_install_without_bundle_or_repo_outside_checkout_errors(monkeypatch, tmp_path):
+    outside = tmp_path / "nowhere"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+
     with pytest.raises(SystemExit):
-        cli.main(["install", "--dir", str(tmp_path)])
+        cli.main(["install"])
 
 
 def test_install_rejects_both_bundle_and_repo(tmp_path):
     bundle_file = tmp_path / "b.tar.gz"
     bundle_file.write_bytes(b"x")
+    checkout = tmp_path / "repo"
+    checkout.mkdir()
     with pytest.raises(SystemExit):
-        cli.main(["install", str(bundle_file), "--repo", "https://example.com/soar.git", "--dir", str(tmp_path)])
+        cli.main(["install", str(bundle_file), "--repo", str(checkout)])
 
 
 def test_update_dispatches_to_git_source_update(monkeypatch, tmp_path):

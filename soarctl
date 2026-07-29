@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Thin wrapper so `./soarctl ...` works from the repo root after `git clone` —
+# see docs/compose/specs/2026-07-29-soarctl-inplace-onsite-design.md.
+set -euo pipefail
+exec python3 "$(dirname "${BASH_SOURCE[0]}")/deploy/soarctl" "$@"
