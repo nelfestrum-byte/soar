@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import backup, bundle, compose, doctor, env, git_source, migrate, paths, prompts, status, users
+from . import backup, bundle, compose, content, doctor, env, git_source, migrate, paths, prompts, status, users
 
 
 def _add_dir_arg(parser: argparse.ArgumentParser) -> None:
@@ -85,6 +85,19 @@ def build_parser() -> argparse.ArgumentParser:
     bkp_restore.add_argument("archive")
     bkp_restore.add_argument("--confirm", action="store_true")
     _add_dir_arg(bkp_restore)
+
+    ct = sub.add_parser("content", help="Install/list/remove the base connector content-pack")
+    ct_sub = ct.add_subparsers(dest="content_cmd", required=True)
+
+    ct_install = ct_sub.add_parser("install", help="Install a pack (local path or git URL) into the running instance")
+    ct_install.add_argument("pack", help="Pack directory path or git URL (see manifest.yaml at its root)")
+    ct_install.add_argument("--ref", default=None, help="git ref to check out, if `pack` is a git URL")
+
+    ct_sub.add_parser("list", help="List installed connectors + whether they've been modified since install")
+
+    ct_remove = ct_sub.add_parser("remove", help="Remove one installed connector")
+    ct_remove.add_argument("name")
+    ct_remove.add_argument("--force", action="store_true", help="Remove even if modified since install")
 
     doc = sub.add_parser("doctor", help="Preflight checks")
     _add_dir_arg(doc)
@@ -184,6 +197,32 @@ def main(argv: list[str] | None = None) -> None:
             backup.create(instance, Path(args.output))
         elif args.backup_cmd == "restore":
             backup.restore(instance, Path(args.archive), confirm=args.confirm)
+        return
+
+    if args.cmd == "content":
+        if args.content_cmd == "install":
+            result = content.install(args.pack, ref=args.ref)
+            for category in ("new", "update", "unchanged", "skip_modified"):
+                names = result.get(category, [])
+                if names:
+                    print(f"{category}: {', '.join(names)}")
+            if not any(result.values()):
+                print("Nothing to install.")
+        elif args.content_cmd == "list":
+            rows = content.list_installed()
+            if not rows:
+                print("No connectors installed.")
+            else:
+                print(f"{'NAME':<30}{'VERSION':<15}MODIFIED")
+                for row in rows:
+                    print(f"{row['name']:<30}{str(row['pack_version']):<15}{row['modified']}")
+        elif args.content_cmd == "remove":
+            try:
+                content.remove(args.name, force=args.force)
+            except content.ContentError as e:
+                print(f"error: {e}")
+                sys.exit(1)
+            print(f"removed {args.name}")
         return
 
     if args.cmd == "doctor":

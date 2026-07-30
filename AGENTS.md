@@ -7,7 +7,16 @@
 
 SOAR (Security Orchestration, Automation and Response) — система автоматизации инцидентов. Три компонента:
 
-1. **`soar/`** — Python-пакет: enterprise-коннекторы (SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh, PostgreSQL/MySQL/MSSQL, Telegram, SMTP, VirusTotal, Abuse.ch, File, WinRM, SMB, Shodan, Fofa, Censys, MISP, RstCloud, Kaspersky OpenTip, URLhaus, crt.sh), actions, workflows, реестры
+1. **`soar/`** — Python-пакет: контракт и реестры для коннекторов/экшенов/воркфлоу
+   (`soar/connectors/base.py`+`_proxy.py`, `soar/actions/`, `soar/workflows/`),
+   зависимостный контракт content-venv (`soar/runtime_contract.py`). Сами 24
+   встроенных коннектора (SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh,
+   PostgreSQL/MySQL/MSSQL, Telegram, SMTP, VirusTotal, Abuse.ch, File, WinRM,
+   SMB, Shodan, Fofa, Censys, MISP, RstCloud, Kaspersky OpenTip, URLhaus,
+   crt.sh) — не в этом репозитории: отдельный контентпак
+   (`soar-content-pack`, локальный git-репозиторий, сиблинг этого чекаута),
+   ставится через `soarctl content install`/`POST /connectors/pack/install`,
+   см. `docs/compose/reports/content-as-contentpack.md`
 2. **`orchestrator/`** — FastAPI сервис: очередь задач, воркеры, планировщик, git-версионирование
 3. **`ui/`** — Vue.js SPA: стенд для ручного тестирования, дорабатывается до
    продакшен-юзабельности (точки контроля, видимость логов и аудита — см.
@@ -180,6 +189,7 @@ orchestrator/
 │   ├── introspect.py          # parse_classes/parse_functions/parse_workflow_meta/_public_names — AST-интроспекция без импорта, общая для tools.py/actions.py/connectors.py/workflows.py; parse_classes также извлекает fields (тип+дефолт) и hidden_fields (HIDDEN_FIELDS) для connector schema; _public_names читает __all__ (GET /tools, E5)
 │   ├── audit_parse.py          # parse_audit_events() — парсит SOAR_AUDIT_EVENT-строки из лога джобы (пишет soar/connectors/_proxy.py), Worker._execute передаёт результат в audit.service.record_job_event
 │   ├── openapi_generator.py    # OpenAPIGenerator — перенесён из soar/tools/openapi.py (Фаза 2, E5): механизм оркестратора (генерация коннектора из спеки), не runtime-инструмент воркфлоу, единственный потребитель — api/connectors.py
+│   ├── pack_install.py          # read_manifest/check_runtime_compat/check_dependencies/plan_install/apply_install/apply_install_dir — чистая install-логика контентпака (Фаза 3), общая для api/packs.py (zip-загрузка) и main.py::seed_connector_pack (base pack, директория, каждый старт)
 │   └── net.py                 # resolve_client_ip() — trusted-proxy-aware IP, общий для rate limiter/access log/audit
 ├── store/
 │   ├── base.py                 # AbstractJobStore — интерфейс (save/get/list/count_by_status/stats/recover_on_startup/purge_old)
@@ -194,6 +204,7 @@ orchestrator/
     ├── workflows.py            # GET/POST enable/disable, reload + CRUD кода workflow + history/diff/restore
     ├── actions.py               # CRUD actions + templates + history/diff/restore + GET {name}/describe; GET /actions — AST-only (parse_functions), лишний public callable на файл — отдельная запись, не импортирует actions_dir (граница рантайма из Фазы 1 — импорт контента только внутри soar.runner)
     ├── connectors.py            # CRUD connectors + code/config + OpenAPI generate/preview (orchestrator/core/openapi_generator.py) + history/diff/restore + GET {name}/describe
+    ├── packs.py                  # POST /connectors/pack/install — установка контентпака (admin-only, conflict-preflight+force, audit); orchestrator/core/pack_install.py — чистая логика (read_manifest/plan_install/apply_install)
     ├── jobs.py                  # POST запуск, GET статус, cancel
     ├── webhooks.py              # POST webhook с токеном
     ├── logs.py                  # GET лог + SSE стрим
@@ -206,7 +217,7 @@ orchestrator/
     └── validation.py              # validate_name, validate_path_within, SSRF validation
 
 soar/
-├── connectors/                 # 24 коннектора (23 интеграции + file), namespace по типу (ConnectorRegistry — dict[type][instance]) — полный список см. File map; каждый объявляет class-level HIDDEN_FIELDS (редакция секретов в config API и в audit-логе) и MUTATING_METHODS (dry-run gate на прокси)
+├── connectors/                 # Только контракт+реестр — __init__.py (ConnectorRegistry — dict[type][instance], namespace по типу), base.py (BaseConnector, HIDDEN_FIELDS/MUTATING_METHODS), _proxy.py. Сами 24 встроенных коннектора — НЕ здесь с Phase 3 (content-as-contentpack): отдельный репозиторий `soar-content-pack` (сиблинг этого чекаута, локальный, без remote), ставится в connectors_dir через soarctl content install/POST /connectors/pack/install/сидинг на старте — см. File map и docs/compose/reports/content-as-contentpack.md
 │   └── _proxy.py                # ConnectorProxy — единственный способ получить коннектор (оба фасада: `from soar.connectors.<type> import <instance>` и `connectors.<instance>`); логирует SOAR_AUDIT_EVENT, редактирует HIDDEN_FIELDS, блокирует MUTATING_METHODS под dry_run
 ├── runtime_state.py             # process-wide dry_run flag (один subprocess = одна джоба) — set_dry_run/is_dry_run, читает ConnectorProxy
 ├── actions/__init__.py         # ActionsRegistry — автообнаружение actions, регистрирует все public top-level callables модуля (не только одноимённый файлу)
@@ -222,7 +233,7 @@ alembic/                        # Alembic-миграции (auth + workflow_jobs
 deploy/stage/                   # QA docker-compose (build: from source) + Makefile
 deploy/prod/                    # Distributable profile — image: не build:, config.yaml не в git, см. deploy/prod/README.md
 soarctl                         # Root-level bash wrapper (`./soarctl ...`) — see deploy/soarctl below
-deploy/soarctl, soarctl_lib/    # Host-layer CLI: package/install/init/up/update/migrate/users/backup/doctor
+deploy/soarctl, soarctl_lib/    # Host-layer CLI: package/install/init/up/update/migrate/users/backup/doctor/content
                                  # git_source.py — on-site install, in-place in <checkout>/deploy/prod (no bundle/air-gap);
                                  # paths.instance_dir() auto-discovers cwd/checkout the way `git` finds its repo root
 
@@ -415,7 +426,7 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 6. `AuditLog.actor_name` для JWT — числовой id, не логин
 7. `PATCH /auth/users/{id}` не защищает от деактивации последнего admin'а (принято как остаточный риск — recovery вне API через `orchestrator/auth/cli.py create-user --role admin`)
 8. Мультиинстансность вне scope `soarctl` (нет CLI-контекста нескольких инстансов)
-9. Правка кода встроенного коннектора через API молча не применяется — исполняется копия из пакета, а не из `connectors_dir` (E1)
+9. ~~Правка кода встроенного коннектора через API молча не применяется — исполняется копия из пакета, а не из `connectors_dir`~~ — закрыто в Content-as-Contentpack Phase 3 (E1, E4): 24 встроенных коннектора переехали в отдельный репозиторий пака, `soar/connectors/` больше не содержит копий
 10. ~~Зависимости 11 из 24 встроенных коннекторов не установлены в образ~~ — закрыто в Runtime Boundary Phase 1 (E2)
 11. ~~Контент исполняется в рантайме платформы — тот же интерпретатор и те же site-packages, что у оркестратора; воркфлоу импортируются в процесс оркестратора при reload~~ — закрыто в Runtime Boundary Phase 1 (E10, включая E10.3): `deploy/{prod,stage}` теперь собирают отдельный `content-venv`, `SubprocessRunner`/`soar/runner.py` запускаются на нём (`SOAR_CONTENT_PYTHON`); `load_workflow_metas` больше не импортирует пользовательский код (AST-парсинг). Окружение исполнения теперь описано по API — `GET /runtime` (E9)
 
@@ -424,31 +435,10 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 | Что нужно | Куда смотреть |
 |-----------|---------------|
 | Добавить API эндпоинт | `orchestrator/api/*.py` |
-| Новый коннектор | `soar/connectors/`, скопировать `elastic/` как шаблон |
-| Telegram коннектор | `soar/connectors/telegram/` — send_message, send_photo, send_document, get_updates |
-| SMTP коннектор | `soar/connectors/smtp/` — send_email, send_text, send_html (plain/HTML, CC/BCC, вложения) |
-| File коннектор | `soar/connectors/file/` — write, write_json, append, read, list_files, delete |
-| SSH коннектор | `soar/connectors/ssh/` — exec_command, put_file, get_file, list_dir |
-| Active Directory | `soar/connectors/active_directory/` — search, get_user, authenticate, modify |
-| FreeIPA | `soar/connectors/freeipa/` — user/group/host CRUD, hbac, certs |
-| Elastic | `soar/connectors/elastic/` — query, index, bulk, indices, ILM |
-| Security Onion | `soar/connectors/security_onion/` — alerts, events, agents, hunts, pcap |
-| Wazuh | `soar/connectors/wazuh/` — agents, alerts, sca, vulns, syscheck, rules |
-| PostgreSQL | `soar/connectors/postgresql/` — execute, tables, columns |
-| MySQL | `soar/connectors/mysql/` — execute, tables, columns |
-| MSSQL | `soar/connectors/mssql/` — execute, tables, columns |
-| VirusTotal | `soar/connectors/virus_total/` — IP/domain/file/URL reports, upload |
-| Abuse.ch | `soar/connectors/abusech/` — ThreatFox IOCs, MalwareBazaar, URLhaus |
-| WinRM | `soar/connectors/winrm/` — exec_command, run_ps, upload/download |
-| SMB/RPC | `soar/connectors/smb_rpc/` — SMB/RPC file operations |
-| Shodan | `soar/connectors/shodan/` — search hosts, DNS resolve/reverse |
-| Fofa | `soar/connectors/fofa/` — host search, user info |
-| Censys | `soar/connectors/censys/` — hosts/certificates search |
-| MISP | `soar/connectors/misp/` — events/attributes/sightings CRUD |
-| RstCloud | `soar/connectors/rstcloud/` — IP/domain/hash/URL checks |
-| Kaspersky OpenTip | `soar/connectors/kaspersky_opentip/` — IP/domain/hash/URL checks |
-| URLhaus | `soar/connectors/urlhaus/` — URL/host/payload lookups |
-| crt.sh | `soar/connectors/crtsh/` — certificate/domain/identity search |
+| Новый встроенный коннектор (одна из 24 базовых интеграций) | `soar-content-pack` (отдельный репозиторий, сиблинг этого чекаута) — `connectors/`, скопировать `elastic/` как шаблон; `tools/gen_manifest.py` перегенерирует `manifest.yaml` (AST, не импортирует). Этот репозиторий — не часть модели сущностей `soar/`: контракт (`base.py`/`_proxy.py`/`MUTATING_METHODS`) остаётся здесь, тело коннектора — там |
+| Коннектор конкретного вендора/протокола (Telegram, SMTP, SSH, AD, FreeIPA, Elastic, SecurityOnion, Wazuh, PostgreSQL/MySQL/MSSQL, VirusTotal, Abuse.ch, File, WinRM, SMB, Shodan, Fofa, Censys, MISP, RstCloud, Kaspersky OpenTip, URLhaus, crt.sh) | `soar-content-pack/connectors/<name>/` — см. `docs/compose/reports/content-as-contentpack.md` для полного списка методов на каждый (перенесено туда без изменения кода) |
+| Установка/обновление базового пака коннекторов | `soarctl content install\|list\|remove` (`deploy/soarctl_lib/content.py`), `POST /connectors/pack/install` (`orchestrator/api/packs.py`, admin-only), сидинг на старте — `orchestrator/main.py::seed_connector_pack` (каждый старт, не только на пустом volume — закрывает E4) |
+| Install-планирование пака (чистая логика) | `orchestrator/core/pack_install.py` — `read_manifest`/`check_runtime_compat`/`check_dependencies`/`plan_install`/`apply_install`, маркер происхождения `.soar-content.yaml` |
 | Watermark / дедуп событий | `soar/tools/watermark.py` — WatermarkStore, SeenStore (durable JSON, generic) + `watermark_store(name)`/`seen_store(name, ttl)` фабрики (путь строится из `soar.state_dir` конфига, синглтон-контракт как у `http_client`) |
 | HTTP client (логирование + опциональный кэш) | `soar/tools/http_client.py` — `HttpClient` (async) + `SyncHttpClient` (sync-фасад для коннекторов, `http_client_sync` синглтон), `http_client:` секция конфига, см. `docs/agents/config-reference.md` |
 | Connector config schema / секреты | `orchestrator/core/introspect.py` (`_fields`/`_hidden_fields`), `orchestrator/api/connectors.py` (`GET /schema`, редакция config/history/diff), `HIDDEN_FIELDS` на каждом коннекторе |
@@ -483,9 +473,9 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 | UI: права по роли | `ui/src/permissions.js` (`can(role, cap)` — зеркало ролевых кортежей `orchestrator/api/*.py`), `ui/src/router-guard.js` (закрывает прямой переход по URL, не только пункт меню) |
 | UI: история/diff/restore | `ui/src/components/HistoryPanel.vue` — общий компонент для workflow/action/connector(code+config), вкладка рядом с редактором |
 | Deploy (QA-стенд) | `deploy/stage/` — docker-compose.yml (build:), Dockerfiles |
-| Deploy (дистрибуция, air-gap) | `deploy/prod/` (docker-compose.yml с `image:`, config.yaml.template) + `deploy/soarctl`/`soarctl_lib/` — package/install/init/up/migrate/users/backup/doctor, см. `docs/compose/specs/2026-07-22-deploy-cli-design.md` |
+| Deploy (дистрибуция, air-gap) | `deploy/prod/` (docker-compose.yml с `image:`, config.yaml.template) + `deploy/soarctl`/`soarctl_lib/` — package/install/init/up/migrate/users/backup/doctor/content, см. `docs/compose/specs/2026-07-22-deploy-cli-design.md`. Базовый контентпак коннекторов копируется в образ на сборке (`COPY --from=basepack`, требует sibling-репозиторий `soar-content-pack` как extra build context — Фаза 3, см. `docs/compose/reports/content-as-contentpack.md`, не проверено реальной сборкой) |
 | Deploy (дистрибуция, on-site/с интернетом) | `soarctl install --repo <url-or-path> [--ref REF]` — сборка образов на месте, без bundle; `soarctl init --interactive`/`--cors-origin` — заполняет `auth.cors_origins` вместо плейсхолдера; `soarctl update [--ref REF] [--migrate fresh\|upgrade]` — git pull/checkout + пересборка + `up`, без `down`, postgres/redis не пересоздаются; `soarctl_lib/git_source.py`, `prompts.py`; см. `docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md` |
-| Тесты | `tests/orchestrator/`, `tests/soar/`, `tests/deploy/` |
+| Тесты | `tests/orchestrator/`, `tests/soar/`, `tests/deploy/` — тесты конкретных встроенных коннекторов переехали в `soar-content-pack/tests/` вместе с их кодом (Фаза 3); здесь остаётся платформенная механика (`ConnectorRegistry`, `ConnectorProxy`, pack install pipeline) |
 | API endpoints (полные таблицы) | `docs/agents/api-reference.md` |
 | Security patterns (полное описание) | `docs/agents/security-patterns.md` |
 | Known limitations (полное описание) | `docs/agents/known-limitations.md` |

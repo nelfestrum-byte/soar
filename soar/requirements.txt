@@ -1,3 +1,14 @@
+# Content-venv dependency contract (soar/runtime_contract.py::CONTRACT is
+# the source of truth for what each entry means — protocol vs vendor).
+# Unchanged by Phase 3 of the entity-model plan: the 24 built-in connectors
+# that used to live in soar/connectors/ moved to a separate content-pack
+# repo (docs/compose/specs/2026-07-30-content-as-contentpack-design.md),
+# but the packages they import are still part of the platform's dependency
+# contract — the contract describes what content-venv guarantees, not
+# where the code that uses it happens to live on disk (see [S9] in that
+# spec). Extending this list is a platform release: add here AND to
+# runtime_contract.py::CONTRACT in the same commit, with tests
+# (tests/soar/test_runtime_contract.py).
 loguru>=0.7.0
 pyyaml>=6.0
 elasticsearch>=8.0.0

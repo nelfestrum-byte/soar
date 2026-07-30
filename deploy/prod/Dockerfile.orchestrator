@@ -11,6 +11,22 @@ COPY orchestrator/ /app/orchestrator/
 COPY alembic/ /app/alembic/
 COPY alembic.ini /app/alembic.ini
 
+# Base connector content-pack (Phase 3, docs/concepts/ENTITY-MODEL.md /
+# docs/compose/specs/2026-07-30-content-as-contentpack-design.md) — baked
+# into the image at build time, never fetched over the network (air-gap).
+# Lives in a separate repo (D:/projects/soar-content-pack locally, sibling
+# of this checkout), so it isn't part of this build context by default:
+# `basepack` must be passed as an extra named build context, e.g.
+#   docker buildx build --build-context basepack=../soar-content-pack -f deploy/prod/Dockerfile.orchestrator ...
+# `deploy/soarctl_lib/bundle.py::build_images` passes this automatically
+# for `soarctl package`. orchestrator/main.py::seed_connector_pack installs
+# from here via the same pipeline as `soarctl content install` / POST
+# /connectors/pack/install — every startup, not just once (closes E4).
+# UNVERIFIED by an actual `docker build` as of this patch — see
+# docs/compose/reports/content-as-contentpack.md, section on the Dockerfile
+# changes, for what a human should check before this ships.
+COPY --from=basepack . /app/base-pack/
+
 # Platform venv — оркестратор и всё, от чего он зависит. Первый на PATH,
 # поэтому голые `python`/`pip`/`alembic` (soarctl, docker exec) резолвятся
 # сюда — поведение снаружи не меняется.
@@ -25,15 +41,12 @@ RUN python -m venv /app/content-venv && \
     /app/content-venv/bin/pip install --no-cache-dir -r /app/soar/requirements.txt
 
 RUN mkdir -p /app/data /app/data/workflows /app/data/actions /app/data/connectors /var/log/soar/jobs && \
-    find /app/soar/workflows -maxdepth 1 -name '*.py' ! -name '__init__.py' ! -name 'base.py' -exec cp -n {} /app/data/workflows/ \; 2>/dev/null || true && \
-    find /app/soar/actions -maxdepth 1 -name '*.py' ! -name '__init__.py' -exec cp -n {} /app/data/actions/ \; 2>/dev/null || true && \
-    find /app/soar/connectors -maxdepth 1 -mindepth 1 -type d ! -name '__pycache__' ! -name '_*' -exec cp -rn {} /app/data/connectors/ \; 2>/dev/null || true && \
-    find /app/data/connectors -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true && \
     chown -R soar:soar /app /var/log/soar
 
 ENV PYTHONUNBUFFERED=1
 ENV SOAR_CONFIG=/app/config.yaml
 ENV SOAR_CONTENT_PYTHON=/app/content-venv/bin/python
+ENV SOAR_BASE_PACK_PATH=/app/base-pack
 
 EXPOSE 8000
 
