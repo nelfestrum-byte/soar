@@ -68,6 +68,48 @@ CANCELLED) записи старше порога; вызывается раз �
 Спек/отчёт: `docs/compose/specs/2026-07-27-sql-job-queue-design.md`,
 `docs/compose/reports/sql-job-queue.md`.
 
+## Job-runner privilege narrowing (`jobs.runner_uid` и credential scoping)
+
+Фаза 4 модели сущностей (`docs/concepts/ENTITY-MODEL.md`, слой 3
+изоляции). Два независимых механизма — второй не требует первого:
+
+**Credential scoping — всегда включён, без опции.** Каждый job-субпроцесс
+получает не полный `orchestrator/config.yaml` (JWT-секрет,
+`database.url`), а временный YAML-срез: `orchestrator/core/introspect.py
+::parse_connector_usage` статически (AST, без импорта) находит `from
+soar.connectors.<type> import <instance>` на верхнем уровне файла
+воркфлоу, `orchestrator/core/subprocess_runner.py::build_scoped_config`
+строит по этому списку временный `connectors_dir` (символические ссылки на
+нужные `.py`, отфильтрованные `.yml` только с нужными инстансами).
+Воркфлоу без статически найденных импортов (старый `connectors.<name>`
+registry-путь, ошибка парсинга, отсутствующий файл) получают **пустой**
+`connectors_dir`, не полный набор — см. `build_scoped_config`'s docstring
+для обоснования (в репозитории нет примеров старой формы после Фазы 2).
+Временный каталог (`job.scoped_config_dir`) удаляется в `Worker._execute`'s
+`finally`, на всех путях выхода (успех/ошибка/timeout/cancel).
+
+**UID/rlimit narrowing — опционален, POSIX/Docker-only, `None` по
+умолчанию (без изменений в поведении):**
+```yaml
+jobs:
+  runner_uid: 5001        # None (дефолт) = не понижать привилегии
+  runner_gid: 5001         # None = использовать runner_uid как gid
+  runner_max_memory_mb: 512
+  runner_max_cpu_seconds: 300
+  runner_max_procs: 32
+```
+Требует образ, собранный из `deploy/{prod,stage}/Dockerfile.orchestrator`
+этой версии — отдельный пользователь `soar-runner` (фиксированный
+uid/gid `5001`), `setpriv` с файловой capability
+`cap_setuid,cap_setgid+ep`, `config.yaml` mode `640` (`soar:soar`),
+`/app/data/state` group-writable `soar-runner`. Механизм — не прямой
+`os.setuid`/`os.setgid` в `preexec_fn` (не работает без CAP_SETUID у
+самого интерпретатора — см. `docs/compose/reports/privilege-narrowing.md`
+для замеров в Docker), а обёртка argv в `setpriv --reuid=... --regid=...`;
+rlimits (`RLIMIT_AS`/`RLIMIT_CPU`/`RLIMIT_NPROC`) по-прежнему через
+`preexec_fn`, они не требуют capability. Полное описание, включая
+компромисс по механизму — `docs/agents/security-patterns.md` и отчёт фазы.
+
 ## HTTP client (soar/tools/http_client.py)
 
 Общий инструмент для threat-intel actions (VT, AbuseCh, Shodan, Fofa, Censys,

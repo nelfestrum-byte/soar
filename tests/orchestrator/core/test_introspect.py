@@ -1,6 +1,11 @@
 import pytest
 
-from orchestrator.core.introspect import parse_classes, parse_functions, parse_workflow_meta
+from orchestrator.core.introspect import (
+    parse_classes,
+    parse_connector_usage,
+    parse_functions,
+    parse_workflow_meta,
+)
 
 CLASS_MODULE = '''"""Module docstring, not under test."""
 
@@ -241,3 +246,83 @@ def test_parse_workflow_meta_syntax_error_propagates(tmp_path):
     path.write_text(SYNTAX_ERROR_MODULE, encoding="utf-8")
     with pytest.raises(SyntaxError):
         parse_workflow_meta(path)
+
+
+SINGLE_CONNECTOR_IMPORT = '''from soar.connectors.virus_total import vt_main
+from soar.workflows.base import ManualWorkflow
+
+
+class EnrichIndicator(ManualWorkflow):
+    def run(self, context):
+        return vt_main.lookup(context["ioc"])
+'''
+
+TWO_TYPE_IMPORTS = '''from soar.connectors.virus_total import vt_main
+from soar.connectors.shodan import shodan_prod
+from soar.workflows.base import ManualWorkflow
+
+
+class EnrichIndicator(ManualWorkflow):
+    def run(self, context):
+        return {}
+'''
+
+ALIASED_IMPORT = '''from soar.connectors.ssh import prod as ssh_prod
+from soar.workflows.base import ManualWorkflow
+
+
+class RunCommand(ManualWorkflow):
+    def run(self, context):
+        return ssh_prod.exec(context["cmd"])
+'''
+
+NO_CONNECTOR_IMPORTS = '''from soar.workflows.base import ManualWorkflow
+
+
+class NoConnectors(ManualWorkflow):
+    def run(self, context):
+        return {"status": "ok"}
+'''
+
+NON_CONNECTOR_IMPORT = '''from soar.tools import http_client
+from soar.workflows.base import ManualWorkflow
+
+
+class UsesTools(ManualWorkflow):
+    def run(self, context):
+        return http_client.get("https://example.com")
+'''
+
+
+def test_parse_connector_usage_single_import(tmp_path):
+    path = tmp_path / "enrich_indicator.py"
+    path.write_text(SINGLE_CONNECTOR_IMPORT, encoding="utf-8")
+    assert parse_connector_usage(path) == [("virus_total", "vt_main")]
+
+
+def test_parse_connector_usage_two_types(tmp_path):
+    path = tmp_path / "enrich_indicator.py"
+    path.write_text(TWO_TYPE_IMPORTS, encoding="utf-8")
+    result = parse_connector_usage(path)
+    assert set(result) == {("virus_total", "vt_main"), ("shodan", "shodan_prod")}
+
+
+def test_parse_connector_usage_aliased_import_resolves_real_instance_name(tmp_path):
+    """`import prod as ssh_prod` must scope on "prod" (the registry
+    instance actually fetched via PEP 562 module __getattr__), not on the
+    local alias "ssh_prod" — see parse_connector_usage docstring."""
+    path = tmp_path / "run_command.py"
+    path.write_text(ALIASED_IMPORT, encoding="utf-8")
+    assert parse_connector_usage(path) == [("ssh", "prod")]
+
+
+def test_parse_connector_usage_no_imports_returns_empty(tmp_path):
+    path = tmp_path / "no_connectors.py"
+    path.write_text(NO_CONNECTOR_IMPORTS, encoding="utf-8")
+    assert parse_connector_usage(path) == []
+
+
+def test_parse_connector_usage_ignores_non_connector_imports(tmp_path):
+    path = tmp_path / "uses_tools.py"
+    path.write_text(NON_CONNECTOR_IMPORT, encoding="utf-8")
+    assert parse_connector_usage(path) == []

@@ -1,8 +1,28 @@
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+# libcap2-bin: setcap, to grant setpriv cap_setuid/cap_setgid below (Фаза 4
+# privilege narrowing) — setpriv itself already ships in util-linux, a base
+# Debian dependency. git: workflows_repo version control.
+RUN apt-get update && apt-get install -y git libcap2-bin && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd -r soar && useradd -r -g soar -d /app -s /sbin/nologin soar
+
+# Separate, less-privileged identity for the job-runner subprocess (Фаза 4,
+# docs/compose/specs/2026-07-30-privilege-narrowing-design.md [S3]) — fixed
+# numeric ids so config.yaml's jobs.runner_uid/runner_gid stay correct
+# across rebuilds (unlike `soar` above, whose id is left to `useradd -r`'s
+# existing auto-assignment to avoid changing ownership on volumes from
+# installs that predate this change). soar-runner is NOT in the `soar`
+# group and gets no home/shell — it never logs in, only ever exec's via
+# `setpriv --reuid=... --regid=...` from SubprocessRunner.
+RUN groupadd -r --gid=5001 soar-runner && \
+    useradd -r --uid=5001 -g soar-runner -d /app -s /sbin/nologin soar-runner
+
+# setpriv carries the capability, not the python interpreter — any code
+# under content-venv/platform-venv Python must NOT be able to self-elevate
+# to another uid; only this specific, small, well-audited util-linux binary
+# can, and only to switch into soar-runner for the runner subprocess exec.
+RUN setcap cap_setuid,cap_setgid+ep /usr/bin/setpriv
 
 WORKDIR /app
 
@@ -40,8 +60,18 @@ ENV PATH="/app/platform-venv/bin:${PATH}"
 RUN python -m venv /app/content-venv && \
     /app/content-venv/bin/pip install --no-cache-dir -r /app/soar/requirements.txt
 
-RUN mkdir -p /app/data /app/data/workflows /app/data/actions /app/data/connectors /var/log/soar/jobs && \
+RUN mkdir -p /app/data /app/data/workflows /app/data/actions /app/data/connectors /app/data/state /var/log/soar/jobs && \
     chown -R soar:soar /app /var/log/soar
+
+# state_dir (soar/tools/watermark.py — WatermarkStore/SeenStore) is the one
+# place workflow content writes outside its per-job scoped connectors_dir;
+# group-own it soar-runner and open group-write so the runner subprocess
+# can still persist watermarks after dropping to soar-runner (Фаза 4 [S3]).
+# Everything else under /app/data stays soar:soar mode 755 — soar-runner
+# gets read+execute (traverse) on it as `other`, same as before, but no
+# write: it can import workflows/actions/connector code, never touch the
+# git-tracked directories itself (workflows_repo — see git.workflows_repo).
+RUN chown soar:soar-runner /app/data/state && chmod 770 /app/data/state
 
 ENV PYTHONUNBUFFERED=1
 ENV SOAR_CONFIG=/app/config.yaml

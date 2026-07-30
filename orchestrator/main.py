@@ -204,6 +204,7 @@ def load_workflow_metas(config) -> list[WorkflowMeta]:
             token=token,
             concurrency=ConcurrencyPolicy.ALLOW if meta["type"] == "webhook" else ConcurrencyPolicy.FORBID,
             docstring=meta["docstring"],
+            file_path=str(py_file),
         ))
 
     for name, saved in state_workflows.items():
@@ -243,7 +244,7 @@ async def lifespan(app: FastAPI):
 
     queue = create_queue(config)
     job_store = create_job_store(config)
-    runner = SubprocessRunner()
+    runner = SubprocessRunner(config=config)
     git = GitManager(
         repo_path=config.git.workflows_repo,
         author_name=config.git.author_name,

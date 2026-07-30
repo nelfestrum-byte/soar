@@ -58,6 +58,7 @@ class RedisQueue(AbstractJobQueue):
             "context": job.context,
             "log_path": job.log_path,
             "timeout": job.timeout,
+            "workflow_file": job.workflow_file,
             "triggered_at": job.triggered_at.isoformat() if job.triggered_at else None,
             "concurrency": job.concurrency.value,
         })
@@ -91,6 +92,7 @@ class RedisQueue(AbstractJobQueue):
                 context=item["context"],
                 log_path=item.get("log_path"),
                 timeout=item.get("timeout"),
+                workflow_file=item.get("workflow_file") or "",
                 triggered_at=triggered_at,
                 concurrency=concurrency,
             )

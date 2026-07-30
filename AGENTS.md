@@ -1,4 +1,4 @@
-# AGENTS.md — SOAR Project v0.16
+# AGENTS.md — SOAR Project v0.17
 
 > Это индекс. Детали вынесены в сателлитные файлы под `docs/agents/` и в `CHANGELOG.md` —
 > открывай их только когда задача реально их касается (см. Token optimization внизу).
@@ -67,18 +67,27 @@ SOAR (Security Orchestration, Automation and Response) — система авт
 читая исходники и не имея доступа к хосту. Уже действует для инструментов
 (`GET /tools`), сигнатур (`/describe`) и полей конфига (`/schema`); правило
 общее. Сюда же входит **окружение исполнения**: что доступно для импорта и
-что из этого гарантировано платформой (`GET /runtime`, E9 — пока не
-реализовано). Проверка на нарушение: если ответ на вопрос «что мне
-доступно?» требует `docker exec`, чтения `requirements.txt` или похода к
-админу — принцип нарушен.
+что из этого гарантировано платформой — `GET /runtime` отдаёт
+`soar/runtime_contract.py` + фактически установленные пакеты content-venv
+(закрыто в Runtime Boundary Phase 1, E9). Проверка на нарушение: если ответ
+на вопрос «что мне доступно?» требует `docker exec`, чтения
+`requirements.txt` или похода к админу — принцип нарушен.
 
 **Принцип 5. Рантайм контента отделён от рантайма платформы.** У контента
 свой интерпретатор со своим набором пакетов; внутренности платформы
 (драйверы БД, JWT, миграции, ORM) недоступны ему физически, а не по
 договорённости. Это граница зависимостей, не песочница: защищаемся от
 неаккуратного и умеренно враждебного контента, не от целенаправленного
-атакующего. Сегодня нарушено — `SubprocessRunner` идёт через
-`sys.executable` (E10).
+атакующего. `SubprocessRunner` запускает `soar.runner` на отдельном
+`content-venv` (`SOAR_CONTENT_PYTHON`, закрыто в Runtime Boundary Phase 1,
+E10) — платформенные пакеты (FastAPI, SQLAlchemy, JWT) физически не
+установлены туда. Слой изоляции 3 (Фаза 4, privilege narrowing) сужает
+дальше: субпроцесс получает конфиг-срез только с используемыми
+connector-инстансами (статический AST-вывод из `from soar.connectors.
+<type> import <instance>`, не полный `config.yaml` — JWT-секрет и
+`database.url` физически не передаются), а на POSIX/Docker опционально
+(`jobs.runner_uid`) — отдельный UID/GID + `RLIMIT_AS`/`RLIMIT_CPU`/
+`RLIMIT_NPROC`, см. `docs/agents/security-patterns.md`.
 
 **Зависимости — контракт, а не список удобства.** Установки пакетов в
 рантайме нет и не будет: air-gap (нет индекса) и эфемерность контейнера.
@@ -97,10 +106,11 @@ HTTP-интеграцию писать на `http_client`. Детали и об�
 возможности снять хук. Прокси **не** граница безопасности: он в одном
 процессе с контентом.
 
-Правило уже действует в трёх слоях из четырёх: в `soar/workflows/` лежат
-только `__init__.py` и `base.py`, в `soar/actions/` — только `__init__.py`.
-`soar/connectors/` с 24 каталогами контента — известное нарушение,
-трек 3 в `ENTITY-MODEL.md`.
+Правило действует во всех четырёх слоях: `soar/workflows/` содержит только
+`__init__.py`+`base.py`, `soar/actions/` — только `__init__.py`,
+`soar/connectors/` — только `__init__.py`/`base.py`/`_proxy.py`. Все 24
+встроенных коннектора — контент, живут в отдельном репозитории пака
+(`soar-content-pack`, закрыто в Content-as-Contentpack Phase 3, E1/E4).
 
 ## Stack
 
@@ -363,6 +373,10 @@ Workflows запускаются как отдельные процессы че
 - stdout перенаправляется в файл лога
 - Контекст передаётся через env vars (SOAR_CONTEXT)
 - Actions и connectors инициализируются в subprocess
+- `SOAR_CONFIG` субпроцесса — не `orchestrator/config.yaml`, а временный
+  конфиг-срез (`SubprocessRunner.build_scoped_config`, Фаза 4): только
+  connector-инстансы, статически найденные в импортах воркфлоу, каталог
+  удаляется в `Worker._execute`'s `finally` — см. Security patterns ниже
 
 ## Runner contract (soar/runner.py)
 
@@ -412,7 +426,10 @@ rate limiting, subprocess isolation, API hardening) —
 (`admin`/`analyst`/`viewer`/`service`/`agent` — `agent`: код+jobs, не
 user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 `auth.secret_key = ""` → анонимный admin; rate limit 120/60s (5/60s на login);
-все HTTP-коннекторы — `timeout=30`.
+все HTTP-коннекторы — `timeout=30`; job-субпроцесс получает конфиг-срез, не
+полный `config.yaml` (credential scoping), и опционально (POSIX/Docker,
+`jobs.runner_uid`) отдельный UID + `RLIMIT_AS`/`RLIMIT_CPU`/`RLIMIT_NPROC`
+(privilege narrowing, Фаза 4) — см. security-patterns.md.
 
 ## Known limitations
 
@@ -589,7 +606,43 @@ API (UI или LLM-агентом) **без передеплоя**. Три шт�
 
 Полная история версий — **[CHANGELOG.md](CHANGELOG.md)**.
 
-Текущая версия: **v0.16** (2026-07-29) — `soarctl` on-site: checkout — это
+Текущая версия: **v0.17** (2026-07-30) — Модель сущностей, Фаза 4:
+сужение прав (`docs/concepts/ENTITY-MODEL.md`, слой 3 изоляции).
+Credential scoping — всегда включён: `orchestrator/core/introspect.py
+::parse_connector_usage` статически (AST, без импорта) находит `from
+soar.connectors.<type> import <instance>` на верхнем уровне файла
+воркфлоу; `orchestrator/core/subprocess_runner.py::build_scoped_config`
+строит по этому списку временный `connectors_dir`-срез (символические
+ссылки на нужные `.py`, отфильтрованные `.yml`) и передаёт субпроцессу
+временный `SOAR_CONFIG`, не `orchestrator/config.yaml` целиком — JWT-секрет
+и `database.url` физически не доезжают до раннера. Воркфлоу без статически
+найденных импортов получают пустой `connectors_dir`, не fallback на
+полный набор (в репозитории нет примеров старой `connectors.<name>`
+registry-формы после Фазы 2). Временный каталог (`WorkflowJob.
+scoped_config_dir`, новое поле — заодно чинит `WorkflowMeta.file_path`,
+который существовал с Фазы 1, но никогда не заполнялся) удаляется в
+`Worker._execute`'s `finally` на всех путях выхода; поле проведено через
+`SQLQueue`/`RedisQueue` сериализацию (новая колонка `workflow_jobs.
+workflow_file`, миграция `7a1c9e3f5b02`), не только `InMemoryQueue`.
+Отдельный UID для раннера + `RLIMIT_AS`/`RLIMIT_CPU`/`RLIMIT_NPROC`
+(`jobs.runner_uid`, `None` по умолчанию — опционален, POSIX/Docker-only) —
+реализован механизмом, отличным от спека: прямой `os.setuid`/`os.setgid` в
+`preexec_fn` не работает от непривилегированного родительского процесса
+(`soar`, не root) без `CAP_SETUID` на самом интерпретаторе, что стало бы
+более широким привилегированным доступом, чем задумано; вместо этого —
+`setpriv --reuid=... --regid=...` обёртка вокруг argv, `setpriv` несёт
+файловую capability точечно (`setcap`), rlimits — по-прежнему через
+`preexec_fn`. Все границы (config.yaml unreadable, git repo unwritable,
+state_dir writable, RLIMIT_AS enforcement) проверены на реальных
+Linux-контейнерах через Docker, не только юнит-тестами с моками. Не
+верифицировано в этой сессии: полный `docker compose up` стенд
+`deploy/stage` с `jobs.runner_uid` включённым и реальной джобой через API
+(осознанно отложено — см. отчёт). Спек/план/отчёт:
+`docs/compose/specs/2026-07-30-privilege-narrowing-design.md`,
+`docs/compose/plans/2026-07-30-privilege-narrowing.md`,
+`docs/compose/reports/privilege-narrowing.md`.
+
+Предыдущая версия: **v0.16** (2026-07-29) — `soarctl` on-site: checkout — это
 инстанс, без промежуточной директории. Реворк
 `docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md` — та версия
 оставляла `install --repo`/`update` копировать `docker-compose.yml`/

@@ -129,3 +129,42 @@ curl http://localhost:8000/status -H "Authorization: Bearer $ACCESS_TOKEN"
 - Data: `soar-data` volume
 - Redis: `redis-data` volume
 - Postgres: `postgres-data` volume
+
+## Privilege Narrowing (job-runner UID/rlimits — opt-in, off by default)
+
+`Dockerfile.orchestrator` bakes in everything the mechanism needs
+(`soar-runner` user, fixed uid/gid `5001`, `setpriv` granted
+`cap_setuid,cap_setgid+ep`, `/app/config.yaml` mode 640 owned `soar:soar`,
+`/app/data/state` group-writable by `soar-runner`) but this stand's
+`config.yaml` does **not** set `jobs.runner_uid` — every job subprocess
+still runs as `soar`, same as before this feature existed. To turn it on:
+
+```yaml
+jobs:
+  runner_uid: 5001
+  runner_gid: 5001
+  runner_max_memory_mb: 512
+  runner_max_cpu_seconds: 300
+  runner_max_procs: 32
+```
+
+No `cap_add` needed in `docker-compose.yml` — `setpriv`'s file capability
+works with Docker's default capability set (verified; see
+`docs/compose/reports/privilege-narrowing.md`). Independently of
+`runner_uid`, every job subprocess already gets a per-job scoped config
+(only the connector instances its workflow statically imports, not the
+full `config.yaml`) — that part is always on, no opt-in.
+
+Before relying on this in a real deployment, verify by hand once against a
+running stack (a real job submitted through the API, not just a shell
+probe):
+
+```bash
+docker compose exec orchestrator sh -c "cat /app/config.yaml"          # denied — orchestrator's own shell runs as soar, this checks soar's own read still works, expect success
+docker compose exec orchestrator ps -o user,cmd -C python              # confirm at least one runner process is UID soar-runner while a job runs
+```
+
+and confirm a job that imports a real connector (`from soar.connectors.
+<type> import <instance>`) still succeeds end-to-end — this stand's compose
+file was not re-verified against a live run with `runner_uid` set as part
+of the Phase 4 session that added the mechanism (deferred; see the report).

@@ -18,6 +18,14 @@ class WorkflowJob:
     pid: int | None = None
     log_path: str | None = None
     timeout: int | None = None
+    workflow_file: str = ""  # WorkflowMeta.file_path, threaded through so
+    # SubprocessRunner can statically scan connector usage (privilege
+    # narrowing, docs/compose/specs/2026-07-30-privilege-narrowing-design.md)
+    scoped_config_dir: str | None = None  # set by SubprocessRunner.start(),
+    # cleaned up by Worker._execute's finally block — same lifecycle as
+    # _log_file on the process object, but lives on the job since proc is a
+    # bare asyncio.subprocess.Process (mocked in unit tests) while job is
+    # always the real dataclass instance
 
     triggered_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     started_at: datetime | None = None

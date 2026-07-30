@@ -76,6 +76,68 @@ credential, но по-прежнему правит не-hidden поля нар�
 - Environment variable allowlist — предотвращает утечку секретов
 - Log-per-job файл с guaranteed cleanup в finally block
 
+### Privilege narrowing (Фаза 4, orchestrator/core/subprocess_runner.py)
+Слой 3 модели изоляции (`docs/concepts/ENTITY-MODEL.md`) — защита от
+неаккуратного/умеренно враждебного контента, не от целенаправленного
+атакующего с нативным кодом (то же явное ограничение скоупа, что и
+content-venv в Фазе 1).
+
+**Credential scoping — всегда включён:**
+`orchestrator/core/introspect.py::parse_connector_usage` — статический
+AST-скан (`ast.parse`, без импорта) `from soar.connectors.<type> import
+<instance>` на верхнем уровне файла воркфлоу; возвращает `instance_name =
+alias.name` (реальное имя инстанса, которое резолвит PEP 562
+`__getattr__` в `soar/connectors/__init__.py::_install_shims`), **не**
+`alias.asname` — `import prod as ssh_prod` должен сузить креды до "prod",
+локальный алиас в реестр не попадает. `build_scoped_config` (там же)
+строит по этому списку временный каталог (`tempfile.mkdtemp`) со срезом
+`connectors_dir` (символические ссылки на `.py`, отфильтрованные `.yml`
+только с нужными инстансами) и урезанным YAML-конфигом
+(`workflows_dir`/`actions_dir`/`tools_dir`/`state_dir`/`connectors_dir` +
+`http_client`; **без** `auth`/`database` — JWT-секрет и `database.url`
+физически не попадают в файл, который видит субпроцесс). `SOAR_CONFIG`
+субпроцесса указывает на этот срез, не на `orchestrator/config.yaml`.
+Воркфлоу без статически найденных импортов получают пустой
+`connectors_dir` (нулевые креды), не fallback на полный набор —
+осознанное решение, задокументировано в `build_scoped_config`'s
+docstring. Временный каталог создаётся mode `0700` (`tempfile.mkdtemp`
+default) и явно перешируется до `0755`/`0644` (`_make_world_readable`) —
+нужно, чтобы субпроцесс мог прочитать его после смены UID ниже; чувствительность
+ограничена одним job'ом на время его исполнения, каталог удаляется в
+`Worker._execute`'s `finally` на всех путях выхода (успех/ошибка/timeout/
+cancel), тем же приёмом, что уже закрывает `_log_file`.
+
+**UID/rlimit narrowing — опционален (`jobs.runner_uid`, `None` по
+умолчанию), POSIX/Docker-only:** `_drop_privileges()` строит `preexec_fn`,
+выставляющий `RLIMIT_AS`/`RLIMIT_CPU`/`RLIMIT_NPROC` из
+`JobsConfig.runner_max_memory_mb/runner_max_cpu_seconds/runner_max_procs`.
+UID/GID переключение — **не** `os.setuid`/`os.setgid` внутри
+`preexec_fn`, вопреки первоначальному дизайну: замерено в Docker
+(`docs/compose/reports/privilege-narrowing.md`), что непривилегированный
+родительский процесс (`soar`, не root — намеренно, см. `USER soar` в
+Dockerfile) не может сменить UID даже с `docker run --cap-add=SETUID
+--cap-add=SETGID` — эти флаги наполняют только *bounding* set контейнера,
+эффективный набор capability непривилегированного процесса остаётся
+пустым, пока конкретный исполняемый бинарник не несёт файловую capability.
+Выдать `cap_setuid,cap_setgid+ep` самому интерпретатору content-venv
+означало бы, что **любой** код под ним (скомпрометированная джоба или баг
+в собственной обработке запросов оркестратора) может вызвать `setuid(0)`
+— больше привилегии, чем должна давать эта фича. Вместо этого — обёртка
+argv в `setpriv --reuid=<uid> --regid=<gid> --clear-groups --` перед
+командой субпроцесса; `setpriv` (`util-linux`, уже есть в базовом образе)
+несёт эту capability точечно (`setcap cap_setuid,cap_setgid+ep
+/usr/bin/setpriv` в Dockerfile), сам не исполняет код джобы — только
+переключает identity и делает `execve` в реальную команду. Отдельный
+пользователь `soar-runner` (фиксированный uid/gid, НЕ в группе `soar`) не
+может прочитать `config.yaml` (`chmod 640`, owner `soar:soar`) и не может
+писать в `git.workflows_repo`; может писать в `soar.state_dir`
+(group-owned `soar-runner`, `chmod 770` — нужно
+`soar/tools/watermark.py::WatermarkStore`/`SeenStore`). Все три границы
+(config.yaml unreadable, git repo unwritable, state_dir writable,
+rlimit-enforcement включая реальный `MemoryError` при превышении
+`RLIMIT_AS`) проверены запуском реальных Linux-контейнеров, не только
+юнит-тестами с моками — детали в отчёте фазы.
+
 ### Connector HTTP hardening
 - Все HTTP-коннекторы: `timeout=30` на каждый запрос (Abuse.ch, Censys, Crtsh, Fofa, FreeIPA, Kaspersky, RstCloud, SecurityOnion, Urlhaus, Wazuh)
 - SSH: `WarningPolicy()` вместо `AutoAddPolicy()` — MITM protection

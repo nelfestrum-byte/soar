@@ -57,6 +57,24 @@ async def test_sql_queue_pop_returns_none_when_empty(queue):
     assert popped is None
 
 
+async def test_sql_queue_pop_preserves_workflow_file(store, queue):
+    """Privilege narrowing (docs/compose/specs/2026-07-30-privilege-
+    narrowing-design.md): SubprocessRunner needs WorkflowJob.workflow_file
+    to statically scan connector imports and scope the job's credentials.
+    InMemoryQueue passes the same object by reference and never needed a
+    column for this, but SQLQueue reconstructs the job from a persisted
+    row (record_to_job) — without the workflow_jobs.workflow_file column
+    this would silently come back empty and every SQL-backed job would get
+    zero connector credentials."""
+    job = WorkflowJob(workflow_name="test", workflow_file="/data/workflows/enrich.py")
+    await store.save(job)
+
+    popped = await queue.pop(timeout=1.0)
+
+    assert popped is not None
+    assert popped.workflow_file == "/data/workflows/enrich.py"
+
+
 async def test_sql_queue_pop_orders_by_triggered_at(store, queue):
     from datetime import UTC, datetime, timedelta
 

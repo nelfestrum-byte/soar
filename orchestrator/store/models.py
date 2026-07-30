@@ -38,6 +38,13 @@ class JobRecord(Base):
     pid: Mapped[int | None] = mapped_column(Integer, nullable=True)
     log_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     timeout: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # WorkflowMeta.file_path at enqueue time — SubprocessRunner statically
+    # scans this for connector imports to build the job's scoped config
+    # (privilege narrowing). Must round-trip through SQL/Redis queues, not
+    # just the in-memory one, or SQL/Redis-backed installs would silently
+    # get zero connector credentials for every job (see
+    # docs/compose/specs/2026-07-30-privilege-narrowing-design.md).
+    workflow_file: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     triggered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

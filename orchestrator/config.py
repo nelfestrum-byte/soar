@@ -72,6 +72,22 @@ class JobsConfig(BaseModel):
     persistence: str = "memory"  # memory | sql
     retention_days: int = 0  # 0 = disabled — explicit opt-in, not a silent default
 
+    # Privilege narrowing (Фаза 4, docs/compose/specs/2026-07-30-privilege-
+    # narrowing-design.md [S3]) — POSIX/Docker only, no-op on Windows dev.
+    # None = today's behavior unchanged: runner subprocess inherits the
+    # orchestrator's own UID, no rlimits applied. Setting runner_uid opts
+    # into dropping the job subprocess to a separate, less-privileged UID
+    # via a setpriv wrapper (see subprocess_runner.py::_runner_argv —
+    # os.setuid/setgid directly in preexec_fn does NOT work from a non-root
+    # parent without CAP_SETUID/CAP_SETGID on the interpreter itself, which
+    # would be a bigger privilege grant than the mechanism is meant to
+    # provide; verified empirically in Docker, see the Phase 4 report).
+    runner_uid: int | None = None
+    runner_gid: int | None = None
+    runner_max_memory_mb: int = 512
+    runner_max_cpu_seconds: int = 300
+    runner_max_procs: int = 32
+
 
 class ServerConfig(BaseModel):
     trusted_proxies: list[str] = []
