@@ -22,12 +22,26 @@ def build_images(repo_root: Path, version: str) -> tuple[str, str]:
     images — shared by `package()` (which also `docker save`s the result)
     and `git_source.install()`/`update()` (which use the images locally,
     no save/load involved at all).
+
+    Dockerfile.orchestrator COPYs the base connector content-pack from an
+    extra named build context ("basepack", Phase 3 of the entity-model
+    plan — see docs/compose/specs/2026-07-30-content-as-contentpack-design.md).
+    That pack lives in its own repo, a sibling of `repo_root`
+    (`<repo_root>/../soar-content-pack` locally) — not fetched, just
+    expected to already be checked out there. UNVERIFIED against a real
+    `docker build`: see docs/compose/reports/content-as-contentpack.md.
     """
     prod_dir = repo_root / "deploy" / "prod"
     orchestrator_tag = f"soar-orchestrator:{version}"
     ui_tag = f"soar-ui:{version}"
+    base_pack_dir = repo_root.parent / "soar-content-pack"
 
-    run(["docker", "build", "-f", str(prod_dir / "Dockerfile.orchestrator"), "-t", orchestrator_tag, str(repo_root)])
+    run([
+        "docker", "build",
+        "-f", str(prod_dir / "Dockerfile.orchestrator"),
+        "--build-context", f"basepack={base_pack_dir}",
+        "-t", orchestrator_tag, str(repo_root),
+    ])
     run(["docker", "build", "-f", str(prod_dir / "Dockerfile.ui"), "-t", ui_tag, str(repo_root)])
     for image in BASE_IMAGES:
         run(["docker", "pull", image])

@@ -43,6 +43,14 @@ services:
     build:
       context: ../..
       dockerfile: deploy/stage/Dockerfile.orchestrator
+      # Base connector content-pack (Phase 3, entity-model plan) lives in
+      # its own sibling repo, not under ../.. — passed as the extra named
+      # build context Dockerfile.orchestrator's `COPY --from=basepack`
+      # expects. Requires Docker Compose v2.17+ (additional_contexts).
+      # UNVERIFIED by an actual `docker compose build` as of this patch —
+      # see docs/compose/reports/content-as-contentpack.md.
+      additional_contexts:
+        basepack: ../../../soar-content-pack
     container_name: soar-orchestrator
     networks:
       - soar-net

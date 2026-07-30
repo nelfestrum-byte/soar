@@ -1,6 +1,5 @@
 import os
 import secrets
-import shutil
 import time
 import uuid
 from collections import defaultdict
@@ -28,6 +27,7 @@ from orchestrator.api import (  # noqa: E402
     connectors_router,
     jobs_router,
     logs_router,
+    packs_router,
     prompts_router,
     runtime_router,
     status_router,
@@ -42,6 +42,14 @@ from orchestrator.core.git_manager import GitManager  # noqa: E402
 from orchestrator.core.introspect import parse_workflow_meta  # noqa: E402
 from orchestrator.core.job_manager import JobManager  # noqa: E402
 from orchestrator.core.net import resolve_client_ip  # noqa: E402
+from orchestrator.core.pack_install import (  # noqa: E402
+    apply_install_dir,
+    check_dependencies,
+    check_runtime_compat,
+    plan_install,
+    read_manifest_from_dir,
+    read_marker,
+)
 from orchestrator.core.queue.memory import InMemoryQueue  # noqa: E402
 from orchestrator.core.queue.redis_queue import RedisQueue  # noqa: E402
 from orchestrator.core.queue.sql_queue import SQLQueue  # noqa: E402
@@ -55,34 +63,69 @@ from orchestrator.models.workflow_meta import WorkflowMeta  # noqa: E402
 from orchestrator.store.base import AbstractJobStore  # noqa: E402
 from orchestrator.store.job_store import InMemoryJobStore  # noqa: E402
 from orchestrator.store.sql_job_store import SQLJobStore  # noqa: E402
+from soar.runtime_contract import CONTRACT, RUNTIME_VERSION  # noqa: E402
 
 _SOAR_PKG = Path(__file__).resolve().parent.parent / "soar"
 _LOG_FORMAT = "{time:YYYY-MM-DD HH:mm:ss} | {level} | {name} | {message} | {extra}"
 
 
 def seed_defaults(config):
-    """Copy built-in defaults to data dirs if missing (replaces Dockerfile build-time cp)."""
+    """Ensures the data dirs exist. Connector seeding is
+    seed_connector_pack() below (Phase 3, docs/compose/specs/2026-07-30-
+    content-as-contentpack-design.md [S8]) — the 24 built-in connectors no
+    longer live in soar/connectors/ to copy from. The old workflows/actions
+    shutil.copy2 branches are gone too: soar/workflows/ and soar/actions/
+    only ever contained __init__.py/base.py, both excluded from that copy
+    — it copied nothing, dead code (see the plan's section 5)."""
     for d in (config.soar.connectors_dir, config.soar.workflows_dir, config.soar.actions_dir):
         os.makedirs(d, exist_ok=True)
 
-    builtin_connectors = _SOAR_PKG / "connectors"
-    if builtin_connectors.is_dir():
-        for item in builtin_connectors.iterdir():
-            if item.is_dir() and not item.name.startswith("_"):
-                dest = Path(config.soar.connectors_dir) / item.name
-                if not dest.exists():
-                    shutil.copytree(item, dest)
 
-    for src_dir, dest_dir, exclude in [
-        (_SOAR_PKG / "workflows", config.soar.workflows_dir, {"__init__.py", "base.py"}),
-        (_SOAR_PKG / "actions", config.soar.actions_dir, {"__init__.py"}),
-    ]:
-        if src_dir.is_dir():
-            for f in src_dir.iterdir():
-                if f.is_file() and f.suffix == ".py" and f.name not in exclude:
-                    dest = Path(dest_dir) / f.name
-                    if not dest.exists():
-                        shutil.copy2(f, dest)
+def seed_connector_pack(config) -> None:
+    """Installs the base connector content-pack (SOAR_BASE_PACK_PATH, default
+    /app/base-pack — baked into the image at build time, never fetched over
+    the network, air-gap-safe) via the same pack_install pipeline `soarctl
+    content install` / `POST /connectors/pack/install` use.
+
+    Runs on every startup, not only when connectors_dir is empty:
+    plan_install is idempotent (a connector already at the pack's version
+    and untouched on disk lands in "unchanged", a no-op), so a newer
+    image's base pack reaches an existing installation the next time the
+    container starts (`soarctl update`) instead of only on a pack's first
+    install — closes E4 (docs/concepts/ENTITY-MODEL.md): the old
+    shutil.copytree-based seed_defaults() only ever ran once, when
+    connectors_dir didn't exist yet, so new connectors added in a later
+    release never reached an existing instance."""
+    os.makedirs(config.soar.connectors_dir, exist_ok=True)
+    base_pack_path = os.environ.get("SOAR_BASE_PACK_PATH", "/app/base-pack")
+    pack_dir = Path(base_pack_path)
+    if not (pack_dir / "manifest.yaml").is_file():
+        logger.debug(f"No base pack manifest at {base_pack_path} — skipping connector pack seed")
+        return
+
+    try:
+        manifest = read_manifest_from_dir(str(pack_dir))
+        check_runtime_compat(manifest, RUNTIME_VERSION)
+    except ValueError as e:
+        logger.error(f"Base pack at {base_pack_path} is not installable: {e} — connectors_dir left as-is")
+        return
+
+    missing = check_dependencies(manifest, CONTRACT)
+    if missing:
+        logger.error(
+            f"Base pack declares imports not guaranteed by the runtime contract: {missing} "
+            "— skipping connector pack seed"
+        )
+        return
+
+    marker = read_marker(config.soar.connectors_dir)
+    plan = plan_install(manifest, marker, config.soar.connectors_dir)
+    written = apply_install_dir(plan, str(pack_dir), config.soar.connectors_dir, manifest)
+    if written["new"] or written["update"]:
+        logger.info(f"Connector pack seed: installed {written}")
+    if plan["skip_modified"]:
+        skipped = [c["name"] for c in plan["skip_modified"]]
+        logger.warning(f"Connector pack seed: left modified connectors untouched: {skipped}")
 
 
 def create_queue(config):
@@ -191,6 +234,7 @@ async def lifespan(app: FastAPI):
         logger.warning("auth.secret_key is not set — authentication is DISABLED, all requests treated as admin")
 
     seed_defaults(config)
+    seed_connector_pack(config)
 
     # Database
     init_engine(config.database.url, config.database.pool_size, config.database.max_overflow)
@@ -359,6 +403,7 @@ app.include_router(auth_router)
 app.include_router(workflows_router)
 app.include_router(actions_router)
 app.include_router(connectors_router)
+app.include_router(packs_router)
 app.include_router(jobs_router)
 app.include_router(webhooks_router)
 app.include_router(logs_router)

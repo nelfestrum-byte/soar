@@ -249,3 +249,45 @@ def test_doctor_dispatches_and_prints_results(monkeypatch, tmp_path, capsys):
     cli.main(["doctor", "--dir", str(tmp_path)])
     out = capsys.readouterr().out
     assert "docker" in out
+
+
+def test_content_install_dispatches(monkeypatch, tmp_path, capsys):
+    calls = {}
+    monkeypatch.setattr(
+        cli.content, "install",
+        lambda pack, ref=None: calls.update(pack=pack, ref=ref) or {"new": ["fake_conn"], "update": [], "unchanged": [], "skip_modified": []},
+    )
+    cli.main(["content", "install", str(tmp_path), "--ref", "v1"])
+    assert calls == {"pack": str(tmp_path), "ref": "v1"}
+    assert "fake_conn" in capsys.readouterr().out
+
+
+def test_content_list_dispatches_and_prints_table(monkeypatch, capsys):
+    monkeypatch.setattr(
+        cli.content, "list_installed",
+        lambda: [{"name": "fake_conn", "pack_version": "1.0.0", "modified": False}],
+    )
+    cli.main(["content", "list"])
+    out = capsys.readouterr().out
+    assert "fake_conn" in out
+    assert "1.0.0" in out
+
+
+def test_content_remove_dispatches(monkeypatch):
+    calls = {}
+    monkeypatch.setattr(
+        cli.content, "remove", lambda name, force=False: calls.update(name=name, force=force),
+    )
+    cli.main(["content", "remove", "fake_conn", "--force"])
+    assert calls == {"name": "fake_conn", "force": True}
+
+
+def test_content_remove_error_exits_nonzero(monkeypatch, capsys):
+    def _raise(name, force=False):
+        raise cli.content.ContentError("modified since install")
+
+    monkeypatch.setattr(cli.content, "remove", _raise)
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["content", "remove", "fake_conn"])
+    assert exc_info.value.code != 0
+    assert "modified" in capsys.readouterr().out
