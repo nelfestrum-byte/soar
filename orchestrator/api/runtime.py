@@ -12,7 +12,21 @@ _RO = ("viewer", "analyst", "service", "admin", "agent")
 
 def _content_venv_root(content_python: str) -> Path:
     # .../content-venv/bin/python -> .../content-venv
-    return Path(content_python).resolve().parent.parent
+    #
+    # Deliberately .absolute(), not .resolve(): POSIX `python -m venv`
+    # creates bin/python as a symlink to the *base* interpreter (e.g.
+    # /app/content-venv/bin/python -> python3.11 -> /usr/local/bin/python3.11
+    # in the Dockerfile's python:3.11-slim image). .resolve() follows that
+    # symlink chain all the way to the base install, so venv_root would
+    # come out as /usr/local instead of /app/content-venv, and every lookup
+    # below would silently inspect the platform's system site-packages
+    # instead of the content venv. .absolute() keeps the literal path the
+    # Dockerfile/SOAR_CONTENT_PYTHON declared, which is what we actually
+    # want to introspect. Confirmed against a real Docker build (see
+    # docs/compose/reports/runtime-boundary.md) — /runtime returned only
+    # pip/setuptools/wheel/packaging (the base image's site-packages) until
+    # this was fixed.
+    return Path(content_python).absolute().parent.parent
 
 
 def _site_packages(venv_root: Path) -> list[str]:
