@@ -84,3 +84,43 @@ def parse_functions(path: Path) -> list[dict]:
         for node in ast.iter_child_nodes(tree)
         if isinstance(node, ast.FunctionDef) and not node.name.startswith("_")
     ]
+
+
+_TYPE_BY_BASE = {
+    "ScheduledWorkflow": "scheduled",
+    "WebhookWorkflow": "webhook",
+    "ManualWorkflow": "manual",
+    "BaseWorkflow": "manual",
+}
+_WORKFLOW_META_FIELDS = ("schedule", "interval", "path", "token")
+
+
+def _base_name(base: ast.expr) -> str | None:
+    if isinstance(base, ast.Name):
+        return base.id
+    if isinstance(base, ast.Attribute):
+        return base.attr
+    return None
+
+
+def parse_workflow_meta(path: Path) -> dict | None:
+    """Static AST parse of a workflow module's class-level metadata
+    (type/schedule/interval/path/token/docstring) — never imports it.
+    Returns None if the module doesn't define a BaseWorkflow subclass."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.iter_child_nodes(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        base_names = {n for b in node.bases if (n := _base_name(b))}
+        wf_type = next((_TYPE_BY_BASE[b] for b in base_names if b in _TYPE_BY_BASE), None)
+        if wf_type is None:
+            continue
+        meta: dict[str, object] = {"type": wf_type, "docstring": ast.get_docstring(node) or ""}
+        for item in node.body:
+            if not isinstance(item, (ast.AnnAssign, ast.Assign)):
+                continue
+            name = _target_name(item)
+            if name in _WORKFLOW_META_FIELDS and isinstance(item.value, ast.Constant):
+                meta[name] = item.value.value
+        return meta
+    return None

@@ -11,9 +11,18 @@ COPY orchestrator/ /app/orchestrator/
 COPY alembic/ /app/alembic/
 COPY alembic.ini /app/alembic.ini
 
-RUN pip install --no-cache-dir \
-    -r /app/orchestrator/requirements.txt \
-    elasticsearch vt-py requests httpx
+# Platform venv — оркестратор и всё, от чего он зависит. Первый на PATH,
+# поэтому голые `python`/`pip`/`alembic` (soarctl, docker exec) резолвятся
+# сюда — поведение снаружи не меняется.
+RUN python -m venv /app/platform-venv && \
+    /app/platform-venv/bin/pip install --no-cache-dir -r /app/orchestrator/requirements.txt
+ENV PATH="/app/platform-venv/bin:${PATH}"
+
+# Content venv — soar/ + контракт зависимостей (soar/runtime_contract.py).
+# НЕ на PATH: граница зависимостей физическая, а не "не забыть отдельно
+# активировать" — см. docs/concepts/ENTITY-MODEL.md, решение 3.
+RUN python -m venv /app/content-venv && \
+    /app/content-venv/bin/pip install --no-cache-dir -r /app/soar/requirements.txt
 
 RUN mkdir -p /app/data /app/data/workflows /app/data/actions /app/data/connectors /var/log/soar/jobs && \
     find /app/soar/workflows -maxdepth 1 -name '*.py' ! -name '__init__.py' ! -name 'base.py' -exec cp -n {} /app/data/workflows/ \; 2>/dev/null || true && \
@@ -26,6 +35,7 @@ COPY deploy/stage/config.yaml /app/config.yaml
 
 ENV PYTHONUNBUFFERED=1
 ENV SOAR_CONFIG=/app/config.yaml
+ENV SOAR_CONTENT_PYTHON=/app/content-venv/bin/python
 
 EXPOSE 8000
 

@@ -6,12 +6,27 @@ import yaml
 
 import soar.tools as tools
 from soar.actions import actions
+from soar.audit_hook import flush as flush_audit_hook
+from soar.audit_hook import install as install_audit_hook
 from soar.connectors import connectors
 from soar.logger import setup_logging
 from soar.tools.http_client import CacheBackend, HttpClient, InMemoryCache, RedisCache, SyncHttpClient
 from soar.workflows import workflows
 
 setup_logging(level="INFO")
+if __name__ == "__main__":
+    # sys.addaudithook — необратим на весь процесс (нет sys.removeaudithook).
+    # Гейт на __main__, а не голый вызов на уровне модуля: real subprocess
+    # entrypoint (`python -m soar.runner`) всегда исполняется как __main__,
+    # так что хук по-прежнему ставится до любого init() ниже для настоящего
+    # запуска воркфлоу. Прямой `from soar import runner` (юнит-тесты
+    # soar/runner.py в одном процессе с остальным pytest-сьютом, см.
+    # tests/soar/test_runner.py) не ставит __name__ в "__main__" — без этого
+    # гейта хук бы включался один раз на весь pytest-процесс и после этого
+    # блокировал бы socket.connect на 127.0.0.1/loopback во всех остальных
+    # тестах (Redis/scheduler/worker/http_client), которые уже полагаются на
+    # реальные localhost-сокеты в своих фикстурах.
+    install_audit_hook()  # до любого init() ниже — видит всё, что делает контент
 
 config_path = os.environ.get("SOAR_CONFIG", "config.yaml")
 external_dirs = {}
@@ -111,6 +126,8 @@ def main():
             "data": None,
             "error": tb.format_exc(),
         }
+    finally:
+        flush_audit_hook()
 
     print(json.dumps(output))
 

@@ -19,6 +19,18 @@ def _resolve_config_path() -> str:
 _CONFIG_PATH = _resolve_config_path()
 
 
+def resolve_content_python() -> str:
+    """Interpreter for subprocess workflow execution. SOAR_CONTENT_PYTHON is
+    set by the Dockerfiles to /app/content-venv/bin/python (two-runtime
+    boundary, see docs/concepts/ENTITY-MODEL.md decision 3). Falls back to
+    sys.executable when unset — local dev/tests run against a single venv
+    without Docker, no second venv to point at."""
+    return os.environ.get("SOAR_CONTENT_PYTHON") or sys.executable
+
+
+_CONTENT_PYTHON = resolve_content_python()
+
+
 class SubprocessRunner:
     async def start(self, job: WorkflowJob) -> asyncio.subprocess.Process:
         safe_env_keys = {
@@ -38,7 +50,7 @@ class SubprocessRunner:
             os.makedirs(os.path.dirname(job.log_path), exist_ok=True)
             stdout_file = open(job.log_path, "w")
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "soar.runner",
+            _CONTENT_PYTHON, "-m", "soar.runner",
             env=env,
             stdout=stdout_file or asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,

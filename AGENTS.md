@@ -198,6 +198,7 @@ orchestrator/
     ├── status.py                # GET /status, GET /health
     ├── transfer.py               # POST export/import — импорт/экспорт конфигурации
     ├── tools.py                  # GET /tools — read-only discovery (AST, без импорта) для soar/tools/
+    ├── runtime.py                 # GET /runtime — read-only, содержимое content-venv по soar/runtime_contract.py (guaranteed/present_not_guaranteed)
     ├── prompts.py                 # GET /prompts/system (read-only, versioned с кодом) + GET/PUT /prompts/user (admin, git-CRUD)
     ├── audit.py                  # GET /audit-log — admin-only, paginated, фильтры
     └── validation.py              # validate_name, validate_path_within, SSRF validation
@@ -207,7 +208,9 @@ soar/
 ├── actions/__init__.py         # ActionsRegistry — автообнаружение actions
 ├── workflows/                  # __init__.py (WorkflowRegistry), base.py (BaseWorkflow/ScheduledWorkflow/WebhookWorkflow/ManualWorkflow)
 ├── tools/                      # openapi.py (OpenAPIGenerator, заполняет HIDDEN_FIELDS из securitySchemes), watermark.py (WatermarkStore/SeenStore), http_client.py (HttpClient async + SyncHttpClient — тот же контракт логирования/кэша/SSRF-guard, sync для вызова из синхронных коннекторов) — см. File map
-├── runner.py                   # Точка входа для subprocess workflows — см. Runner contract; собирает http_client/http_client_sync из SOAR_CONFIG до workflows.init()/connectors.init()/actions.init() — верхнеуровневый `from soar.tools import http_client` в пользовательском коде видит сконфигурированный инстанс
+├── runtime_contract.py         # CONTRACT (dist name → import_names/kind) + RUNTIME_VERSION — версионированный контракт content-venv, источник для GET /runtime; версии пакетов по-прежнему только в soar/requirements.txt
+├── audit_hook.py                # sys.addaudithook — платформенная наблюдаемость egress/файлов/подпроцессов + deny-policy на приватные адреса, ставится в runner.py до любого init()
+├── runner.py                   # Точка входа для subprocess workflows — см. Runner contract; ставит audit-хук, собирает http_client/http_client_sync из SOAR_CONFIG до workflows.init()/connectors.init()/actions.init() — верхнеуровневый `from soar.tools import http_client` в пользовательском коде видит сконфигурированный инстанс
 └── examples/nadproject_integration.py
 
 ui/src/                         # Vue 3 SPA, полный список views — см. File map
@@ -235,6 +238,7 @@ history/diff/restore, `/describe` — сигнатуры/докстринг бе
 `/schema` — типизированные поля + `hidden: bool`; конфиг/история/diff редактируют значения hidden-полей
 для всех ролей включая admin, см. Security patterns),
 `/jobs`, `/webhooks/{name}`, `/logs/{id}`, `/status`, `/health` (без auth), `/tools` (read-only),
+`/runtime` (read-only, содержимое content-venv по контракту, см. E9/`ENTITY-MODEL.md`),
 `/prompts/system` (read-only, встроенный), `/prompts/user` (admin, git-CRUD), `/transfer/{export,import}`,
 `/auth/*`, `/audit-log` (admin).
 
@@ -375,8 +379,8 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 7. `PATCH /auth/users/{id}` не защищает от деактивации последнего admin'а (принято как остаточный риск — recovery вне API через `orchestrator/auth/cli.py create-user --role admin`)
 8. Мультиинстансность вне scope `soarctl` (нет CLI-контекста нескольких инстансов)
 9. Правка кода встроенного коннектора через API молча не применяется — исполняется копия из пакета, а не из `connectors_dir` (E1)
-10. Зависимости 11 из 24 встроенных коннекторов не установлены в образ — коннектор молча отсутствует в реестре, но виден в `GET /connectors` (E2)
-11. Контент исполняется в рантайме платформы — тот же интерпретатор и те же site-packages, что у оркестратора; воркфлоу вдобавок импортируются в процесс оркестратора при reload (E10)
+10. ~~Зависимости 11 из 24 встроенных коннекторов не установлены в образ~~ — закрыто в Runtime Boundary Phase 1 (E2)
+11. ~~Контент исполняется в рантайме платформы — тот же интерпретатор и те же site-packages, что у оркестратора; воркфлоу импортируются в процесс оркестратора при reload~~ — закрыто в Runtime Boundary Phase 1 (E10, включая E10.3): `deploy/{prod,stage}` теперь собирают отдельный `content-venv`, `SubprocessRunner`/`soar/runner.py` запускаются на нём (`SOAR_CONTENT_PYTHON`); `load_workflow_metas` больше не импортирует пользовательский код (AST-парсинг). Окружение исполнения теперь описано по API — `GET /runtime` (E9)
 
 ## File map (для быстрого навигации)
 
