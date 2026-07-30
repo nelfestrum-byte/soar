@@ -89,6 +89,7 @@ class JobManager:
                 concurrency=meta.concurrency,
                 log_path=self._make_log_path(workflow_name, job_id),
                 timeout=meta.timeout,
+                workflow_file=meta.file_path,
             )
 
             await self.job_store.save(job)

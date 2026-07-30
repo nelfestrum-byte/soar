@@ -213,3 +213,103 @@ async def test_queue_policy_does_not_deadlock_on_sql_queue_self_claim(worker_dep
     await asyncio.wait_for(worker._execute(job), timeout=5.0)
 
     assert job.status == JobStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_execute_cleans_up_scoped_config_dir_on_success(worker_deps, tmp_path):
+    """Privilege narrowing (docs/compose/specs/2026-07-30-privilege-
+    narrowing-design.md [S2] item 4): the per-job scoped config directory
+    SubprocessRunner.start() creates must be removed once the job is done,
+    symmetric to _log_file's close()."""
+    queue, job_store, runner = worker_deps
+    worker = Worker(0, queue, runner, job_store, default_timeout=30)
+
+    scoped_dir = tmp_path / "scoped-job-dir"
+    scoped_dir.mkdir()
+    (scoped_dir / "config.yaml").write_text("soar: {}\n")
+
+    async def fake_start(job):
+        job.scoped_config_dir = str(scoped_dir)
+        proc = AsyncMock()
+        proc.pid = 1
+        proc.communicate.return_value = (b"", b"")
+        proc.returncode = 0
+        return proc
+
+    runner.start.side_effect = fake_start
+
+    job = WorkflowJob(id="j_scoped_ok", workflow_name="test", context={})
+    await worker._execute(job)
+
+    assert job.status == JobStatus.COMPLETED
+    assert not scoped_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_execute_cleans_up_scoped_config_dir_on_timeout(worker_deps, tmp_path):
+    queue, job_store, runner = worker_deps
+    worker = Worker(0, queue, runner, job_store, default_timeout=1)
+
+    scoped_dir = tmp_path / "scoped-job-dir-timeout"
+    scoped_dir.mkdir()
+
+    async def fake_start(job):
+        job.scoped_config_dir = str(scoped_dir)
+        proc = AsyncMock()
+        proc.pid = 2
+        proc.communicate.side_effect = asyncio.TimeoutError
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock()
+        return proc
+
+    runner.start.side_effect = fake_start
+
+    job = WorkflowJob(id="j_scoped_timeout", workflow_name="test", context={}, timeout=1)
+    await worker._execute(job)
+
+    assert job.status == JobStatus.TIMEOUT
+    assert not scoped_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_execute_cleans_up_scoped_config_dir_on_exception(worker_deps, tmp_path):
+    """Covers the case where runner.start() itself sets scoped_config_dir
+    on the job and then raises before returning a proc — cleanup must
+    still happen via the outer finally, not just the one guarding
+    _log_file (which never runs in this path)."""
+    queue, job_store, runner = worker_deps
+    worker = Worker(0, queue, runner, job_store, default_timeout=30)
+
+    scoped_dir = tmp_path / "scoped-job-dir-exc"
+    scoped_dir.mkdir()
+
+    async def fake_start(job):
+        job.scoped_config_dir = str(scoped_dir)
+        raise RuntimeError("subprocess failed to start")
+
+    runner.start.side_effect = fake_start
+
+    job = WorkflowJob(id="j_scoped_exc", workflow_name="test", context={})
+    await worker._execute(job)
+
+    assert job.status == JobStatus.FAILED
+    assert not scoped_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_execute_no_scoped_config_dir_is_a_noop(worker_deps):
+    """Jobs whose scoped_config_dir was never set (default None) must not
+    make cleanup raise."""
+    queue, job_store, runner = worker_deps
+    worker = Worker(0, queue, runner, job_store, default_timeout=30)
+
+    proc = AsyncMock()
+    proc.pid = 3
+    proc.communicate.return_value = (b"", b"")
+    proc.returncode = 0
+    runner.start.return_value = proc
+
+    job = WorkflowJob(id="j_no_scoped", workflow_name="test", context={})
+    await worker._execute(job)
+
+    assert job.status == JobStatus.COMPLETED

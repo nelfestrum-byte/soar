@@ -142,6 +142,41 @@ async def test_redis_queue_concurrency_fallback_to_forbid():
 
 
 @pytest.mark.asyncio
+async def test_redis_queue_workflow_file_preserved():
+    """Privilege narrowing (docs/compose/specs/2026-07-30-privilege-
+    narrowing-design.md): workflow_file must survive push->pop through
+    Redis, same as concurrency (B3 above) — SubprocessRunner needs it to
+    scope the job's connector credentials; without it every Redis-backed
+    job would silently get zero connector instances."""
+    import json
+
+    with patch('orchestrator.core.queue.redis_queue.aioredis') as mock_redis:
+        client = AsyncMock()
+        mock_redis.from_url.return_value = client
+
+        queue = RedisQueue("redis://localhost:6379/0")
+        job = WorkflowJob(workflow_name="wf", workflow_file="/data/workflows/enrich.py")
+
+        pushed_data = []
+
+        async def fake_lpush(key, data):
+            pushed_data.append(data)
+        client.lpush = fake_lpush
+
+        await queue.push(job)
+
+        assert pushed_data, "nothing was pushed"
+        payload = json.loads(pushed_data[0])
+        assert payload.get("workflow_file") == "/data/workflows/enrich.py"
+
+        client.brpop = AsyncMock(return_value=("soar:jobs", pushed_data[0]))
+        popped = await queue.pop()
+
+        assert popped is not None
+        assert popped.workflow_file == "/data/workflows/enrich.py"
+
+
+@pytest.mark.asyncio
 async def test_redis_queue_push_connection_error():
     from redis.exceptions import ConnectionError
 

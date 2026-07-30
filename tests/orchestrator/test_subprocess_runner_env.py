@@ -4,15 +4,17 @@ BUG NEW-2: SOAR_CONFIG is read with os.environ.get() but never set in os.environ
 The subprocess's safe env allowlist includes SOAR_CONFIG, but if it's absent from
 the parent env, the subprocess won't have it either.
 """
-import asyncio
 import os
+import shutil
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
-from orchestrator.core.subprocess_runner import SubprocessRunner
-from orchestrator.models.job import WorkflowJob, JobStatus
+from orchestrator.core.subprocess_runner import SubprocessRunner, build_scoped_config
+from orchestrator.models.job import WorkflowJob
 
 
 @pytest.fixture
@@ -132,3 +134,181 @@ class TestSubprocessRunnerEnv:
         assert env["SOAR_JOB_ID"] == "test-job-123"
         assert env["SOAR_WORKFLOW_NAME"] == "test_workflow"
         assert env["SOAR_CONTEXT"] == '{"key": "value"}'
+
+
+def _write_connector_type(base: Path, type_name: str, py_names: list[str], instances: dict) -> None:
+    type_dir = base / type_name
+    type_dir.mkdir(parents=True, exist_ok=True)
+    for py_name in py_names:
+        (type_dir / f"{py_name}.py").write_text(f"# {py_name} connector class\n", encoding="utf-8")
+    (type_dir / f"{type_name}.yml").write_text(
+        yaml.safe_dump({"instances": instances}), encoding="utf-8",
+    )
+
+
+class TestBuildScopedConfig:
+    """build_scoped_config narrows the connector credentials a job's
+    subprocess sees down to the (type, instance) pairs its workflow file
+    statically imports — see privilege-narrowing-design.md [S2]."""
+
+    def _make_full_config(self, tmp_path: Path) -> dict:
+        connectors_dir = tmp_path / "connectors"
+        _write_connector_type(
+            connectors_dir, "virus_total", ["vt"],
+            {"vt_main": {"api_key": "secret-vt-key"}, "vt_backup": {"api_key": "other-secret"}},
+        )
+        _write_connector_type(
+            connectors_dir, "shodan", ["shodan_conn"],
+            {"shodan_prod": {"api_key": "secret-shodan-key"}},
+        )
+        return {
+            "soar": {
+                "workflows_dir": str(tmp_path / "workflows"),
+                "connectors_dir": str(connectors_dir),
+                "actions_dir": str(tmp_path / "actions"),
+                "tools_dir": "soar/tools",
+                "state_dir": str(tmp_path / "state"),
+            },
+            "auth": {"secret_key": "top-secret-jwt"},
+            "database": {"url": "postgresql://user:pw@host/db"},
+        }
+
+    def _make_workflow_file(self, tmp_path: Path, body: str) -> str:
+        path = tmp_path / "enrich.py"
+        path.write_text(body, encoding="utf-8")
+        return str(path)
+
+    def test_scopes_to_only_used_instance(self, tmp_path):
+        full_config = self._make_full_config(tmp_path)
+        workflow_file = self._make_workflow_file(
+            tmp_path, "from soar.connectors.virus_total import vt_main\n",
+        )
+
+        scoped_path, scoped_dir = build_scoped_config(workflow_file, full_config)
+        try:
+            with open(scoped_path) as f:
+                scoped = yaml.safe_load(f)
+
+            vt_yml = Path(scoped["soar"]["connectors_dir"]) / "virus_total" / "instances.yml"
+            data = yaml.safe_load(vt_yml.read_text())
+            assert set(data["instances"]) == {"vt_main"}
+            assert data["instances"]["vt_main"] == {"api_key": "secret-vt-key"}
+
+            # Unused type entirely excluded from the scoped connectors_dir
+            assert not (Path(scoped["soar"]["connectors_dir"]) / "shodan").exists()
+        finally:
+            shutil.rmtree(scoped_dir, ignore_errors=True)
+
+    def test_excludes_unused_instance_of_same_type(self, tmp_path):
+        full_config = self._make_full_config(tmp_path)
+        workflow_file = self._make_workflow_file(
+            tmp_path, "from soar.connectors.virus_total import vt_main\n",
+        )
+
+        scoped_path, scoped_dir = build_scoped_config(workflow_file, full_config)
+        try:
+            with open(scoped_path) as f:
+                scoped = yaml.safe_load(f)
+            vt_yml = Path(scoped["soar"]["connectors_dir"]) / "virus_total" / "instances.yml"
+            data = yaml.safe_load(vt_yml.read_text())
+            assert "vt_backup" not in data["instances"]
+        finally:
+            shutil.rmtree(scoped_dir, ignore_errors=True)
+
+    def test_symlinks_connector_py_files_not_copies(self, tmp_path):
+        full_config = self._make_full_config(tmp_path)
+        workflow_file = self._make_workflow_file(
+            tmp_path, "from soar.connectors.virus_total import vt_main\n",
+        )
+
+        scoped_path, scoped_dir = build_scoped_config(workflow_file, full_config)
+        try:
+            with open(scoped_path) as f:
+                scoped = yaml.safe_load(f)
+            py_file = Path(scoped["soar"]["connectors_dir"]) / "virus_total" / "vt.py"
+            assert py_file.is_symlink() or py_file.is_file()
+        finally:
+            shutil.rmtree(scoped_dir, ignore_errors=True)
+
+    def test_no_connector_imports_yields_empty_connectors_dir(self, tmp_path):
+        full_config = self._make_full_config(tmp_path)
+        workflow_file = self._make_workflow_file(tmp_path, "x = 1\n")
+
+        scoped_path, scoped_dir = build_scoped_config(workflow_file, full_config)
+        try:
+            with open(scoped_path) as f:
+                scoped = yaml.safe_load(f)
+            connectors_dir = Path(scoped["soar"]["connectors_dir"])
+            assert connectors_dir.exists()
+            assert list(connectors_dir.iterdir()) == []
+        finally:
+            shutil.rmtree(scoped_dir, ignore_errors=True)
+
+    def test_full_config_secrets_not_present_in_scoped_config(self, tmp_path):
+        full_config = self._make_full_config(tmp_path)
+        workflow_file = self._make_workflow_file(
+            tmp_path, "from soar.connectors.virus_total import vt_main\n",
+        )
+
+        scoped_path, scoped_dir = build_scoped_config(workflow_file, full_config)
+        try:
+            raw = Path(scoped_path).read_text()
+            assert "top-secret-jwt" not in raw
+            assert "postgresql://user:pw@host/db" not in raw
+            scoped = yaml.safe_load(raw)
+            assert "auth" not in scoped
+            assert "database" not in scoped
+        finally:
+            shutil.rmtree(scoped_dir, ignore_errors=True)
+
+    def test_scoped_config_carries_runtime_dirs(self, tmp_path):
+        full_config = self._make_full_config(tmp_path)
+        workflow_file = self._make_workflow_file(
+            tmp_path, "from soar.connectors.virus_total import vt_main\n",
+        )
+
+        scoped_path, scoped_dir = build_scoped_config(workflow_file, full_config)
+        try:
+            scoped = yaml.safe_load(Path(scoped_path).read_text())
+            assert scoped["soar"]["workflows_dir"] == full_config["soar"]["workflows_dir"]
+            assert scoped["soar"]["actions_dir"] == full_config["soar"]["actions_dir"]
+            assert scoped["soar"]["state_dir"] == full_config["soar"]["state_dir"]
+        finally:
+            shutil.rmtree(scoped_dir, ignore_errors=True)
+
+    def test_unparseable_workflow_file_falls_back_to_empty_usage(self, tmp_path):
+        full_config = self._make_full_config(tmp_path)
+        workflow_file = self._make_workflow_file(tmp_path, "def broken(:\n")
+
+        scoped_path, scoped_dir = build_scoped_config(workflow_file, full_config)
+        try:
+            scoped = yaml.safe_load(Path(scoped_path).read_text())
+            connectors_dir = Path(scoped["soar"]["connectors_dir"])
+            assert list(connectors_dir.iterdir()) == []
+        finally:
+            shutil.rmtree(scoped_dir, ignore_errors=True)
+
+
+class TestSubprocessRunnerUsesScopedConfig:
+    """SubprocessRunner.start() must hand the subprocess the scoped config
+    path, never the orchestrator's full SOAR_CONFIG (_CONFIG_PATH)."""
+
+    @pytest.mark.asyncio
+    async def test_soar_config_env_is_not_the_full_config_path(self):
+        from orchestrator.core import subprocess_runner as sr_module
+
+        runner = SubprocessRunner()
+        job = WorkflowJob(id="job-x", workflow_name="wf", context={})
+
+        with patch("orchestrator.core.subprocess_runner.asyncio.create_subprocess_exec") as mock_exec:
+            mock_exec.return_value = MagicMock()
+            await runner.start(job)
+
+            call_kwargs = mock_exec.call_args.kwargs
+            env = call_kwargs.get("env")
+            assert env["SOAR_CONFIG"] != sr_module._CONFIG_PATH
+            assert job.scoped_config_dir is not None
+            assert env["SOAR_CONFIG"].startswith(job.scoped_config_dir)
+
+        if job.scoped_config_dir:
+            shutil.rmtree(job.scoped_config_dir, ignore_errors=True)

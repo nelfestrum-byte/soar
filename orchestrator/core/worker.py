@@ -1,5 +1,6 @@
 import asyncio
 import json
+import shutil
 from datetime import UTC, datetime
 
 from loguru import logger
@@ -153,6 +154,16 @@ class Worker:
             await self.job_store.save(job)
             logger.error(f"Job {job.id} failed: {e}")
         finally:
+            # Privilege narrowing (docs/compose/specs/2026-07-30-privilege-
+            # narrowing-design.md [S2] item 4): SubprocessRunner.start()
+            # builds a per-job scoped config dir (job.scoped_config_dir) —
+            # clean it up on every exit path (success, failure, timeout,
+            # cancel, exception before proc even started), same guarantee
+            # as _log_file's close() above but placed in the outer finally
+            # since nothing downstream needs it after this point, unlike
+            # the log file which the result-parsing code above still reads.
+            if job.scoped_config_dir:
+                shutil.rmtree(job.scoped_config_dir, ignore_errors=True)
             self._busy = False
 
     @property

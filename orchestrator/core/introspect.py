@@ -120,6 +120,37 @@ def _base_name(base: ast.expr) -> str | None:
     return None
 
 
+def parse_connector_usage(path: Path) -> list[tuple[str, str]]:
+    """Static AST scan for `from soar.connectors.<type> import <instance>`
+    at workflow module top-level — the only form the platform can resolve to
+    a concrete (type, instance) pair without importing the module (E6,
+    docs/concepts/ENTITY-MODEL.md Фаза 2). Used by
+    orchestrator/core/subprocess_runner.py::build_scoped_config to narrow
+    the connector credentials a job's subprocess receives down to what the
+    workflow actually references. Never imports the module.
+
+    Returns [(type_name, instance_name), ...]. `instance_name` is always
+    `alias.name` (the attribute actually fetched off the `soar.connectors.
+    <type>` shim module, per PEP 562 module __getattr__ in
+    soar/connectors/__init__.py::_install_shims) — NOT `alias.asname`. An
+    `as`-aliased import (`from soar.connectors.ssh import prod as
+    ssh_prod`) still resolves the registry instance named "prod"; "ssh_prod"
+    is only the local variable name inside the workflow and never reaches
+    the registry lookup. Scoping on asname would exclude the real instance
+    from the job's config slice and break the workflow at runtime."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    result = []
+    for node in ast.iter_child_nodes(tree):
+        if not isinstance(node, ast.ImportFrom) or not node.module:
+            continue
+        parts = node.module.split(".")
+        if len(parts) == 3 and parts[0] == "soar" and parts[1] == "connectors":
+            type_name = parts[2]
+            for alias in node.names:
+                result.append((type_name, alias.name))
+    return result
+
+
 def parse_workflow_meta(path: Path) -> dict | None:
     """Static AST parse of a workflow module's class-level metadata
     (type/schedule/interval/path/token/docstring) — never imports it.
