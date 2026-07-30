@@ -7,6 +7,7 @@ from soar.connectors.base import BaseConnector
 
 class VirusTotalConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = {"api_key"}
+    MUTATING_METHODS: ClassVar[set[str]] = {"upload_file"}
 
     def __init__(self, instance_name: str, api_key: str):
         super().__init__(instance_name)

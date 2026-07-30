@@ -26,7 +26,14 @@ _ADMIN = ("admin", "agent")
 class RestoreRequest(BaseModel):
     commit: str
 
-ACTION_TEMPLATE = '''from soar.connectors import connectors
+# from soar.connectors.<type> import <instance> — concept form (returns a
+# ConnectorProxy, see docs/concepts/ENTITY-MODEL.md decision 4). The
+# template can't know which connector type/instance this installation has
+# configured, so it shows the pattern as a comment; `from soar.connectors
+# import connectors` + `connectors.<instance>` (flat lookup, also proxied)
+# still works for the same reason.
+ACTION_TEMPLATE = '''# from soar.connectors.<type> import <instance>
+from soar.connectors import connectors
 
 
 def {name}({params}):
@@ -38,34 +45,36 @@ def {name}({params}):
 '''
 
 
-def _describe_action_summary(actions_dir: str, name: str) -> str:
-    try:
-        for fn in parse_functions(Path(actions_dir) / f"{name}.py"):
-            if fn["name"] == name:
-                return _summary(fn["docstring"])
-    except (SyntaxError, OSError):
-        pass
-    return ""
-
-
 @router.get("", dependencies=[Depends(require_role(*_RO))])
 async def list_actions(request: Request):
+    """AST-only — never imports actions_dir content. After Phase 1's runtime
+    boundary the orchestrator process is not allowed to import user code at
+    all (that's exclusively soar.runner's job, in the content venv); the
+    real multi-export ActionsRegistry (soar/actions/__init__.py) is used
+    only inside soar.runner. Lists every public top-level function per file
+    (E7), not just the one matching the filename — "file" tells the UI
+    which file to open to edit it."""
     config = request.app.state.config
     actions_dir = config.soar.actions_dir
     if not os.path.exists(actions_dir):
         return []
-    names = []
-    for entry in os.scandir(actions_dir):
-        if entry.name.startswith(("_", ".")):
+    result = []
+    for entry in sorted(os.scandir(actions_dir), key=lambda e: e.name):
+        if entry.name.startswith(("_", ".")) or not entry.name.endswith(".py"):
             continue
-        if entry.name == "__init__.py":
+        if not entry.is_file():
             continue
-        if entry.is_file() and entry.name.endswith(".py"):
-            names.append(entry.name[:-3])
-    return [
-        {"name": name, "summary": _describe_action_summary(actions_dir, name)}
-        for name in sorted(names)
-    ]
+        try:
+            fns = parse_functions(Path(actions_dir) / entry.name)
+        except (SyntaxError, OSError):
+            continue
+        for fn in fns:
+            result.append({
+                "name": fn["name"],
+                "file": entry.name[:-3],
+                "summary": _summary(fn["docstring"]),
+            })
+    return result
 
 
 @router.get("/template", dependencies=[Depends(require_role(*_RO))])

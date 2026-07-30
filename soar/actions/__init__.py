@@ -14,6 +14,24 @@ class ActionsRegistry:
     def __init__(self):
         self._actions: dict[str, Callable] = {}
 
+    def _register_public_callables(self, mod, fqn: str) -> bool:
+        """Register every public top-level callable whose __module__ matches
+        this module (E7) — not just the one matching the filename, and not
+        any callable merely imported into the module's namespace."""
+        found = False
+        for attr_name in dir(mod):
+            if attr_name.startswith("_"):
+                continue
+            obj = getattr(mod, attr_name)
+            if callable(obj) and getattr(obj, "__module__", None) == fqn:
+                if attr_name in self._actions:
+                    _log.warning(
+                        f"Duplicate action '{attr_name}' in {fqn} — overwriting previous definition"
+                    )
+                self._actions[attr_name] = obj
+                found = True
+        return found
+
     def _discover(self) -> None:
         package_dir = Path(__file__).parent
         for _finder, module_name, is_pkg in pkgutil.iter_modules([str(package_dir)]):
@@ -25,17 +43,14 @@ class ActionsRegistry:
             except ImportError as e:
                 _log.warning(f"Failed to import {fqn}: {e}")
                 continue
-            func = getattr(mod, module_name, None)
-            if callable(func):
-                self._actions[module_name] = func
-            else:
-                _log.warning(f"No callable '{module_name}' in {fqn}")
+            if not self._register_public_callables(mod, fqn):
+                _log.warning(f"No public callable in {fqn}")
 
     def _discover_external(self, external_dir: str) -> None:
         ext_path = Path(external_dir)
         if not ext_path.exists():
             return
-        for py_file in ext_path.glob("*.py"):
+        for py_file in sorted(ext_path.glob("*.py")):
             if py_file.name.startswith("_"):
                 continue
             module_name = py_file.stem
@@ -52,11 +67,8 @@ class ActionsRegistry:
             except Exception as e:
                 _log.warning(f"Failed to import external action {fqn}: {e}")
                 continue
-            func = getattr(mod, module_name, None)
-            if callable(func):
-                self._actions[module_name] = func
-            else:
-                _log.warning(f"No callable '{module_name}' in external {fqn}")
+            if not self._register_public_callables(mod, fqn):
+                _log.warning(f"No public callable in external {fqn}")
 
     def init(self, external_dir: str | None = None) -> None:
         self._discover()

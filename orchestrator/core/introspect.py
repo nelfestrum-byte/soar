@@ -76,6 +76,23 @@ def parse_classes(path: Path) -> list[dict]:
     return classes
 
 
+def _public_names(init_path: Path) -> list[str]:
+    """Read a module's `__all__ = [...]` declaration via AST — no import.
+    Used by GET /tools (soar/tools/__init__.py::__all__, E5) to filter what
+    the API surfaces down to the deliberately-public names, same pattern as
+    _hidden_fields above."""
+    if not init_path.is_file():
+        return []
+    tree = ast.parse(init_path.read_text(encoding="utf-8"))
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            if isinstance(target, ast.Name) and target.id == "__all__":
+                if isinstance(node.value, (ast.List, ast.Tuple, ast.Set)):
+                    return [el.value for el in node.value.elts if isinstance(el, ast.Constant)]
+    return []
+
+
 def parse_functions(path: Path) -> list[dict]:
     """Static AST parse of a module's top-level functions — never imports it."""
     tree = ast.parse(path.read_text(encoding="utf-8"))

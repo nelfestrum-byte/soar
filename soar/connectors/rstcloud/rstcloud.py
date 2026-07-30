@@ -7,6 +7,7 @@ from soar.tools import http_client_sync
 
 class RstCloudConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = {"api_key"}
+    MUTATING_METHODS: ClassVar[set[str]] = set()  # all methods are read-only lookups
 
     DEFAULT_BASE_URL = "https://opentip.rstcloud.net"
 

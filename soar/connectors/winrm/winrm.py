@@ -7,6 +7,7 @@ from soar.connectors.base import BaseConnector
 
 class WinRMConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+    MUTATING_METHODS: ClassVar[set[str]] = {"exec_command", "upload_file", "run_ps"}
 
     def __init__(
         self,

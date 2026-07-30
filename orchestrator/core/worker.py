@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 
 from loguru import logger
 
+from orchestrator.audit import service as audit_service
+from orchestrator.core.audit_parse import parse_audit_events
 from orchestrator.core.queue.base import AbstractJobQueue
 from orchestrator.core.subprocess_runner import SubprocessRunner
 from orchestrator.models import ConcurrencyPolicy
@@ -19,12 +21,14 @@ class Worker:
         runner: SubprocessRunner,
         job_store: AbstractJobStore,
         default_timeout: int,
+        db_session_factory=None,
     ):
         self.worker_id = worker_id
         self.queue = queue
         self.runner = runner
         self.job_store = job_store
         self.default_timeout = default_timeout
+        self.db_session_factory = db_session_factory
         self._running = False
         self._busy = False
         self._task: asyncio.Task | None = None
@@ -102,6 +106,30 @@ class Worker:
                             job.result_error = parsed["error"]
                 except (OSError, json.JSONDecodeError, ValueError):
                     pass
+
+            # Audit trail: parse SOAR_AUDIT_EVENT lines the connector proxy
+            # wrote into the job log (soar/connectors/_proxy.py) into AuditLog
+            # rows. db_session_factory=None (no caller wired one up) skips
+            # this entirely — audit is observability, never allowed to flip
+            # the job to FAILED on a parsing/DB error.
+            if job.log_path and self.db_session_factory:
+                try:
+                    with open(job.log_path) as f:
+                        log_text = f.read()
+                    events = parse_audit_events(log_text)
+                    if events:
+                        async with self.db_session_factory() as db:
+                            for event in events:
+                                action = "connector.call.dry_run" if event["dry_run"] else "connector.call"
+                                await audit_service.record_job_event(
+                                    db,
+                                    job=job,
+                                    action=action,
+                                    resource_id=event["target"],
+                                    detail=event,
+                                )
+                except Exception as e:
+                    logger.warning(f"Failed to record audit events for job {job.id}: {e}")
 
             # B1: re-read from store — cancel() may have set CANCELLED while process ran
             current = await self.job_store.get(job.id)

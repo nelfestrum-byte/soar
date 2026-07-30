@@ -1,12 +1,15 @@
 from typing import ClassVar
 
-import requests
+import httpx
 
 from soar.connectors.base import BaseConnector
+from soar.tools import http_client_sync
+from soar.tools.http_client import _validate_external_url
 
 
 class FreeIPAConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+    MUTATING_METHODS: ClassVar[set[str]] = {"user_add", "user_disable", "user_enable"}
 
     def __init__(
         self,
@@ -23,41 +26,47 @@ class FreeIPAConnector(BaseConnector):
         self.username = username
         self.password = password
         self.verify_ssl = verify_ssl
-        self._session: requests.Session | None = None
         self._base_url: str = ""
+        self._session_cookie: str = ""
 
     def _connect_impl(self):
+        # FreeIPA's JSON-RPC auth is a session cookie handed out by
+        # /session/login_password, not a static header — incompatible with
+        # SyncHttpClient's one-httpx.Client-per-call model (no cookie jar
+        # persisted across calls). This one login handshake stays on a
+        # direct httpx.Client (with the same SSRF guard, called by hand);
+        # every subsequent JSON-RPC call goes through http_client_sync with
+        # the captured cookie forwarded as a header — see
+        # docs/compose/reports/entity-model-in-code.md for the full
+        # reasoning (deviation from the abusech/rstcloud/kaspersky_opentip
+        # pattern, which is all static-header auth).
         self._base_url = f"https://{self.host}:{self.port}"
-        self._session = requests.Session()
-        self._session.verify = self.verify_ssl
         login_url = f"{self._base_url}/ipa/session/login_password"
-        resp = self._session.post(
-            login_url,
-            data={"user": self.username, "password": self.password},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=30,
-        )
-        resp.raise_for_status()
+        _validate_external_url(login_url)
+        with httpx.Client(timeout=30, verify=self.verify_ssl) as client:
+            resp = client.post(
+                login_url,
+                data={"user": self.username, "password": self.password},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            resp.raise_for_status()
+            self._session_cookie = resp.cookies.get("ipa_session", "")
 
-    def disconnect(self):
-        if self._session:
-            self._session.close()
-            self._session = None
-            self._connected = False
-            self._logger.info(f"Disconnected from {self.instance_name}")
+    def _headers(self) -> dict:
+        if self._session_cookie:
+            return {"Cookie": f"ipa_session={self._session_cookie}"}
+        return {}
 
-    def _api_call(self, method: str, params: dict | None = None) -> dict:
+    def _api_call(self, method: str, params: list | None = None) -> dict:
         self._ensure_connected()
-        assert self._session is not None
-        url = f"{self._base_url}/ipa/json"
         payload = {
             "method": method,
             "params": params or [],
             "options": {},
         }
-        resp = self._session.post(url, json=payload, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        data = http_client_sync.post_json(
+            f"{self._base_url}/ipa/json", payload, headers=self._headers(), verify=self.verify_ssl,
+        )
         if data.get("error"):
             raise Exception(f"FreeIPA error: {data['error']}")
         return data.get("result", {})

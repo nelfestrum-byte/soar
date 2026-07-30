@@ -11,6 +11,8 @@ import time
 
 from soar.logger import get_logger
 
+_DEFAULT_STATE_DIR = "/app/data/state"  # mirrors orchestrator/config.py::SoarConfig.state_dir default
+
 
 class WatermarkStore:
     """Key → ISO-8601 UTC timestamp of the last processed event.
@@ -97,3 +99,34 @@ class SeenStore:
         data = self._load()
         data[key] = time.time() + self.ttl
         self._save(data)
+
+
+def _state_dir() -> str:
+    """Read soar.state_dir the same way soar/runner.py reads the rest of
+    config.yaml (SOAR_CONFIG env var, raw yaml dict) — soar/ must not import
+    orchestrator/ (subprocess runner boundary, one-way dependency, see
+    soar/tools/http_client.py docstring for the same rule applied to the
+    SSRF guard), so this can't reuse orchestrator.config.SoarConfig."""
+    config_path = os.environ.get("SOAR_CONFIG", "config.yaml")
+    try:
+        import yaml
+
+        with open(config_path) as f:
+            config = yaml.safe_load(f) or {}
+        state_dir = config.get("soar", {}).get("state_dir")
+        if state_dir:
+            return state_dir
+    except (OSError, yaml.YAMLError):
+        pass
+    return _DEFAULT_STATE_DIR
+
+
+def watermark_store(name: str) -> WatermarkStore:
+    """Contract-of-singleton factory, like `http_client`: the workflow gives
+    a name (usually its own), not a path — the path is a deployment detail
+    it shouldn't need to know."""
+    return WatermarkStore(path=os.path.join(_state_dir(), f"{name}.watermark.json"))
+
+
+def seen_store(name: str, ttl: int = 86400) -> SeenStore:
+    return SeenStore(path=os.path.join(_state_dir(), f"{name}.seen.json"), ttl=ttl)

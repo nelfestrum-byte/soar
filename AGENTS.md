@@ -169,7 +169,7 @@ orchestrator/
 ├── core/
 │   ├── queue/                 # AbstractJobQueue → InMemoryQueue | RedisQueue | SQLQueue
 │   │   └── sql_queue.py        # SQLQueue — poll-claim поверх workflow_jobs (FOR UPDATE SKIP LOCKED / SQLite serialization), см. Queue backend
-│   ├── worker.py              # Worker — один воркер, цикл pop → execute
+│   ├── worker.py              # Worker — один воркер, цикл pop → execute; после запуска парсит SOAR_AUDIT_EVENT из job.log (audit_parse.py) → AuditLog, если сконструирован с db_session_factory (не проваливает джобу при сбое парсинга/записи)
 │   ├── worker_pool.py         # WorkerPool — N воркеров как asyncio tasks
 │   ├── scheduler.py           # OrchestratorScheduler (APScheduler) — + периодическая retention_cleanup job (jobs.retention_days > 0)
 │   ├── job_manager.py         # JobManager — координатор, enqueue/cancel
@@ -177,7 +177,9 @@ orchestrator/
 │   ├── git_manager.py         # Git операции через subprocess (commit принимает author_name/author_email override; nothing-to-commit определяется через `git diff --cached --quiet`, не string-match stderr)
 │   ├── history.py             # Тонкие обёртки над GitManager для history/diff/restore (общие для workflows/actions/connectors)
 │   ├── workflow_state.py      # Единственный читатель/писатель orchestrator_state.yaml (enable/disable + webhook token)
-│   ├── introspect.py          # parse_classes/parse_functions — AST-интроспекция без импорта, общая для tools.py/actions.py/connectors.py; parse_classes также извлекает fields (тип+дефолт) и hidden_fields (HIDDEN_FIELDS) для connector schema
+│   ├── introspect.py          # parse_classes/parse_functions/parse_workflow_meta/_public_names — AST-интроспекция без импорта, общая для tools.py/actions.py/connectors.py/workflows.py; parse_classes также извлекает fields (тип+дефолт) и hidden_fields (HIDDEN_FIELDS) для connector schema; _public_names читает __all__ (GET /tools, E5)
+│   ├── audit_parse.py          # parse_audit_events() — парсит SOAR_AUDIT_EVENT-строки из лога джобы (пишет soar/connectors/_proxy.py), Worker._execute передаёт результат в audit.service.record_job_event
+│   ├── openapi_generator.py    # OpenAPIGenerator — перенесён из soar/tools/openapi.py (Фаза 2, E5): механизм оркестратора (генерация коннектора из спеки), не runtime-инструмент воркфлоу, единственный потребитель — api/connectors.py
 │   └── net.py                 # resolve_client_ip() — trusted-proxy-aware IP, общий для rate limiter/access log/audit
 ├── store/
 │   ├── base.py                 # AbstractJobStore — интерфейс (save/get/list/count_by_status/stats/recover_on_startup/purge_old)
@@ -190,27 +192,29 @@ orchestrator/
 ├── db/                         # base (table_prefix), session (init_engine/init_db/get_db) — см. File map
 └── api/
     ├── workflows.py            # GET/POST enable/disable, reload + CRUD кода workflow + history/diff/restore
-    ├── actions.py               # CRUD actions + templates + history/diff/restore + GET {name}/describe
-    ├── connectors.py            # CRUD connectors + code/config + OpenAPI generate/preview + history/diff/restore + GET {name}/describe
+    ├── actions.py               # CRUD actions + templates + history/diff/restore + GET {name}/describe; GET /actions — AST-only (parse_functions), лишний public callable на файл — отдельная запись, не импортирует actions_dir (граница рантайма из Фазы 1 — импорт контента только внутри soar.runner)
+    ├── connectors.py            # CRUD connectors + code/config + OpenAPI generate/preview (orchestrator/core/openapi_generator.py) + history/diff/restore + GET {name}/describe
     ├── jobs.py                  # POST запуск, GET статус, cancel
     ├── webhooks.py              # POST webhook с токеном
     ├── logs.py                  # GET лог + SSE стрим
     ├── status.py                # GET /status, GET /health
     ├── transfer.py               # POST export/import — импорт/экспорт конфигурации
-    ├── tools.py                  # GET /tools — read-only discovery (AST, без импорта) для soar/tools/
+    ├── tools.py                  # GET /tools — read-only discovery (AST, без импорта) для soar/tools/, отфильтровано по __all__ (_public_names) — синглтоны без класса (http_client, watermark_store, ...) отдаются отдельной веткой с module: "__init__"
     ├── runtime.py                 # GET /runtime — read-only, содержимое content-venv по soar/runtime_contract.py (guaranteed/present_not_guaranteed)
     ├── prompts.py                 # GET /prompts/system (read-only, versioned с кодом) + GET/PUT /prompts/user (admin, git-CRUD)
     ├── audit.py                  # GET /audit-log — admin-only, paginated, фильтры
     └── validation.py              # validate_name, validate_path_within, SSRF validation
 
 soar/
-├── connectors/                 # 24 коннектора (23 интеграции + file), автообнаружение через ConnectorRegistry — полный список см. File map; каждый объявляет class-level HIDDEN_FIELDS для редакции секретов в config API
-├── actions/__init__.py         # ActionsRegistry — автообнаружение actions
+├── connectors/                 # 24 коннектора (23 интеграции + file), namespace по типу (ConnectorRegistry — dict[type][instance]) — полный список см. File map; каждый объявляет class-level HIDDEN_FIELDS (редакция секретов в config API и в audit-логе) и MUTATING_METHODS (dry-run gate на прокси)
+│   └── _proxy.py                # ConnectorProxy — единственный способ получить коннектор (оба фасада: `from soar.connectors.<type> import <instance>` и `connectors.<instance>`); логирует SOAR_AUDIT_EVENT, редактирует HIDDEN_FIELDS, блокирует MUTATING_METHODS под dry_run
+├── runtime_state.py             # process-wide dry_run flag (один subprocess = одна джоба) — set_dry_run/is_dry_run, читает ConnectorProxy
+├── actions/__init__.py         # ActionsRegistry — автообнаружение actions, регистрирует все public top-level callables модуля (не только одноимённый файлу)
 ├── workflows/                  # __init__.py (WorkflowRegistry), base.py (BaseWorkflow/ScheduledWorkflow/WebhookWorkflow/ManualWorkflow)
-├── tools/                      # openapi.py (OpenAPIGenerator, заполняет HIDDEN_FIELDS из securitySchemes), watermark.py (WatermarkStore/SeenStore), http_client.py (HttpClient async + SyncHttpClient — тот же контракт логирования/кэша/SSRF-guard, sync для вызова из синхронных коннекторов) — см. File map
+├── tools/                      # __init__.py::__all__ — единственный источник того, что видно GET /tools; watermark.py (WatermarkStore/SeenStore + watermark_store()/seen_store() фабрики, путь из soar.state_dir), http_client.py (HttpClient async + SyncHttpClient — тот же контракт логирования/кэша/SSRF-guard, sync для вызова из синхронных коннекторов; SyncHttpClient также несёт put_json) — см. File map. OpenAPIGenerator — не здесь, см. orchestrator/core/openapi_generator.py
 ├── runtime_contract.py         # CONTRACT (dist name → import_names/kind) + RUNTIME_VERSION — версионированный контракт content-venv, источник для GET /runtime; версии пакетов по-прежнему только в soar/requirements.txt
 ├── audit_hook.py                # sys.addaudithook — платформенная наблюдаемость egress/файлов/подпроцессов + deny-policy на приватные адреса, ставится в runner.py до любого init()
-├── runner.py                   # Точка входа для subprocess workflows — см. Runner contract; ставит audit-хук, собирает http_client/http_client_sync из SOAR_CONFIG до workflows.init()/connectors.init()/actions.init() — верхнеуровневый `from soar.tools import http_client` в пользовательском коде видит сконфигурированный инстанс
+├── runner.py                   # Точка входа для subprocess workflows — см. Runner contract; ставит audit-хук, собирает http_client/http_client_sync из SOAR_CONFIG, выставляет runtime_state.set_dry_run(context["dry_run"]) до workflows.execute() — до workflows.init()/connectors.init()/actions.init() — верхнеуровневый `from soar.tools import http_client` в пользовательском коде видит сконфигурированный инстанс
 └── examples/nadproject_integration.py
 
 ui/src/                         # Vue 3 SPA, полный список views — см. File map
@@ -258,6 +262,39 @@ pool = request.app.state.pool
 
 ### Connector lazy init
 Коннекторы подключаются при первом вызове метода через `_ensure_connected()`.
+
+### Доступ к коннекторам — только через `ConnectorProxy` (Фаза 2)
+Два фасада, один механизм: `from soar.connectors.<type> import <instance>`
+(концептная форма — модульный `__getattr__`-шим,
+`soar/connectors/__init__.py::_install_shims`) и `from soar.connectors import
+connectors` + `connectors.<instance>` (плоский путь,
+`ConnectorRegistry.__getattr__`) — оба **всегда** возвращают
+`ConnectorProxy` (`soar/connectors/_proxy.py`), никогда сырой
+`BaseConnector`-инстанс. Опечатка в имени инстанса при концептной форме —
+`AttributeError` на импорте, а не в рантайме джобы. Прокси оборачивает
+каждый публичный вызов метода:
+- пишет `SOAR_AUDIT_EVENT connector.call target=<type>.<instance>.<method>
+  args=... kwargs=... duration_ms=... outcome=...` в лог джобы; ключи
+  `kwargs`, объявленные в class-level `HIDDEN_FIELDS` коннектора,
+  редактируются в логе (не в реальном вызове);
+- блокирует вызов, если метод объявлен в class-level `MUTATING_METHODS`
+  коннектора и `context["dry_run"]` истинен (`soar/runtime_state.py`,
+  выставляется в `soar/runner.py::main()` из `context` до
+  `workflows.execute()`) — централизованно, не по добровольному соглашению
+  воркфлоу.
+
+`Worker._execute` (`orchestrator/core/worker.py`) парсит `SOAR_AUDIT_EVENT`
+из лога завершённой джобы (`orchestrator/core/audit_parse.py`) и пишет
+`AuditLog`-записи через `audit.service.record_job_event()` — синтетический
+actor `job:<workflow_name>`, тот же паттерн, что у webhook-триггернутых
+job.create. Ошибка парсинга/записи аудита не проваливает джобу
+(observability, не exec path).
+
+`BaseConnector.MUTATING_METHODS: ClassVar[set[str]] = set()` — та же
+конвенция, что `HIDDEN_FIELDS`: каждый коннектор объявляет свой набор
+мутирующих методов (`send_*`, `create_*`, `delete_*`, `exec_*`, `put_*`,
+`index`, ...); read-only (`get_*`/`search`/`list_*`/`query` без побочных
+эффектов) не входят.
 
 ### Git auto-commit
 Любое изменение файла через API автоматически коммитится в git. `GitManager.commit()`
@@ -412,10 +449,11 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 | Kaspersky OpenTip | `soar/connectors/kaspersky_opentip/` — IP/domain/hash/URL checks |
 | URLhaus | `soar/connectors/urlhaus/` — URL/host/payload lookups |
 | crt.sh | `soar/connectors/crtsh/` — certificate/domain/identity search |
-| Watermark / дедуп событий | `soar/tools/watermark.py` — WatermarkStore, SeenStore (durable JSON, generic) |
+| Watermark / дедуп событий | `soar/tools/watermark.py` — WatermarkStore, SeenStore (durable JSON, generic) + `watermark_store(name)`/`seen_store(name, ttl)` фабрики (путь строится из `soar.state_dir` конфига, синглтон-контракт как у `http_client`) |
 | HTTP client (логирование + опциональный кэш) | `soar/tools/http_client.py` — `HttpClient` (async) + `SyncHttpClient` (sync-фасад для коннекторов, `http_client_sync` синглтон), `http_client:` секция конфига, см. `docs/agents/config-reference.md` |
 | Connector config schema / секреты | `orchestrator/core/introspect.py` (`_fields`/`_hidden_fields`), `orchestrator/api/connectors.py` (`GET /schema`, редакция config/history/diff), `HIDDEN_FIELDS` на каждом коннекторе |
-| Новый action | `soar/actions/`, один файл = одна функция |
+| Connector dry-run / audit trail | `soar/connectors/_proxy.py` (`ConnectorProxy`, `MUTATING_METHODS`), `soar/runtime_state.py` (`is_dry_run`), `orchestrator/core/audit_parse.py` + `orchestrator/audit/service.py::record_job_event` (парсинг `SOAR_AUDIT_EVENT` → `AuditLog` в `Worker._execute`) |
+| Новый action | `soar/actions/`, один файл может экспортировать несколько public top-level функций — все регистрируются под своим именем (`ActionsRegistry`, E7); `GET /actions` листит их через AST, без импорта |
 | Новый workflow | `soar/workflows/`, наследовать от `ScheduledWorkflow`/`WebhookWorkflow`/`ManualWorkflow` |
 | Шаблон workflow | `orchestrator/api/workflows.py` — TEMPLATES dict |
 | Изменить модель | `orchestrator/models/` |

@@ -21,8 +21,8 @@ from orchestrator.audit import service as audit_service
 from orchestrator.auth.dependencies import CurrentUser, require_role
 from orchestrator.core import history
 from orchestrator.core.introspect import _summary, parse_classes
+from orchestrator.core.openapi_generator import OpenAPIGenerator
 from orchestrator.db.session import get_db
-from soar.tools.openapi import OpenAPIGenerator
 
 router = APIRouter(prefix="/connectors", tags=["connectors"])
 

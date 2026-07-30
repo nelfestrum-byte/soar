@@ -1,37 +1,23 @@
 from typing import ClassVar
 
-import requests
-
 from soar.connectors.base import BaseConnector
+from soar.tools import http_client_sync
 
 
 class UrlhausConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = set()
+    MUTATING_METHODS: ClassVar[set[str]] = {"tag_url"}
 
     BASE_URL = "https://urlhaus-api.abuse.ch/v1"
 
-    def __init__(self, instance_name: str):
-        super().__init__(instance_name)
-        self._session: requests.Session | None = None
-
     def _connect_impl(self):
-        self._session = requests.Session()
-        self._session.headers["User-Agent"] = "SOAR-Connector/1.0"
-        self._session.headers["Content-Type"] = "application/x-www-form-urlencoded"
-
-    def disconnect(self):
-        if self._session:
-            self._session.close()
-            self._session = None
-            self._connected = False
-            self._logger.info(f"Disconnected from {self.instance_name}")
+        pass  # http_client_sync opens a connection per request, nothing to hold open
 
     def _post(self, data: dict) -> dict:
         self._ensure_connected()
-        assert self._session is not None
-        resp = self._session.post(f"{self.BASE_URL}/url/", data=data, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
+        return http_client_sync.post_json(
+            f"{self.BASE_URL}/url/", data, headers={"User-Agent": "SOAR-Connector/1.0"}
+        )
 
     def get_url_info(self, url: str) -> list[dict]:
         data = self._post({"url": url})
@@ -63,11 +49,8 @@ class UrlhausConnector(BaseConnector):
 
     def tag_url(self, url: str, tag: str, threat: str = "malware_download") -> dict:
         self._ensure_connected()
-        assert self._session is not None
-        resp = self._session.post(
+        return http_client_sync.post_json(
             f"{self.BASE_URL}/url/",
-            data={"url": url, "threat": threat, "tags": tag},
-            timeout=30,
+            {"url": url, "threat": threat, "tags": tag},
+            headers={"User-Agent": "SOAR-Connector/1.0"},
         )
-        resp.raise_for_status()
-        return resp.json()

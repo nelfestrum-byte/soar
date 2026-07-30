@@ -1,7 +1,11 @@
+from typing import ClassVar
+
 from soar.logger import get_logger
 
 
 class BaseConnector:
+    MUTATING_METHODS: ClassVar[set[str]] = set()
+
     def __init__(self, instance_name: str, **params):
         self.instance_name = instance_name
         self._connected = False

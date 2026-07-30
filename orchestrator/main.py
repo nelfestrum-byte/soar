@@ -225,6 +225,7 @@ async def lifespan(app: FastAPI):
         runner=runner,
         job_store=job_store,
         default_timeout=config.workers.default_timeout,
+        db_session_factory=app.state.db_session_factory,
     )
 
     scheduler = OrchestratorScheduler(job_manager)

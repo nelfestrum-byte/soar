@@ -10,6 +10,7 @@ soar:
   workflows_dir: /app/soar/workflows
   connectors_dir: /app/soar/connectors
   actions_dir: /app/soar/actions
+  state_dir: /app/soar/state
 
 git:
   workflows_repo: /app/soar

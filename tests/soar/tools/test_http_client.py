@@ -57,6 +57,7 @@ def _mock_sync_client(json_data=None, status_code=200):
     client = MagicMock()
     client.get = MagicMock(return_value=resp)
     client.post = MagicMock(return_value=resp)
+    client.put = MagicMock(return_value=resp)
 
     ctx = MagicMock()
     ctx.__enter__.return_value = client
@@ -396,3 +397,49 @@ def test_sync_post_json_verify_false_passed_through():
         SyncHttpClient().post_json("https://api.example.com/v1/submit", {"a": 1}, verify=False)
 
     mock_cls.assert_called_once_with(timeout=30, verify=False)
+
+
+# --- SyncHttpClient.put_json ---
+
+
+def test_sync_put_json_never_cached(log_records):
+    client_ctx, client = _mock_sync_client({"updated": True})
+    http_client = SyncHttpClient(cache=InMemoryCache())
+    url = "https://api.example.com/v1/agents/1/restart"
+
+    with patch("soar.tools.http_client.httpx.Client", return_value=client_ctx), \
+            patch("socket.getaddrinfo", return_value=_make_addrinfo("8.8.8.8")):
+        http_client.put_json(url)
+        http_client.put_json(url)
+
+    assert client.put.call_count == 2
+    info_records = [r for r in log_records if r["level"].name == "INFO"]
+    assert len(info_records) == 2
+    assert all("PUT" in r["message"] for r in info_records)
+
+
+def test_sync_put_json_validates_url_before_request():
+    http_client = SyncHttpClient()
+    with pytest.raises(ValueError):
+        http_client.put_json("http://127.0.0.1/x")
+
+
+def test_sync_put_json_verify_false_passed_through():
+    client_ctx, _ = _mock_sync_client({"updated": True})
+
+    with patch("soar.tools.http_client.httpx.Client", return_value=client_ctx) as mock_cls, \
+            patch("socket.getaddrinfo", return_value=_make_addrinfo("8.8.8.8")):
+        SyncHttpClient().put_json("https://api.example.com/v1/agents/1/restart", verify=False)
+
+    mock_cls.assert_called_once_with(timeout=30, verify=False)
+
+
+def test_sync_put_json_returns_parsed_response():
+    client_ctx, client = _mock_sync_client({"updated": True})
+
+    with patch("soar.tools.http_client.httpx.Client", return_value=client_ctx), \
+            patch("socket.getaddrinfo", return_value=_make_addrinfo("8.8.8.8")):
+        result = SyncHttpClient().put_json("https://api.example.com/v1/agents/1/restart")
+
+    assert result == {"updated": True}
+    client.put.assert_called_once()

@@ -1,7 +1,6 @@
 import pytest
-from pathlib import Path
-from soar.tools.openapi import OpenAPIGenerator
 
+from orchestrator.core.openapi_generator import OpenAPIGenerator
 
 MINIMAL_SPEC = {
     "openapi": "3.0.0",

@@ -1,13 +1,14 @@
+import base64
 from typing import ClassVar
-
-import requests
-import urllib3
+from urllib.parse import urlencode
 
 from soar.connectors.base import BaseConnector
+from soar.tools import http_client_sync
 
 
 class WazuhConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+    MUTATING_METHODS: ClassVar[set[str]] = {"restart_agent"}
 
     def __init__(
         self,
@@ -25,40 +26,35 @@ class WazuhConnector(BaseConnector):
         self.password = password
         self.verify_ssl = verify_ssl
         self._token: str = ""
-        self._session: requests.Session | None = None
 
     def _connect_impl(self):
-        self._session = requests.Session()
-        self._session.verify = self.verify_ssl
-        resp = self._session.post(
+        # HTTPBasicAuth-equivalent header, built by hand — SyncHttpClient
+        # takes headers, not a requests.auth tuple.
+        basic = base64.b64encode(f"{self.username}:{self.password}".encode()).decode()
+        data = http_client_sync.post_json(
             f"https://{self.host}:{self.port}/security/user/authenticate",
-            auth=(self.username, self.password),
-            timeout=30,
+            {},
+            headers={"Authorization": f"Basic {basic}"},
+            verify=self.verify_ssl,
         )
-        resp.raise_for_status()
-        self._token = resp.json()["data"]["token"]
-        self._session.headers["Authorization"] = f"Bearer {self._token}"
+        self._token = data["data"]["token"]
 
-    def disconnect(self):
-        if self._session:
-            self._session.close()
-            self._session = None
-            self._connected = False
-            self._logger.info(f"Disconnected from {self.instance_name}")
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self._token}"}
 
     def _get(self, path: str, params: dict | None = None) -> dict:
         self._ensure_connected()
-        assert self._session is not None
-        resp = self._session.get(f"https://{self.host}:{self.port}{path}", params=params, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
+        url = f"https://{self.host}:{self.port}{path}"
+        if params:
+            url += f"?{urlencode(params)}"
+        return http_client_sync.get_json(url, headers=self._headers(), verify=self.verify_ssl)
 
     def _put(self, path: str, params: dict | None = None) -> dict:
         self._ensure_connected()
-        assert self._session is not None
-        resp = self._session.put(f"https://{self.host}:{self.port}{path}", params=params, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
+        url = f"https://{self.host}:{self.port}{path}"
+        if params:
+            url += f"?{urlencode(params)}"
+        return http_client_sync.put_json(url, headers=self._headers(), verify=self.verify_ssl)
 
     def get_agents(self, status: str = "active") -> list[dict]:
         data = self._get("/agents", params={"status": status, "limit": 500})

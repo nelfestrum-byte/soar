@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -39,6 +41,50 @@ async def test_list_actions_includes_summary():
         assert r.status_code == 200
         item = next(a for a in r.json() if a["name"] == "summarized_action")
         assert item["summary"] == "Do the thing."
+
+
+@pytest.mark.asyncio
+async def test_list_actions_shows_every_public_function_in_a_file():
+    """E7: a file with multiple public top-level functions must list all of
+    them, not just the one matching the filename (old ActionsRegistry
+    behavior)."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.put(
+            "/actions/multi_export_action",
+            content=(
+                b'def multi_export_action(ip):\n    """Primary entry."""\n    pass\n\n\n'
+                b'def multi_export_action_extra(ip):\n    """Secondary entry."""\n    pass\n'
+            ),
+        )
+        r = await c.get("/actions")
+        assert r.status_code == 200
+        names = {a["name"] for a in r.json()}
+        assert "multi_export_action" in names
+        assert "multi_export_action_extra" in names
+        extra = next(a for a in r.json() if a["name"] == "multi_export_action_extra")
+        assert extra["file"] == "multi_export_action"
+        assert extra["summary"] == "Secondary entry."
+
+
+@pytest.mark.asyncio
+async def test_list_actions_does_not_import_content():
+    """After Phase 1's runtime boundary, the orchestrator process must never
+    import actions_dir content — GET /actions is AST-only. Patching
+    ActionsRegistry's own import machinery (rather than the global
+    importlib.import_module, which the ASGI stack also uses internally for
+    unrelated things) targets exactly the "content import" this test cares
+    about."""
+    transport = ASGITransport(app=app)
+    with (
+        patch("soar.actions.ActionsRegistry._discover", side_effect=AssertionError("must not import")) as mock_discover,
+        patch("soar.actions.ActionsRegistry._discover_external", side_effect=AssertionError("must not import")) as mock_discover_ext,
+    ):
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            r = await c.get("/actions")
+        assert r.status_code == 200
+    mock_discover.assert_not_called()
+    mock_discover_ext.assert_not_called()
 
 
 @pytest.mark.asyncio

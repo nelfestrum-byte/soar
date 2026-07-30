@@ -9,6 +9,7 @@ from soar.connectors.base import BaseConnector
 
 class MySQLConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+    MUTATING_METHODS: ClassVar[set[str]] = {"execute_raw", "execute_many"}
 
     def __init__(
         self,
