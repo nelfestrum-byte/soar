@@ -33,6 +33,48 @@ def sample_job():
     )
 
 
+class TestResolveContentPython:
+    """resolve_content_python() picks the interpreter for subprocess workflow
+    execution — SOAR_CONTENT_PYTHON when set (Docker two-runtime boundary,
+    see docs/concepts/ENTITY-MODEL.md decision 3), sys.executable otherwise
+    (local dev/tests, single venv)."""
+
+    def test_returns_env_var_when_set(self):
+        from orchestrator.core.subprocess_runner import resolve_content_python
+
+        with patch.dict(os.environ, {"SOAR_CONTENT_PYTHON": "/app/content-venv/bin/python"}):
+            assert resolve_content_python() == "/app/content-venv/bin/python"
+
+    def test_falls_back_to_sys_executable_when_unset(self):
+        from orchestrator.core.subprocess_runner import resolve_content_python
+
+        env_without = {k: v for k, v in os.environ.items() if k != "SOAR_CONTENT_PYTHON"}
+        with patch.dict(os.environ, env_without, clear=True):
+            assert resolve_content_python() == sys.executable
+
+    def test_falls_back_to_sys_executable_when_empty(self):
+        from orchestrator.core.subprocess_runner import resolve_content_python
+
+        with patch.dict(os.environ, {"SOAR_CONTENT_PYTHON": ""}):
+            assert resolve_content_python() == sys.executable
+
+
+@pytest.mark.asyncio
+async def test_start_uses_resolve_content_python_not_sys_executable(runner, sample_job):
+    """SubprocessRunner.start() must launch the interpreter resolved by
+    resolve_content_python(), not sys.executable directly — the module-level
+    _CONTENT_PYTHON is what create_subprocess_exec's first argument should be."""
+    from orchestrator.core import subprocess_runner as sr_module
+
+    with patch("orchestrator.core.subprocess_runner.asyncio.create_subprocess_exec") as mock_exec:
+        mock_exec.return_value = MagicMock()
+        await runner.start(sample_job)
+
+        call_args = mock_exec.call_args
+        first_arg = call_args.args[0] if call_args.args else call_args[0][0]
+        assert first_arg == sr_module._CONTENT_PYTHON
+
+
 class TestSubprocessRunnerEnv:
     """SubprocessRunner should propagate SOAR_CONFIG to subprocess."""
 

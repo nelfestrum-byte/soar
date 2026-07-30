@@ -1,4 +1,6 @@
-from orchestrator.core.introspect import parse_classes, parse_functions
+import pytest
+
+from orchestrator.core.introspect import parse_classes, parse_functions, parse_workflow_meta
 
 CLASS_MODULE = '''"""Module docstring, not under test."""
 
@@ -131,3 +133,111 @@ def test_parse_classes_hidden_fields_empty_when_absent(tmp_path):
         {"name": "instance_name", "type": "str", "default": None},
         {"name": "base_path", "type": "str", "default": "/tmp"},
     ]
+
+
+SCHEDULED_WF_MODULE = '''from soar.workflows.base import ScheduledWorkflow
+
+
+class SyncIndicators(ScheduledWorkflow):
+    """Pulls indicators on a timer."""
+
+    schedule = "*/10 * * * *"
+    interval = 600
+
+    def run(self, context):
+        return {"status": "ok"}
+'''
+
+WEBHOOK_WF_MODULE = '''from soar.workflows.base import WebhookWorkflow
+
+
+class ReceiveAlert(WebhookWorkflow):
+    """Receives alerts pushed from an external system."""
+
+    path = "/webhook/alert"
+    token = "static-secret-token"
+
+    def run(self, context):
+        return {"status": "ok"}
+'''
+
+MANUAL_WF_MODULE = '''from soar.workflows.base import ManualWorkflow
+
+
+class RunOnDemand(ManualWorkflow):
+    """Triggered manually by an analyst."""
+
+    def run(self, context):
+        return {"status": "ok"}
+'''
+
+NO_WORKFLOW_MODULE = '''class NotAWorkflow:
+    """Some unrelated class."""
+
+    def run(self, context):
+        return None
+'''
+
+SYNTAX_ERROR_MODULE = '''class Broken(ScheduledWorkflow
+    def run(self, context):
+        return None
+'''
+
+NO_DOCSTRING_WF_MODULE = '''from soar.workflows.base import ManualWorkflow
+
+
+class Undocumented(ManualWorkflow):
+    def run(self, context):
+        return {"status": "ok"}
+'''
+
+
+def test_parse_workflow_meta_scheduled(tmp_path):
+    path = tmp_path / "sync_indicators.py"
+    path.write_text(SCHEDULED_WF_MODULE, encoding="utf-8")
+    meta = parse_workflow_meta(path)
+    assert meta["type"] == "scheduled"
+    assert meta["schedule"] == "*/10 * * * *"
+    assert meta["interval"] == 600
+    assert meta["docstring"] == "Pulls indicators on a timer."
+
+
+def test_parse_workflow_meta_webhook(tmp_path):
+    path = tmp_path / "receive_alert.py"
+    path.write_text(WEBHOOK_WF_MODULE, encoding="utf-8")
+    meta = parse_workflow_meta(path)
+    assert meta["type"] == "webhook"
+    assert meta["path"] == "/webhook/alert"
+    assert meta["token"] == "static-secret-token"
+    assert meta["docstring"] == "Receives alerts pushed from an external system."
+
+
+def test_parse_workflow_meta_manual(tmp_path):
+    path = tmp_path / "run_on_demand.py"
+    path.write_text(MANUAL_WF_MODULE, encoding="utf-8")
+    meta = parse_workflow_meta(path)
+    assert meta["type"] == "manual"
+    assert meta["docstring"] == "Triggered manually by an analyst."
+    assert "schedule" not in meta
+    assert "path" not in meta
+    assert "token" not in meta
+
+
+def test_parse_workflow_meta_no_docstring(tmp_path):
+    path = tmp_path / "undocumented.py"
+    path.write_text(NO_DOCSTRING_WF_MODULE, encoding="utf-8")
+    meta = parse_workflow_meta(path)
+    assert meta["docstring"] == ""
+
+
+def test_parse_workflow_meta_no_base_class_returns_none(tmp_path):
+    path = tmp_path / "not_a_workflow.py"
+    path.write_text(NO_WORKFLOW_MODULE, encoding="utf-8")
+    assert parse_workflow_meta(path) is None
+
+
+def test_parse_workflow_meta_syntax_error_propagates(tmp_path):
+    path = tmp_path / "broken.py"
+    path.write_text(SYNTAX_ERROR_MODULE, encoding="utf-8")
+    with pytest.raises(SyntaxError):
+        parse_workflow_meta(path)

@@ -1,8 +1,10 @@
 import os
+import secrets
 import shutil
 import time
 import uuid
 from collections import defaultdict
+from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -27,6 +29,7 @@ from orchestrator.api import (  # noqa: E402
     jobs_router,
     logs_router,
     prompts_router,
+    runtime_router,
     status_router,
     tools_router,
     webhooks_router,
@@ -36,13 +39,14 @@ from orchestrator.api.audit import router as audit_router  # noqa: E402
 from orchestrator.api.transfer import router as transfer_router  # noqa: E402
 from orchestrator.auth.router import router as auth_router  # noqa: E402
 from orchestrator.core.git_manager import GitManager  # noqa: E402
+from orchestrator.core.introspect import parse_workflow_meta  # noqa: E402
 from orchestrator.core.job_manager import JobManager  # noqa: E402
 from orchestrator.core.net import resolve_client_ip  # noqa: E402
 from orchestrator.core.queue.memory import InMemoryQueue  # noqa: E402
 from orchestrator.core.queue.redis_queue import RedisQueue  # noqa: E402
 from orchestrator.core.queue.sql_queue import SQLQueue  # noqa: E402
 from orchestrator.core.scheduler import OrchestratorScheduler  # noqa: E402
-from orchestrator.core.subprocess_runner import SubprocessRunner  # noqa: E402
+from orchestrator.core.subprocess_runner import SubprocessRunner, resolve_content_python  # noqa: E402
 from orchestrator.core.worker_pool import WorkerPool  # noqa: E402
 from orchestrator.core.workflow_state import load_state, parse_enabled, parse_token, save_state  # noqa: E402
 from orchestrator.db.session import get_session_factory, init_db, init_engine  # noqa: E402
@@ -105,36 +109,59 @@ def create_job_store(config) -> AbstractJobStore:
     return InMemoryJobStore(keep_completed=config.jobs.keep_completed)
 
 
+def _iter_workflow_files(config) -> Iterator[Path]:
+    """Same priority order as the old WorkflowRegistry._discover()/
+    _discover_external(): built-in package directory wins on name collision
+    (empty today, but semantics preserved)."""
+    seen: set[str] = set()
+    for base_dir in (str(_SOAR_PKG / "workflows"), config.soar.workflows_dir):
+        d = Path(base_dir)
+        if not d.exists():
+            continue
+        for py_file in sorted(d.glob("*.py")):
+            if py_file.name.startswith("_") or py_file.name == "base.py":
+                continue
+            if py_file.stem in seen:
+                continue
+            seen.add(py_file.stem)
+            yield py_file
+
+
 def load_workflow_metas(config) -> list[WorkflowMeta]:
+    """Static AST parse only — never imports workflow modules (E10.3, see
+    docs/concepts/ENTITY-MODEL.md). A webhook workflow whose `token` isn't a
+    literal string constant (e.g. the WEBHOOK_TEMPLATE default `token =
+    secrets.token_urlsafe(32)`, evaluated at import time under the old path)
+    has no AST-extractable value; the platform generates and persists one
+    the first time such a workflow is seen, same as the old path effectively
+    did on first import — see orchestrator/api/workflows.py::WEBHOOK_TEMPLATE."""
     state_workflows = load_state(config)
-
     soar_metas = []
-    try:
-        from soar.workflows import workflows as wf_registry
-        wf_registry.init(external_dir=config.soar.workflows_dir)
-        for wf_info in wf_registry.list():
-            name = wf_info["name"]
-            wf_type = wf_info["type"]
-            saved = state_workflows.get(name)
-            enabled = parse_enabled(saved) if saved is not None else True
-            token = wf_info.get("token")
-            if wf_type == "webhook":
-                token = parse_token(saved) or token
-
-            meta = WorkflowMeta(
-                name=name,
-                type=wf_type,
-                enabled=enabled,
-                schedule=wf_info.get("schedule"),
-                interval=wf_info.get("interval"),
-                path=wf_info.get("path"),
-                token=token,
-                concurrency=ConcurrencyPolicy.ALLOW if wf_type == "webhook" else ConcurrencyPolicy.FORBID,
-                docstring=wf_info.get("docstring", ""),
-            )
-            soar_metas.append(meta)
-    except ImportError:
-        pass
+    for py_file in _iter_workflow_files(config):
+        try:
+            meta = parse_workflow_meta(py_file)
+        except SyntaxError as e:
+            logger.warning(f"Failed to parse workflow {py_file}: {e}")
+            continue
+        if meta is None:
+            continue
+        name = py_file.stem
+        saved = state_workflows.get(name)
+        enabled = parse_enabled(saved) if saved is not None else True
+        token = meta.get("token")
+        if meta["type"] == "webhook":
+            token = parse_token(saved) or token or secrets.token_urlsafe(32)
+        soar_metas.append(WorkflowMeta(
+            name=name,
+            type=meta["type"],
+            enabled=enabled,
+            schedule=meta.get("schedule"),
+            interval=meta.get("interval"),
+            path=meta.get("path"),
+            token=token,
+            concurrency=ConcurrencyPolicy.ALLOW if meta["type"] == "webhook" else ConcurrencyPolicy.FORBID,
+            docstring=meta["docstring"],
+        ))
 
     for name, saved in state_workflows.items():
         if any(m.name == name for m in soar_metas):
@@ -209,6 +236,7 @@ async def lifespan(app: FastAPI):
     app.state.config = config
     app.state.job_store = job_store
     app.state.queue = queue
+    app.state.content_python = resolve_content_python()
 
     await pool.start()
     await scheduler.start(workflows, retention_days=config.jobs.retention_days)
@@ -337,4 +365,5 @@ app.include_router(status_router)
 app.include_router(transfer_router)
 app.include_router(tools_router)
 app.include_router(prompts_router)
+app.include_router(runtime_router)
 app.include_router(audit_router)

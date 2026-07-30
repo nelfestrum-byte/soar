@@ -68,6 +68,12 @@
 | GET | /tools | Список классов `soar/tools/` (name, module, summary) — AST, без импорта |
 | GET | /tools/{name} | Докстринг, сигнатура конструктора и публичных методов класса |
 
+### Runtime
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /runtime | Read-only, без PUT/DELETE — снимок содержимого content-venv: `runtime_version` (из `soar/runtime_contract.py`), `python_version`, `guaranteed` (пакеты из `CONTRACT`, реально установленные — `distribution`/`version`/`import_names`/`kind`), `present_not_guaranteed` (установлено, но не в контракте — `import_names` из `top_level.txt`). Локально/в тестах без Docker — `content_python == sys.executable`, `guaranteed` отражает то, что реально стоит в текущем venv |
+
 ### Prompts
 | Method | Path | Roles | Description |
 |--------|------|-------|-------------|
