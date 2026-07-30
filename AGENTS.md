@@ -490,7 +490,7 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 | UI: права по роли | `ui/src/permissions.js` (`can(role, cap)` — зеркало ролевых кортежей `orchestrator/api/*.py`), `ui/src/router-guard.js` (закрывает прямой переход по URL, не только пункт меню) |
 | UI: история/diff/restore | `ui/src/components/HistoryPanel.vue` — общий компонент для workflow/action/connector(code+config), вкладка рядом с редактором |
 | Deploy (QA-стенд) | `deploy/stage/` — docker-compose.yml (build:), Dockerfiles |
-| Deploy (дистрибуция, air-gap) | `deploy/prod/` (docker-compose.yml с `image:`, config.yaml.template) + `deploy/soarctl`/`soarctl_lib/` — package/install/init/up/migrate/users/backup/doctor/content, см. `docs/compose/specs/2026-07-22-deploy-cli-design.md`. Базовый контентпак коннекторов копируется в образ на сборке (`COPY --from=basepack`, требует sibling-репозиторий `soar-content-pack` как extra build context — Фаза 3, см. `docs/compose/reports/content-as-contentpack.md`, не проверено реальной сборкой) |
+| Deploy (дистрибуция, air-gap) | `deploy/prod/` (docker-compose.yml с `image:`, config.yaml.template) + `deploy/soarctl`/`soarctl_lib/` — package/install/init/up/migrate/users/backup/doctor/content, см. `docs/compose/specs/2026-07-22-deploy-cli-design.md`. Базовый контентпак коннекторов копируется в образ на сборке (`COPY --from=basepack`, требует sibling-репозиторий `soar-content-pack` как extra build context — Фаза 3, см. `docs/compose/reports/content-as-contentpack.md`); реальной сборкой (`docker compose -f deploy/stage/docker-compose.yml build`) и живым контейнером проверено — все 24 коннектора корректно устанавливаются `seed_connector_pack()` и импортируются из `content-venv`, см. addendum в отчёте |
 | Deploy (дистрибуция, on-site/с интернетом) | `soarctl install --repo <url-or-path> [--ref REF]` — сборка образов на месте, без bundle; `soarctl init --interactive`/`--cors-origin` — заполняет `auth.cors_origins` вместо плейсхолдера; `soarctl update [--ref REF] [--migrate fresh\|upgrade]` — git pull/checkout + пересборка + `up`, без `down`, postgres/redis не пересоздаются; `soarctl_lib/git_source.py`, `prompts.py`; см. `docs/compose/specs/2026-07-27-soarctl-onsite-update-design.md` |
 | Тесты | `tests/orchestrator/`, `tests/soar/`, `tests/deploy/` — тесты конкретных встроенных коннекторов переехали в `soar-content-pack/tests/` вместе с их кодом (Фаза 3); здесь остаётся платформенная механика (`ConnectorRegistry`, `ConnectorProxy`, pack install pipeline) |
 | API endpoints (полные таблицы) | `docs/agents/api-reference.md` |
@@ -606,8 +606,9 @@ API (UI или LLM-агентом) **без передеплоя**. Три шт�
 
 Полная история версий — **[CHANGELOG.md](CHANGELOG.md)**.
 
-Текущая версия: **v0.17** (2026-07-30) — Модель сущностей, Фаза 4:
+Текущая версия: **v0.20** (2026-07-30) — Модель сущностей, Фаза 4:
 сужение прав (`docs/concepts/ENTITY-MODEL.md`, слой 3 изоляции).
+Завершает весь план `ENTITY-MODEL.md` (Фазы 1–4, v0.17–v0.20, одна сессия).
 Credential scoping — всегда включён: `orchestrator/core/introspect.py
 ::parse_connector_usage` статически (AST, без импорта) находит `from
 soar.connectors.<type> import <instance>` на верхнем уровне файла
@@ -634,13 +635,105 @@ workflow_file`, миграция `7a1c9e3f5b02`), не только `InMemoryQue
 файловую capability точечно (`setcap`), rlimits — по-прежнему через
 `preexec_fn`. Все границы (config.yaml unreadable, git repo unwritable,
 state_dir writable, RLIMIT_AS enforcement) проверены на реальных
-Linux-контейнерах через Docker, не только юнит-тестами с моками. Не
-верифицировано в этой сессии: полный `docker compose up` стенд
-`deploy/stage` с `jobs.runner_uid` включённым и реальной джобой через API
-(осознанно отложено — см. отчёт). Спек/план/отчёт:
+Linux-контейнерах через Docker — включая повторную проверку постфактум
+против уже собранного `stage-orchestrator` образа (не только
+изолированным тестовым harness'ем), см. addendum в отчёте. Не
+верифицировано: полный `docker compose up` стенд `deploy/stage` с
+`jobs.runner_uid` включённым и реальной джобой через живой API
+(осознанно отложено). Спек/план/отчёт:
 `docs/compose/specs/2026-07-30-privilege-narrowing-design.md`,
 `docs/compose/plans/2026-07-30-privilege-narrowing.md`,
 `docs/compose/reports/privilege-narrowing.md`.
+
+Предыдущая версия: **v0.19** (2026-07-30) — Модель сущностей, Фаза 3:
+контент как контентпак (`docs/concepts/ENTITY-MODEL.md`). Все 24
+встроенных коннектора переехали из `soar/connectors/<name>/` в отдельный
+локальный git-репозиторий-сиблинг `soar-content-pack` (без remote) —
+`soar/connectors/` содержит только `__init__.py`/`base.py`/`_proxy.py`,
+структурный дубль (**E1**) устранён физически. Общий install-пайплайн
+(`orchestrator/core/pack_install.py`: чтение манифеста, проверка
+`runtime_version`/зависимостей против `soar/runtime_contract.py::CONTRACT`,
+sha256-маркер происхождения `.soar-content.yaml`, план/применение с
+защитой изменённых пользователем коннекторов от перезаписи) используется
+тремя путями: `soarctl content install|list|remove`
+(`deploy/soarctl_lib/content.py`, alpine tar-pipe в `soar-data` volume, тот
+же паттерн, что `backup.py`), `POST /connectors/pack/install`
+(`orchestrator/api/packs.py`, admin-only, conflict-preflight+`force`,
+аудит), и идемпотентный сидинг на каждом старте оркестратора
+(`orchestrator/main.py::seed_connector_pack` вместо однократного
+`shutil.copytree` — закрывает **E4**, обновления теперь доезжают до
+существующих инсталляций через `soarctl update`). Манифест пака
+генерируется AST-скриптом (`soar-content-pack/tools/gen_manifest.py`), не
+пишется руками. Обе Dockerfile получили `COPY --from=basepack` из
+sibling-репозитория как extra build context — проверено реальной сборкой
+(`docker compose build`) и живым контейнером: все 24 коннектора корректно
+ставятся `seed_connector_pack()` и импортируются из `content-venv`. 792
+passed (было 894 — ожидаемое падение: 145 тестов коннекторов переехали
+вместе с кодом в `soar-content-pack/tests/`), `ruff check` чист от новых
+находок. Спек/план/отчёт:
+`docs/compose/specs/2026-07-30-content-as-contentpack-design.md`,
+`docs/compose/plans/2026-07-30-content-as-contentpack.md`,
+`docs/compose/reports/content-as-contentpack.md`.
+
+Предыдущая версия: **v0.18** (2026-07-30) — Модель сущностей, Фаза 2:
+модель сущностей в коде (`docs/concepts/ENTITY-MODEL.md`, E6+E3 одним
+заходом по решению 4). `ConnectorRegistry` — пространство имён по типу
+(`dict[type][instance]` вместо плоского словаря, закрывает **E8**),
+детерминированный выбор класса при discovery (`obj.__module__ == fqn`,
+симметрично `WorkflowRegistry`). `ConnectorProxy` (`soar/connectors/
+_proxy.py`) — единственный способ получить коннектор что через
+`connectors.<name>` (обратная совместимость), что через новый ленивый шим
+`from soar.connectors.<type> import <instance>` (закрывает **E6**) — оба
+фасада отдают обёрнутый объект, прямой импорт не может стать дырой в обход
+логирования. Каждый публичный вызов метода пишет `SOAR_AUDIT_EVENT` в лог
+джобы (редакция `HIDDEN_FIELDS`, длительность, исход); `context["dry_run"]`
+блокирует методы, объявленные в новом `MUTATING_METHODS` на коннекторе,
+централизованно на прокси, не по добровольному соглашению воркфлоу;
+`Worker._execute` парсит эти строки в `AuditLog` (закрывает часть **E3** —
+что джоба сделала во внешней системе, теперь видно). `soar/actions/
+__init__.py` регистрирует все public top-level callables модуля, не только
+одноимённый с файлом; `GET /actions` — AST-only (не импортирует контент из
+процесса оркестратора, требование Фазы 1) и отражает ровно то, что реестр
+исполнит (закрывает **E7**). `soar/tools/__init__.py::__all__` —
+единственный источник того, что видно `GET /tools`; `OpenAPIGenerator`
+переехал в `orchestrator/core/` (не инструмент рантайма), `watermark_store`/
+`seen_store` — фабрики по образцу `http_client` (закрывает **E5**).
+Оставшиеся 7 `requests`/`httpx`-коннекторов (`censys`/`crtsh`/`fofa`/
+`freeipa`/`security_onion`/`urlhaus`/`wazuh`) мигрированы на
+`http_client_sync`. 894 passed (было 808), `ruff check` чист от новых
+находок. Спек/план/отчёт:
+`docs/compose/specs/2026-07-30-entity-model-in-code-design.md`,
+`docs/compose/plans/2026-07-30-entity-model-in-code.md`,
+`docs/compose/reports/entity-model-in-code.md`.
+
+Предыдущая версия: **v0.17** (2026-07-30) — Модель сущностей, Фаза 1:
+граница исполнения (`docs/concepts/ENTITY-MODEL.md`). Два venv в образе —
+`platform-venv` (`orchestrator/requirements.txt`, первый на `PATH`) и
+`content-venv` (`soar/requirements.txt`, реально устанавливается впервые —
+закрывает **E2**, 11 из 24 встроенных коннекторов не хватало пакетов);
+`SubprocessRunner` запускает воркфлоу через `content-venv`
+(`SOAR_CONTENT_PYTHON`, fallback на `sys.executable` вне Docker/тестов).
+`soar/runtime_contract.py` — версионированный контракт зависимостей (имя
+для импорта + протокол/вендор), единственный источник и для установки, и
+для `GET /runtime` (новая ручка — окружение по API, пакеты по имени
+импорта, guaranteed/present_not_guaranteed, закрывает **E9**).
+`orchestrator/main.py::load_workflow_metas` больше не импортирует
+пользовательский код воркфлоу — AST-парсинг (`orchestrator/core/
+introspect.py::parse_workflow_meta`), закрывает **E10.3**, обязательное
+условие после разделения рантаймов, а не только гигиена. Аудит-хук
+(`soar/audit_hook.py`, `sys.addaudithook`) ставится в `soar/runner.py` до
+любого `init()` — наблюдает и блокирует egress на приватные адреса
+независимо от библиотеки; существующий SSRF-guard в `http_client.py` не
+тронут (остаётся pre-flight-проверкой, хук — платформенная гарантия
+сверху). Реальная сборка + прогон в Docker нашли и закрыли два дефекта,
+невидимых юнит-тестам: `httpx` отсутствовал в `orchestrator/
+requirements.txt` (транзитивная зависимость через `soar.tools.openapi`), и
+`GET /runtime` резолвил символическую ссылку `content-venv/bin/python` до
+системного интерпретатора (`.resolve()` → `.absolute()`). 811 passed
+(было 780), `ruff check` чист от новых находок. Спек/план/отчёт:
+`docs/compose/specs/2026-07-30-runtime-boundary-design.md`,
+`docs/compose/plans/2026-07-30-runtime-boundary.md`,
+`docs/compose/reports/runtime-boundary.md`.
 
 Предыдущая версия: **v0.16** (2026-07-29) — `soarctl` on-site: checkout — это
 инстанс, без промежуточной директории. Реворк

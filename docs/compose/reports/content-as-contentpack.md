@@ -291,6 +291,25 @@ before this ships:
   real 24-connector pack (see Verification) — only the "get the pack bytes
   into the image" half is unverified.
 
+**Addendum (verified post-merge, orchestrating session, same day):** the
+Dockerfile/build-context wiring above was subsequently verified for real —
+`DOCKER_BUILDKIT=1 docker compose -f deploy/stage/docker-compose.yml build
+orchestrator` from the actual repo checkout (not a nested worktree, where
+the sibling-relative path doesn't resolve) succeeded, `additional_contexts`
+correctly resolved `basepack` to the sibling `soar-content-pack` checkout,
+and the built image's `/app/base-pack/` contains the real manifest +24
+connector directories. `orchestrator.main.seed_connector_pack()` was run
+directly inside the built image against a temp `connectors_dir` (via
+`docker run ... python -c "..."`) and correctly installed all 24
+connectors with a `.soar-content.yaml` marker; `/app/content-venv/bin/
+python` then successfully discovered and imported all 24 connector
+classes via `ConnectorRegistry.init(external_dir=...)`. Compose v2.17+
+`additional_contexts` support and the "get the pack bytes into the image"
+gap noted above are both closed. Not covered by this addendum: `soarctl
+package`/`soarctl install --repo` themselves (the CLI wrapper around
+`bundle.py::build_images()`) — only the underlying `docker compose build`
+mechanics were exercised directly.
+
 ## Testing
 
 `tests/orchestrator/core/test_pack_install.py` — 18 tests: `read_manifest`

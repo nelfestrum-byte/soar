@@ -347,6 +347,27 @@ against real Linux containers, described in the Deviations section above.
     enforcement — against real Linux/Docker, just not through the full
     orchestrator process) sufficient for landing the code, while leaving
     the full stack activation explicitly off by default
+
+**Addendum (verified post-merge, orchestrating session, same day):** the
+previously-flagged `basepack` build-context gap is closed (see the
+addendum in `docs/compose/reports/content-as-contentpack.md`) — a real
+`docker compose -f deploy/stage/docker-compose.yml build orchestrator`
+now succeeds end-to-end with both Phase 3's and Phase 4's Dockerfile
+changes together. On top of that image, the UID/rlimit mechanism this
+phase adds was re-verified directly (not the standalone harness, the
+actual built `stage-orchestrator` image): `id soar-runner` confirms
+uid=5001/gid=5001; `getcap /usr/bin/setpriv` confirms
+`cap_setgid,cap_setuid=ep`; `setpriv --reuid=5001 --regid=5001
+--clear-groups -- cat /app/config.yaml` fails with `Permission denied`
+(mode 640, owner `soar:soar`, `soar-runner` not in the `soar` group) while
+the same command against `/app/data/state` succeeds (mode 770, group
+`soar-runner`); and `resource.setrlimit(RLIMIT_AS, (100MiB, 100MiB))`
+followed by a 500MiB allocation raises a real `MemoryError` inside
+`/app/content-venv/bin/python`. Still not verified: a full `docker compose
+up` with `jobs.runner_uid` set in `config.yaml` and a real job submitted
+through the live API end-to-end (Postgres/Redis/orchestrator/UI all
+running) — the mechanism-level checks above cover what this phase adds,
+but not the full integration path.
     (`deploy/stage/config.yaml` doesn't set `runner_uid`) and documented
     as a pre-flight check in `deploy/stage/README.md` before anyone
     turns it on for real.
