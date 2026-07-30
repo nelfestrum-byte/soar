@@ -18,6 +18,7 @@ from soar.connectors.base import BaseConnector
 
 class SMBRPCConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+    MUTATING_METHODS: ClassVar[set[str]] = {"upload_file", "delete_file"}
 
     def __init__(
         self,

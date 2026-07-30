@@ -7,6 +7,7 @@ from soar.connectors.base import BaseConnector
 
 class ActiveDirectoryConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = {"bind_password"}
+    MUTATING_METHODS: ClassVar[set[str]] = {"modify_attribute", "add_user", "disable_user"}
 
     def __init__(
         self,

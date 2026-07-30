@@ -1,13 +1,15 @@
 from datetime import UTC, datetime, timedelta
 from typing import ClassVar
 
-import requests
+import httpx
 
 from soar.connectors.base import BaseConnector
+from soar.tools import http_client_sync
 
 
 class SecurityOnionConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+    MUTATING_METHODS: ClassVar[set[str]] = set()  # all methods are read-only lookups
 
     def __init__(
         self,
@@ -24,35 +26,27 @@ class SecurityOnionConnector(BaseConnector):
         self.username = username
         self.password = password
         self.verify_ssl = verify_ssl
-        self._session: requests.Session | None = None
+        self._token: str = ""
         self._base_url: str = ""
 
     def _connect_impl(self):
         self._base_url = f"https://{self.host}:{self.port}"
-        self._session = requests.Session()
-        self._session.verify = self.verify_ssl
-        login_url = f"{self._base_url}/api/auth"
-        resp = self._session.post(login_url, json={"username": self.username, "password": self.password}, timeout=30)
-        resp.raise_for_status()
-        token = resp.json().get("token")
-        if token:
-            self._session.headers["Authorization"] = f"Bearer {token}"
+        data = http_client_sync.post_json(
+            f"{self._base_url}/api/auth",
+            {"username": self.username, "password": self.password},
+            verify=self.verify_ssl,
+        )
+        self._token = data.get("token", "")
 
-    def disconnect(self):
-        if self._session:
-            self._session.close()
-            self._session = None
-            self._connected = False
-            self._logger.info(f"Disconnected from {self.instance_name}")
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self._token}"} if self._token else {}
 
     def _search(self, index: str, query: dict, size: int = 100) -> list[dict]:
         self._ensure_connected()
-        assert self._session is not None
         url = f"{self._base_url}/api/elastic/{index}/_search"
         payload = {"query": query, "size": size}
-        resp = self._session.post(url, json=payload, timeout=30)
-        resp.raise_for_status()
-        hits = resp.json().get("hits", {}).get("hits", [])
+        data = http_client_sync.post_json(url, payload, headers=self._headers(), verify=self.verify_ssl)
+        hits = data.get("hits", {}).get("hits", [])
         return [hit["_source"] | {"_id": hit["_id"]} for hit in hits]
 
     def query(self, index: str, query: str, range_start: str | None = None, range_end: str | None = None, size: int = 100) -> list[dict]:
@@ -76,28 +70,31 @@ class SecurityOnionConnector(BaseConnector):
 
     def get_agents(self) -> list[dict]:
         self._ensure_connected()
-        assert self._session is not None
-        resp = self._session.get(f"{self._base_url}/api/agents", timeout=30)
-        resp.raise_for_status()
-        return resp.json()
+        return http_client_sync.get_json(
+            f"{self._base_url}/api/agents", headers=self._headers(), verify=self.verify_ssl
+        )
 
     def get_detections(self) -> list[dict]:
         self._ensure_connected()
-        assert self._session is not None
-        resp = self._session.get(f"{self._base_url}/api/detections", timeout=30)
-        resp.raise_for_status()
-        return resp.json()
+        return http_client_sync.get_json(
+            f"{self._base_url}/api/detections", headers=self._headers(), verify=self.verify_ssl
+        )
 
     def get_hunts(self, query: str) -> list[dict]:
         self._ensure_connected()
-        assert self._session is not None
-        resp = self._session.post(f"{self._base_url}/api/hunts", json={"query": query}, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
+        return http_client_sync.post_json(
+            f"{self._base_url}/api/hunts", {"query": query}, headers=self._headers(), verify=self.verify_ssl
+        )
 
     def get_pcap(self, event_id: str) -> bytes:
+        # Binary response — SyncHttpClient.get_json always parses JSON, so
+        # this one call stays on a direct httpx.Client rather than the
+        # shared facade (see docs/compose/reports/entity-model-in-code.md
+        # for why). self._base_url is operator config, not per-call input,
+        # so it carries the same trust level as the rest of this
+        # connector's host/port — no SSRF guard gap introduced.
         self._ensure_connected()
-        assert self._session is not None
-        resp = self._session.get(f"{self._base_url}/api/pcap/{event_id}", timeout=30)
-        resp.raise_for_status()
-        return resp.content
+        with httpx.Client(timeout=30, verify=self.verify_ssl) as client:
+            resp = client.get(f"{self._base_url}/api/pcap/{event_id}", headers=self._headers())
+            resp.raise_for_status()
+            return resp.content

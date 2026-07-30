@@ -7,6 +7,7 @@ from soar.connectors.base import BaseConnector
 
 class MISPConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = {"api_key"}
+    MUTATING_METHODS: ClassVar[set[str]] = {"add_event", "delete_event", "add_attribute", "add_sighting"}
 
     def __init__(self, instance_name: str, url: str, api_key: str, verify_ssl: bool = True):
         super().__init__(instance_name)

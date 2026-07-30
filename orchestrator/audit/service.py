@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from orchestrator.audit.models import AuditLog
 from orchestrator.auth.dependencies import CurrentUser
 from orchestrator.core.net import resolve_client_ip
+from orchestrator.models.job import WorkflowJob
 
 
 def git_author(user: CurrentUser) -> tuple[str, str]:
@@ -34,6 +35,34 @@ async def record(
         resource_id=resource_id,
         client_ip=resolve_client_ip(request),
         request_id=getattr(request.state, "request_id", None),
+        detail=detail,
+        created_at=datetime.now(UTC),
+    )
+    db.add(entry)
+    await db.commit()
+
+
+async def record_job_event(
+    db: AsyncSession,
+    *,
+    job: WorkflowJob,
+    action: str,
+    resource_id: str,
+    detail: dict,
+) -> None:
+    """Job-triggered audit event (SOAR_AUDIT_EVENT from the job log, parsed by
+    orchestrator.core.audit_parse) — no HTTP Request, so no client_ip/request_id.
+    Same synthetic-actor pattern as webhook-triggered job.create (AGENTS.md,
+    "Audit trail")."""
+    entry = AuditLog(
+        actor_id=0,
+        actor_type="service",
+        actor_name=f"job:{job.workflow_name}",
+        action=action,
+        resource_type="connector",
+        resource_id=resource_id,
+        client_ip=None,
+        request_id=None,
         detail=detail,
         created_at=datetime.now(UTC),
     )

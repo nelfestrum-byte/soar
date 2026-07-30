@@ -7,6 +7,7 @@ from soar.connectors.base import BaseConnector
 
 class FileConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = set()
+    MUTATING_METHODS: ClassVar[set[str]] = {"write", "write_json", "append", "delete"}
 
     def __init__(self, instance_name: str, base_path: str = "/tmp"):
         super().__init__(instance_name)

@@ -10,6 +10,7 @@ from soar.connectors.base import BaseConnector
 
 class SMTPConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+    MUTATING_METHODS: ClassVar[set[str]] = {"send_email", "send_text", "send_html"}
 
     def __init__(
         self,

@@ -21,7 +21,14 @@ _ADMIN = ("admin", "agent")
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
+# `from soar.connectors.<type> import <instance>` — concept form (returns a
+# ConnectorProxy, see docs/concepts/ENTITY-MODEL.md decision 4). The
+# template can't know which connector type/instance this installation has
+# configured, so it shows the pattern as a comment; `from soar.connectors
+# import connectors` + `connectors.<instance>` (flat lookup, also proxied)
+# still works for the same reason.
 SCHEDULED_TEMPLATE = '''from soar.workflows.base import ScheduledWorkflow
+# from soar.connectors.<type> import <instance>
 from soar.connectors import connectors
 
 
@@ -34,6 +41,7 @@ class {name}(ScheduledWorkflow):
 '''
 
 WEBHOOK_TEMPLATE = '''from soar.workflows.base import WebhookWorkflow
+# from soar.connectors.<type> import <instance>
 from soar.connectors import connectors
 from soar.logger import get_logger
 import secrets
@@ -53,6 +61,7 @@ class {name}(WebhookWorkflow):
 '''
 
 MANUAL_TEMPLATE = '''from soar.workflows.base import ManualWorkflow
+# from soar.connectors.<type> import <instance>
 from soar.connectors import connectors
 from soar.logger import get_logger
 

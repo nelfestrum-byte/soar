@@ -7,6 +7,9 @@ from soar.connectors.base import BaseConnector
 
 class ElasticConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = {"password", "api_key"}
+    MUTATING_METHODS: ClassVar[set[str]] = {
+        "index", "delete", "bulk", "update", "indices_create", "indices_delete",
+    }
 
     def __init__(
         self,

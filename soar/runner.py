@@ -108,6 +108,10 @@ def main():
     except json.JSONDecodeError:
         context = {}
 
+    from soar.runtime_state import set_dry_run
+
+    set_dry_run(bool(context.get("dry_run", False)))
+
     try:
         result = workflows.execute(workflow_name, context)
         output = {

@@ -1,4 +1,10 @@
-"""OpenAPI 3.x connector generator for SOAR."""
+"""OpenAPI 3.x connector generator for SOAR.
+
+Moved from soar/tools/openapi.py (spec 2026-07-30-entity-model-in-code-design.md
+[S8]): its only consumer is orchestrator/api/connectors.py — this generates
+connector code as an orchestrator-side mechanism, it isn't a tool a workflow
+calls at runtime, so it doesn't belong under soar/tools/ (which GET /tools
+now surfaces explicitly via __all__)."""
 from __future__ import annotations
 
 from pathlib import Path

@@ -6,6 +6,7 @@ from soar.tools import http_client_sync
 
 class AbuseChConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = set()
+    MUTATING_METHODS: ClassVar[set[str]] = set()  # all methods are read-only lookups
 
     THREATFOX_API = "https://threatfox-api.abuse.ch/api/v1/"
     BAZAAR_API = "https://mb-api.abuse.ch/api/v1/"

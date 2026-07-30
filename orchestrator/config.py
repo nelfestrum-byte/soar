@@ -51,6 +51,7 @@ class SoarConfig(BaseModel):
     connectors_dir: str = "/app/data/connectors"
     actions_dir: str = "/app/data/actions"
     tools_dir: str = "soar/tools"
+    state_dir: str = "/app/data/state"  # WatermarkStore/SeenStore factories, soar/tools/watermark.py
     system_prompt_path: str = "orchestrator/prompts/system_prompt.md"
 
 

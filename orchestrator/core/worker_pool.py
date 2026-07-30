@@ -16,9 +16,10 @@ class WorkerPool:
         runner: SubprocessRunner,
         job_store: AbstractJobStore,
         default_timeout: int,
+        db_session_factory=None,
     ):
         self._workers: list[Worker] = [
-            Worker(i, queue, runner, job_store, default_timeout)
+            Worker(i, queue, runner, job_store, default_timeout, db_session_factory)
             for i in range(count)
         ]
         self._tasks: list[asyncio.Task] = []

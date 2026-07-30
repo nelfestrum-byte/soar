@@ -9,6 +9,9 @@ from soar.connectors.base import BaseConnector
 
 class TelegramConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = {"token"}
+    MUTATING_METHODS: ClassVar[set[str]] = {
+        "send_message", "send_photo", "send_document", "send_animation",
+    }
 
     def __init__(self, instance_name: str, token: str, parse_mode: str = ""):
         super().__init__(instance_name)

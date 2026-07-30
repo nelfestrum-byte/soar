@@ -7,6 +7,7 @@ from soar.connectors.base import BaseConnector
 
 class SSHConnector(BaseConnector):
     HIDDEN_FIELDS: ClassVar[set[str]] = {"password"}
+    MUTATING_METHODS: ClassVar[set[str]] = {"exec_command", "put_file"}
 
     def __init__(
         self,

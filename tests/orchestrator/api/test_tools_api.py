@@ -43,9 +43,15 @@ def _write_tool(tmp_path, filename: str, content: str) -> None:
     (tmp_path / "tools" / filename).write_text(content, encoding="utf-8")
 
 
+def _write_init(tmp_path, public_names: list[str]) -> None:
+    names = ", ".join(f'"{n}"' for n in public_names)
+    (tmp_path / "tools" / "__init__.py").write_text(f"__all__ = [{names}]\n", encoding="utf-8")
+
+
 @pytest.mark.asyncio
-async def test_list_tools_finds_known_classes(tmp_path):
+async def test_list_tools_filters_by_dunder_all(tmp_path):
     _write_tool(tmp_path, "widget.py", FIXTURE_MODULE)
+    _write_init(tmp_path, ["Widget"])
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         r = await c.get("/tools")
@@ -62,6 +68,7 @@ async def test_list_tools_finds_known_classes(tmp_path):
 @pytest.mark.asyncio
 async def test_get_tool_returns_docstring_and_signature(tmp_path):
     _write_tool(tmp_path, "widget.py", FIXTURE_MODULE)
+    _write_init(tmp_path, ["Widget"])
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         r = await c.get("/tools/Widget")
@@ -79,6 +86,7 @@ async def test_get_tool_returns_docstring_and_signature(tmp_path):
 
 @pytest.mark.asyncio
 async def test_get_tool_unknown_404(tmp_path):
+    _write_init(tmp_path, [])
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         r = await c.get("/tools/DoesNotExist")
@@ -90,6 +98,7 @@ async def test_parse_module_does_not_import(tmp_path):
     """A tool module with an unresolvable top-level import must still be
     listed/describable — GET /tools uses static AST parsing, never import."""
     _write_tool(tmp_path, "broken.py", BROKEN_IMPORT_MODULE)
+    _write_init(tmp_path, ["BrokenTool"])
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         r = await c.get("/tools")
@@ -100,3 +109,60 @@ async def test_parse_module_does_not_import(tmp_path):
         r = await c.get("/tools/BrokenTool")
         assert r.status_code == 200
         assert r.json()["constructor"] == "(path)"
+
+
+@pytest.mark.asyncio
+async def test_list_tools_excludes_non_public_classes(tmp_path):
+    """Widget is defined but not in __all__ — must not show up (E5:
+    internal mechanics like CacheBackend/InMemoryCache/RedisCache today)."""
+    _write_tool(tmp_path, "widget.py", FIXTURE_MODULE)
+    _write_init(tmp_path, [])  # nothing public
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/tools")
+        assert r.status_code == 200
+        assert r.json() == []
+
+
+@pytest.mark.asyncio
+async def test_list_tools_shows_non_class_singletons_from_dunder_all(tmp_path):
+    """http_client/http_client_sync/watermark_store/seen_store are module-
+    level values, not classes — parse_classes can't see them; __all__ must
+    still surface them as entries with module: '__init__'."""
+    _write_tool(tmp_path, "widget.py", FIXTURE_MODULE)
+    _write_init(tmp_path, ["Widget", "some_singleton"])
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/tools")
+        assert r.status_code == 200
+        data = r.json()
+        entry = next(t for t in data if t["name"] == "some_singleton")
+        assert entry["module"] == "__init__"
+
+
+@pytest.mark.asyncio
+async def test_real_soar_tools_dunder_all_excludes_internals():
+    """Exercise the actual soar/tools/__init__.py against the real /tools
+    route (default app.state.config.soar.tools_dir) — CacheBackend/
+    InMemoryCache/RedisCache/OpenAPIGenerator must be absent, http_client/
+    http_client_sync/WatermarkStore/SeenStore must be present."""
+    config = app.state.config
+    original = config.soar.tools_dir
+    config.soar.tools_dir = "soar/tools"
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            r = await c.get("/tools")
+            assert r.status_code == 200
+            names = {t["name"] for t in r.json()}
+    finally:
+        config.soar.tools_dir = original
+
+    assert "CacheBackend" not in names
+    assert "InMemoryCache" not in names
+    assert "RedisCache" not in names
+    assert "OpenAPIGenerator" not in names
+    assert "http_client" in names
+    assert "http_client_sync" in names
+    assert "WatermarkStore" in names
+    assert "SeenStore" in names

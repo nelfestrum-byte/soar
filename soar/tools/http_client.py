@@ -237,3 +237,19 @@ class SyncHttpClient:
         duration_ms = int((time.monotonic() - start) * 1000)
         _log.info(f"http POST {_log_safe_url(url)} status={resp.status_code} duration_ms={duration_ms}")
         return resp.json()
+
+    def put_json(
+        self, url: str, payload: dict | None = None, headers: dict | None = None, verify: bool = True,
+    ) -> dict:
+        # PUT не кэшируется — мутация по определению (тот же контракт, что post_json).
+        # Добавлено для wazuh.restart_agent (docs/compose/plans/2026-07-30-
+        # entity-model-in-code.md, раздел 6) — единственный из 7 мигрируемых
+        # коннекторов, которому нужен PUT, не GET/POST.
+        _validate_external_url(url)
+        start = time.monotonic()
+        with httpx.Client(timeout=30, verify=verify) as client:
+            resp = client.put(url, json=payload, headers=headers or {}, follow_redirects=False)
+            resp.raise_for_status()
+        duration_ms = int((time.monotonic() - start) * 1000)
+        _log.info(f"http PUT {_log_safe_url(url)} status={resp.status_code} duration_ms={duration_ms}")
+        return resp.json()
