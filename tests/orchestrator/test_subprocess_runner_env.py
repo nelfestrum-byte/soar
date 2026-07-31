@@ -276,6 +276,41 @@ class TestBuildScopedConfig:
         finally:
             shutil.rmtree(scoped_dir, ignore_errors=True)
 
+    def test_scopes_transitively_through_action_import(self, tmp_path):
+        """Д2 regression: a workflow that imports a connector transitively
+        through a `soar.actions.*` import (the documented workflow -> action
+        -> connector pattern) must still get the connector's credentials in
+        its scoped config — not an empty connectors_dir."""
+        full_config = self._make_full_config(tmp_path)
+        actions_dir = Path(full_config["soar"]["actions_dir"])
+        actions_dir.mkdir(parents=True, exist_ok=True)
+        (actions_dir / "check_x.py").write_text(
+            "from soar.connectors.virus_total import vt_main\n"
+            "\n\n"
+            "def check_x(ioc):\n"
+            "    return vt_main.lookup(ioc)\n",
+            encoding="utf-8",
+        )
+        workflow_file = self._make_workflow_file(
+            tmp_path,
+            "from soar.actions.check_x import check_x\n"
+            "\n\n"
+            "def run(context):\n"
+            "    return check_x(context['ioc'])\n",
+        )
+
+        scoped_path, scoped_dir = build_scoped_config(workflow_file, full_config)
+        try:
+            with open(scoped_path) as f:
+                scoped = yaml.safe_load(f)
+
+            vt_yml = Path(scoped["soar"]["connectors_dir"]) / "virus_total" / "instances.yml"
+            data = yaml.safe_load(vt_yml.read_text())
+            assert set(data["instances"]) == {"vt_main"}
+            assert data["instances"]["vt_main"] == {"api_key": "secret-vt-key"}
+        finally:
+            shutil.rmtree(scoped_dir, ignore_errors=True)
+
     def test_unparseable_workflow_file_falls_back_to_empty_usage(self, tmp_path):
         full_config = self._make_full_config(tmp_path)
         workflow_file = self._make_workflow_file(tmp_path, "def broken(:\n")

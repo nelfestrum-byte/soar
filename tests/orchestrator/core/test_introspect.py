@@ -326,3 +326,146 @@ def test_parse_connector_usage_ignores_non_connector_imports(tmp_path):
     path = tmp_path / "uses_tools.py"
     path.write_text(NON_CONNECTOR_IMPORT, encoding="utf-8")
     assert parse_connector_usage(path) == []
+
+
+WORKFLOW_IMPORTS_ACTION = '''from soar.actions.check_x import check_x
+from soar.workflows.base import ManualWorkflow
+
+
+class EnrichIndicator(ManualWorkflow):
+    def run(self, context):
+        return {"result": check_x(context["ioc"])}
+'''
+
+ACTION_IMPORTS_CONNECTOR = '''from soar.connectors.virus_total import vt_main
+
+
+def check_x(ioc):
+    return vt_main.lookup(ioc)
+'''
+
+WORKFLOW_IMPORTS_CONNECTOR_AND_ACTION = '''from soar.connectors.shodan import shodan_prod
+from soar.actions.check_x import check_x
+from soar.workflows.base import ManualWorkflow
+
+
+class EnrichIndicator(ManualWorkflow):
+    def run(self, context):
+        return {"a": shodan_prod.lookup(context["ip"]), "b": check_x(context["ioc"])}
+'''
+
+WORKFLOW_IMPORTS_MISSING_ACTION = '''from soar.actions.does_not_exist import whatever
+from soar.workflows.base import ManualWorkflow
+
+
+class EnrichIndicator(ManualWorkflow):
+    def run(self, context):
+        return {"result": whatever(context["ioc"])}
+'''
+
+ACTION_SYNTAX_ERROR = '''from soar.connectors.virus_total import vt_main
+
+def broken(:
+    return vt_main
+'''
+
+WORKFLOW_IMPORTS_CONNECTOR_AND_BROKEN_ACTION = '''from soar.connectors.shodan import shodan_prod
+from soar.actions.broken_action import whatever
+from soar.workflows.base import ManualWorkflow
+
+
+class EnrichIndicator(ManualWorkflow):
+    def run(self, context):
+        return {"a": shodan_prod.lookup(context["ip"])}
+'''
+
+ACTION_CYCLE_A = '''from soar.actions.cycle_b import helper_b
+from soar.connectors.virus_total import vt_main
+
+
+def helper_a():
+    return helper_b()
+'''
+
+ACTION_CYCLE_B = '''from soar.actions.cycle_a import helper_a
+from soar.connectors.shodan import shodan_prod
+
+
+def helper_b():
+    return helper_a()
+'''
+
+WORKFLOW_IMPORTS_CYCLE_A = '''from soar.actions.cycle_a import helper_a
+from soar.workflows.base import ManualWorkflow
+
+
+class EnrichIndicator(ManualWorkflow):
+    def run(self, context):
+        return {"result": helper_a()}
+'''
+
+
+def test_parse_connector_usage_follows_action_import_transitively(tmp_path):
+    workflow_path = tmp_path / "enrich_indicator.py"
+    workflow_path.write_text(WORKFLOW_IMPORTS_ACTION, encoding="utf-8")
+    actions_dir = tmp_path / "actions"
+    actions_dir.mkdir()
+    (actions_dir / "check_x.py").write_text(ACTION_IMPORTS_CONNECTOR, encoding="utf-8")
+
+    assert parse_connector_usage(workflow_path, actions_dir=actions_dir) == [
+        ("virus_total", "vt_main"),
+    ]
+
+
+def test_parse_connector_usage_without_actions_dir_ignores_action_imports(tmp_path):
+    workflow_path = tmp_path / "enrich_indicator.py"
+    workflow_path.write_text(WORKFLOW_IMPORTS_ACTION, encoding="utf-8")
+    actions_dir = tmp_path / "actions"
+    actions_dir.mkdir()
+    (actions_dir / "check_x.py").write_text(ACTION_IMPORTS_CONNECTOR, encoding="utf-8")
+
+    assert parse_connector_usage(workflow_path) == []
+
+
+def test_parse_connector_usage_combines_direct_and_transitive_imports(tmp_path):
+    workflow_path = tmp_path / "enrich_indicator.py"
+    workflow_path.write_text(WORKFLOW_IMPORTS_CONNECTOR_AND_ACTION, encoding="utf-8")
+    actions_dir = tmp_path / "actions"
+    actions_dir.mkdir()
+    (actions_dir / "check_x.py").write_text(ACTION_IMPORTS_CONNECTOR, encoding="utf-8")
+
+    result = parse_connector_usage(workflow_path, actions_dir=actions_dir)
+    assert set(result) == {("shodan", "shodan_prod"), ("virus_total", "vt_main")}
+
+
+def test_parse_connector_usage_missing_action_file_is_skipped(tmp_path):
+    workflow_path = tmp_path / "enrich_indicator.py"
+    workflow_path.write_text(WORKFLOW_IMPORTS_MISSING_ACTION, encoding="utf-8")
+    actions_dir = tmp_path / "actions"
+    actions_dir.mkdir()
+
+    assert parse_connector_usage(workflow_path, actions_dir=actions_dir) == []
+
+
+def test_parse_connector_usage_broken_action_file_does_not_abort_scan(tmp_path):
+    workflow_path = tmp_path / "enrich_indicator.py"
+    workflow_path.write_text(WORKFLOW_IMPORTS_CONNECTOR_AND_BROKEN_ACTION, encoding="utf-8")
+    actions_dir = tmp_path / "actions"
+    actions_dir.mkdir()
+    (actions_dir / "broken_action.py").write_text(ACTION_SYNTAX_ERROR, encoding="utf-8")
+
+    assert parse_connector_usage(workflow_path, actions_dir=actions_dir) == [
+        ("shodan", "shodan_prod"),
+    ]
+
+
+def test_parse_connector_usage_action_import_cycle_does_not_recurse_infinitely(tmp_path):
+    workflow_path = tmp_path / "enrich_indicator.py"
+    workflow_path.write_text(WORKFLOW_IMPORTS_CYCLE_A, encoding="utf-8")
+    actions_dir = tmp_path / "actions"
+    actions_dir.mkdir()
+    (actions_dir / "cycle_a.py").write_text(ACTION_CYCLE_A, encoding="utf-8")
+    (actions_dir / "cycle_b.py").write_text(ACTION_CYCLE_B, encoding="utf-8")
+
+    result = parse_connector_usage(workflow_path, actions_dir=actions_dir)
+    assert set(result) == {("virus_total", "vt_main"), ("shodan", "shodan_prod")}

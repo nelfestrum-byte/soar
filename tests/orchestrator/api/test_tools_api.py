@@ -85,6 +85,21 @@ async def test_get_tool_returns_docstring_and_signature(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_get_tool_returns_synthetic_entry_for_non_class_singleton(tmp_path):
+    """Mirrors test_list_tools_shows_non_class_singletons_from_dunder_all,
+    but on GET /tools/{name} — Д3: get_tool only searched parse_classes
+    results, so a public name in __all__ that isn't a class (a singleton
+    like http_client) 404'd even though GET /tools lists it fine."""
+    _write_tool(tmp_path, "widget.py", FIXTURE_MODULE)
+    _write_init(tmp_path, ["Widget", "some_singleton"])
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/tools/some_singleton")
+        assert r.status_code == 200
+        assert r.json() == {"name": "some_singleton", "module": "__init__", "summary": ""}
+
+
+@pytest.mark.asyncio
 async def test_get_tool_unknown_404(tmp_path):
     _write_init(tmp_path, [])
     transport = ASGITransport(app=app)

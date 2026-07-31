@@ -120,14 +120,30 @@ def _base_name(base: ast.expr) -> str | None:
     return None
 
 
-def parse_connector_usage(path: Path) -> list[tuple[str, str]]:
-    """Static AST scan for `from soar.connectors.<type> import <instance>`
-    at workflow module top-level — the only form the platform can resolve to
-    a concrete (type, instance) pair without importing the module (E6,
-    docs/concepts/ENTITY-MODEL.md Фаза 2). Used by
-    orchestrator/core/subprocess_runner.py::build_scoped_config to narrow
-    the connector credentials a job's subprocess receives down to what the
-    workflow actually references. Never imports the module.
+def parse_connector_usage(
+    path: Path,
+    actions_dir: str | Path | None = None,
+    _visited: set[Path] | None = None,
+) -> list[tuple[str, str]]:
+    """Static AST scan for `from soar.connectors.<type> import <instance>`,
+    resolved directly at the given module's top level, or transitively
+    through any `from soar.actions.<module> import ...` it uses (recursing
+    into `actions_dir/<module>.py`, itself scanned the same way) — the only
+    forms the platform can resolve to a concrete (type, instance) pair
+    without importing the module (E6, docs/concepts/ENTITY-MODEL.md Фаза 2).
+    Used by orchestrator/core/subprocess_runner.py::build_scoped_config to
+    narrow the connector credentials a job's subprocess receives down to
+    what the workflow actually references, directly or via the documented
+    "workflow -> actions -> connector" pattern (AGENTS.md "движок vs
+    поведение"). Never imports the module.
+
+    `actions_dir` is optional and defaults to None — without it, `soar.
+    actions.*` imports are recorded but not followed (backward-compatible
+    with callers that only care about direct connector imports). A missing
+    or unreadable action file is skipped, not fatal to the rest of the scan
+    (a broken/absent action must not blank out other valid imports of the
+    same workflow); `_visited` guards against import cycles between action
+    modules.
 
     Returns [(type_name, instance_name), ...]. `instance_name` is always
     `alias.name` (the attribute actually fetched off the `soar.connectors.
@@ -137,17 +153,39 @@ def parse_connector_usage(path: Path) -> list[tuple[str, str]]:
     ssh_prod`) still resolves the registry instance named "prod"; "ssh_prod"
     is only the local variable name inside the workflow and never reaches
     the registry lookup. Scoping on asname would exclude the real instance
-    from the job's config slice and break the workflow at runtime."""
+    from the job's config slice and break the workflow at runtime. Same
+    rule applies symmetrically to connector imports found inside action
+    files."""
+    if _visited is None:
+        _visited = set()
+    resolved = path.resolve()
+    if resolved in _visited:
+        return []
+    _visited.add(resolved)
+
     tree = ast.parse(path.read_text(encoding="utf-8"))
-    result = []
+    result: list[tuple[str, str]] = []
+    action_modules: list[str] = []
     for node in ast.iter_child_nodes(tree):
         if not isinstance(node, ast.ImportFrom) or not node.module:
             continue
         parts = node.module.split(".")
         if len(parts) == 3 and parts[0] == "soar" and parts[1] == "connectors":
             type_name = parts[2]
-            for alias in node.names:
-                result.append((type_name, alias.name))
+            result.extend((type_name, alias.name) for alias in node.names)
+        elif len(parts) == 3 and parts[0] == "soar" and parts[1] == "actions":
+            action_modules.append(parts[2])
+
+    if actions_dir:
+        actions_root = Path(actions_dir)
+        for module_name in action_modules:
+            action_path = actions_root / f"{module_name}.py"
+            if not action_path.is_file():
+                continue
+            try:
+                result.extend(parse_connector_usage(action_path, actions_dir, _visited))
+            except (OSError, SyntaxError, UnicodeDecodeError):
+                continue  # broken action file must not blank out the rest of the scan
     return result
 
 

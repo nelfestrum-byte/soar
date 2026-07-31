@@ -68,9 +68,13 @@ def _symlink_or_copy(src: Path, dst: Path) -> None:
 
 def build_scoped_config(workflow_file: str | None, full_config: dict) -> tuple[str, str]:
     """Builds a temp directory + scoped YAML config containing only the
-    connector instances the given workflow imports directly (E6 static
-    scan via parse_connector_usage) — never the orchestrator's full
-    config.yaml, which carries auth.secret_key (JWT) and database.url.
+    connector instances the given workflow imports — directly, or
+    transitively through `soar.actions.*` imports it uses (E6 static scan
+    via parse_connector_usage, extended in
+    docs/compose/specs/2026-07-31-workflow-connector-scoping-design.md [S3]
+    to follow the documented "workflow -> actions -> connector" pattern) —
+    never the orchestrator's full config.yaml, which carries
+    auth.secret_key (JWT) and database.url.
 
     Returns (scoped_config_path, scoped_dir); the caller (SubprocessRunner.
     start()) stashes scoped_dir on the job so Worker._execute can
@@ -94,7 +98,7 @@ def build_scoped_config(workflow_file: str | None, full_config: dict) -> tuple[s
     usage: list[tuple[str, str]] = []
     if workflow_file:
         try:
-            usage = parse_connector_usage(Path(workflow_file))
+            usage = parse_connector_usage(Path(workflow_file), actions_dir=soar_cfg.get("actions_dir"))
         except (OSError, SyntaxError, UnicodeDecodeError):
             usage = []
 

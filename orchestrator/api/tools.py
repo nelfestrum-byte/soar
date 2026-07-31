@@ -50,4 +50,8 @@ async def get_tool(name: str, request: Request):
                 for cls in parse_classes(py_file):
                     if cls["name"] == name:
                         return {**cls, "module": py_file.stem}
+            # name is public but isn't a class parse_classes can see — a
+            # non-class singleton/factory (http_client, seen_store, ...),
+            # same synthetic entry list_tools already returns for these (Д3).
+            return {"name": name, "module": "__init__", "summary": ""}
     raise HTTPException(status_code=404, detail="Tool not found")

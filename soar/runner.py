@@ -92,9 +92,9 @@ def _build_http_client_sync(http_client: HttpClient) -> SyncHttpClient:
 tools.http_client = _build_http_client(config)
 tools.http_client_sync = _build_http_client_sync(tools.http_client)
 
-workflows.init(external_dir=external_dirs.get("workflows"))
 connectors.init(external_dir=external_dirs.get("connectors"))
 actions.init(external_dir=external_dirs.get("actions"))
+workflows.init(external_dir=external_dirs.get("workflows"))
 
 
 def main():

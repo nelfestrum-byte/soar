@@ -20,7 +20,9 @@
 | GET | /workflows/{name}/code/diff?a=&b= | Diff между двумя коммитами |
 | POST | /workflows/{name}/code/restore `{"commit": "..."}` | Откат на коммит (admin), коммитится от актора, триггерит reload |
 
-`GET /workflows`/`GET /workflows/{name}` включают `docstring` (докстринг класса workflow, `""` если не задан).
+`GET /workflows`/`GET /workflows/{name}` включают `docstring` (докстринг класса workflow, `""` если не задан). Поле типа воркфлоу называется `type` (`manual`/`scheduled`/`webhook`), не `workflow_type` — не путать с одноимённым полем `WorkflowJob.workflow_type` во внутренней модели job'а.
+
+`PUT /workflows/{name}/code`, `PUT /actions/{name}`, `PUT /connectors/{name}/code` принимают raw source как тело запроса (`Content-Type: text/plain` или без явного типа) — не JSON-обёртку вида `{"code": "..."}`.
 
 ### Actions
 | Method | Path | Description |

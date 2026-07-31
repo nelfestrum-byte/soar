@@ -178,3 +178,115 @@ def test_runner_assigns_http_client_before_registry_init():
         source.index("actions.init(external_dir="),
     ]
     assert all(assign_pos < pos for pos in init_positions)
+
+
+def test_runner_initializes_connectors_and_actions_before_workflows():
+    """connectors.init()/actions.init() must run before workflows.init(),
+    per docs/compose/specs/2026-07-31-workflow-connector-scoping-design.md
+    [S2] (Д1) — workflows may top-level-import actions/connectors, and
+    actions may themselves top-level-import connectors; both resolution
+    paths depend on the earlier registry's init() having already run
+    (connector shims installed / action modules registered in sys.modules)."""
+    source = inspect.getsource(runner)
+    connectors_pos = source.index("connectors.init(external_dir=")
+    actions_pos = source.index("actions.init(external_dir=")
+    workflows_pos = source.index("workflows.init(external_dir=")
+    assert connectors_pos < actions_pos < workflows_pos
+
+
+def _write_qa_connector(connectors_dir, suffix: str):
+    conn_dir = connectors_dir / f"qa_httpbin_{suffix}"
+    conn_dir.mkdir(parents=True)
+    (conn_dir / f"qa_httpbin_{suffix}.py").write_text(
+        "from soar.connectors.base import BaseConnector\n"
+        "\n\n"
+        f"class QaHttpbin{suffix.title()}(BaseConnector):\n"
+        "    def __init__(self, instance_name):\n"
+        "        super().__init__(instance_name)\n"
+        "\n"
+        "    def ping(self):\n"
+        "        return True\n",
+        encoding="utf-8",
+    )
+    (conn_dir / f"qa_httpbin_{suffix}.yml").write_text(
+        "instances:\n"
+        "  x: {}\n",
+        encoding="utf-8",
+    )
+
+
+def _write_qa_action(actions_dir, suffix: str):
+    (actions_dir / f"check_qa_ip_{suffix}.py").write_text(
+        f"from soar.connectors.qa_httpbin_{suffix} import x\n"
+        "\n\n"
+        f"def check_qa_ip_{suffix}():\n"
+        "    return x.ping()\n",
+        encoding="utf-8",
+    )
+
+
+def _write_qa_workflow(workflows_dir, suffix: str):
+    (workflows_dir / f"qa_manual_test_{suffix}.py").write_text(
+        f"from soar.actions.check_qa_ip_{suffix} import check_qa_ip_{suffix}\n"
+        "from soar.workflows.base import ManualWorkflow\n"
+        "\n\n"
+        f"class QaManualTest{suffix.title()}(ManualWorkflow):\n"
+        "    def run(self, context):\n"
+        f"        return {{'ok': check_qa_ip_{suffix}()}}\n",
+        encoding="utf-8",
+    )
+
+
+def test_correct_registry_init_order_registers_workflow_with_transitive_action_import(tmp_path):
+    """Integration regression for Д1: on fresh (non-singleton) registries,
+    connectors -> actions -> workflows init order registers a workflow whose
+    action import (and that action's connector import) are both top-level."""
+    from soar.actions import ActionsRegistry
+    from soar.connectors import ConnectorRegistry
+
+    suffix = "ok"
+    connectors_dir = tmp_path / "connectors"
+    actions_dir = tmp_path / "actions"
+    workflows_dir = tmp_path / "workflows"
+    connectors_dir.mkdir()
+    actions_dir.mkdir()
+    workflows_dir.mkdir()
+
+    _write_qa_connector(connectors_dir, suffix)
+    _write_qa_action(actions_dir, suffix)
+    _write_qa_workflow(workflows_dir, suffix)
+
+    ConnectorRegistry().init(external_dir=str(connectors_dir))
+    ActionsRegistry().init(external_dir=str(actions_dir))
+    workflow_registry = WorkflowRegistry()
+    workflow_registry.init(external_dir=str(workflows_dir))
+
+    assert workflow_registry.get_class(f"qa_manual_test_{suffix}") is not None
+
+
+def test_wrong_registry_init_order_fails_to_register_workflow(tmp_path):
+    """Companion negative test — reproduces the found bug: workflows.init()
+    running before connectors/actions are initialized fails to register a
+    workflow that top-level-imports an action (which itself top-level-
+    imports a connector). Pins the regression down to the actual ordering,
+    not an accidental pass. Uses distinct fixture names from the "correct
+    order" test above — sys.modules is process-global and _discover_external
+    on both ActionsRegistry/ConnectorRegistry skips re-exec of an fqn already
+    present there, so reusing the same module names across tests would let
+    this test accidentally pass via cache leakage from the other test."""
+    suffix = "bad"
+    connectors_dir = tmp_path / "connectors"
+    actions_dir = tmp_path / "actions"
+    workflows_dir = tmp_path / "workflows"
+    connectors_dir.mkdir()
+    actions_dir.mkdir()
+    workflows_dir.mkdir()
+
+    _write_qa_connector(connectors_dir, suffix)
+    _write_qa_action(actions_dir, suffix)
+    _write_qa_workflow(workflows_dir, suffix)
+
+    workflow_registry = WorkflowRegistry()
+    workflow_registry.init(external_dir=str(workflows_dir))
+
+    assert workflow_registry.get_class(f"qa_manual_test_{suffix}") is None
