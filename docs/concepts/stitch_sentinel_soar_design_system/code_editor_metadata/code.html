@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SentinelSOAR - Workflow Editor</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "tertiary-fixed": "#ffdcbf",
+                      "surface-tint": "#4cd7f6",
+                      "secondary-fixed": "#d8e2ff",
+                      "surface-container-lowest": "#060e20",
+                      "on-tertiary": "#4b2800",
+                      "on-error": "#690005",
+                      "primary-fixed": "#acedff",
+                      "surface": "#0b1326",
+                      "secondary-fixed-dim": "#adc6ff",
+                      "on-tertiary-container": "#5b3200",
+                      "on-secondary": "#002e6a",
+                      "on-surface-variant": "#bcc9cd",
+                      "surface-container-high": "#222a3d",
+                      "on-tertiary-fixed-variant": "#6a3b00",
+                      "background": "#0b1326",
+                      "surface-variant": "#2d3449",
+                      "on-primary-fixed": "#001f26",
+                      "surface-container-highest": "#2d3449",
+                      "surface-container": "#171f33",
+                      "outline": "#869397",
+                      "primary-fixed-dim": "#4cd7f6",
+                      "on-primary-container": "#00424f",
+                      "on-primary-fixed-variant": "#004e5c",
+                      "inverse-surface": "#dae2fd",
+                      "on-secondary-fixed-variant": "#004395",
+                      "tertiary": "#ffb873",
+                      "on-primary": "#003640",
+                      "primary": "#4cd7f6",
+                      "error-container": "#93000a",
+                      "on-surface": "#dae2fd",
+                      "on-secondary-fixed": "#001a42",
+                      "on-background": "#dae2fd",
+                      "inverse-on-surface": "#283044",
+                      "tertiary-fixed-dim": "#ffb873",
+                      "inverse-primary": "#00687a",
+                      "error": "#ffb4ab",
+                      "secondary": "#adc6ff",
+                      "tertiary-container": "#e89337",
+                      "surface-container-low": "#131b2e",
+                      "outline-variant": "#3d494c",
+                      "primary-container": "#06b6d4",
+                      "on-error-container": "#ffdad6",
+                      "on-tertiary-fixed": "#2d1600",
+                      "surface-bright": "#31394d",
+                      "secondary-container": "#0566d9",
+                      "surface-dim": "#0b1326",
+                      "on-secondary-container": "#e6ecff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "32": "32px",
+                      "64": "64px",
+                      "12": "12px",
+                      "4": "4px",
+                      "16": "16px",
+                      "8": "8px",
+                      "24": "24px",
+                      "48": "48px"
+              },
+              "fontFamily": {
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "code": [
+                              "JetBrains Mono"
+                      ],
+                      "body-sm": [
+                              "Inter"
+                      ],
+                      "body": [
+                              "Inter"
+                      ],
+                      "h1": [
+                              "Inter"
+                      ],
+                      "h3": [
+                              "Inter"
+                      ],
+                      "h2": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "label-caps": [
+                              "11px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "code": [
+                              "13px",
+                              {
+                                      "lineHeight": "18px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "h1": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "h3": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "h2": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+            },
+          },
+        }
+      </script>
+<style>
+        /* Custom syntax highlighting for Python-like code */
+        .token-keyword { color: #c678dd; } /* Purple */
+        .token-function { color: #61afef; } /* Blue */
+        .token-string { color: #98c379; } /* Green */
+        .token-comment { color: #5c6370; font-style: italic; } /* Gray */
+        .token-operator { color: #56b6c2; } /* Cyan */
+        .token-variable { color: #e06c75; } /* Red */
+        .token-number { color: #d19a66; } /* Orange */
+        .line-number { color: #4b5263; user-select: none; padding-right: 16px; border-right: 1px solid #334155; margin-right: 16px; text-align: right; width: 40px; display: inline-block;}
+      </style>
+</head>
+<body class="bg-background text-on-surface font-body min-h-screen flex">
+<!-- SideNavBar -->
+<nav class="hidden md:flex flex-col h-full py-12 bg-surface-container-low dark:bg-surface-container-low border-r border-outline-variant fixed left-0 top-0 w-64 z-40">
+<div class="px-16 mb-24">
+<div class="flex items-center gap-12">
+<div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container">
+<span class="material-symbols-outlined" style="font-size: 16px;">admin_panel_settings</span>
+</div>
+<div>
+<h2 class="font-h3 text-h3 text-on-surface">SOC-Alpha</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Active Session</p>
+</div>
+</div>
+</div>
+<ul class="flex-1 px-8 space-y-4">
+<li>
+<a class="flex items-center gap-12 px-8 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-highest transition-all" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+                    Dashboard
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-12 px-8 py-8 rounded font-label-caps text-label-caps bg-secondary-container text-on-secondary-container border-l-4 border-primary transition-all" href="#">
+<span class="material-symbols-outlined">account_tree</span>
+                    Workflows
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-12 px-8 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-highest transition-all" href="#">
+<span class="material-symbols-outlined">analytics</span>
+                    Jobs
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-12 px-8 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-highest transition-all" href="#">
+<span class="material-symbols-outlined">extension</span>
+                    Connectors
+                </a>
+</li>
+<li>
+<a class="flex items-center gap-12 px-8 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-highest transition-all" href="#">
+<span class="material-symbols-outlined">settings</span>
+                    Settings
+                </a>
+</li>
+</ul>
+<div class="mt-auto px-8 space-y-4">
+<div class="border-t border-outline-variant pt-8 mb-8 mx-8"></div>
+<a class="flex items-center gap-12 px-8 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-highest transition-all" href="#">
+<span class="material-symbols-outlined">terminal</span>
+                    Logs
+                </a>
+<a class="flex items-center gap-12 px-8 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-highest transition-all" href="#">
+<span class="material-symbols-outlined">list_alt</span>
+                    Terminal
+                </a>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 ml-0 md:ml-64 flex flex-col h-screen overflow-hidden">
+<!-- TopNavBar (Mobile Fallback / Desktop Header) -->
+<header class="flex justify-between items-center h-12 px-16 w-full z-50 bg-surface border-b border-outline-variant shrink-0">
+<div class="flex items-center gap-8">
+<button class="md:hidden text-on-surface-variant hover:text-primary transition-colors duration-150">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<span class="font-h2 text-h2 text-primary tracking-tight md:hidden">SentinelSOAR</span>
+</div>
+<!-- Desktop Breadcrumbs/Context -->
+<div class="hidden md:flex items-center gap-8 font-body-sm text-body-sm text-on-surface-variant">
+<a class="hover:text-primary transition-colors" href="#">Workflows</a>
+<span class="material-symbols-outlined" style="font-size: 16px;">chevron_right</span>
+<span class="text-on-surface">IP Reputation Enrichment</span>
+</div>
+<div class="flex items-center gap-16 text-on-surface-variant">
+<button class="hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined">help</span>
+</button>
+<button class="hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<div class="w-6 h-6 rounded-full bg-surface-variant border border-outline-variant overflow-hidden">
+<!-- Placeholder for avatar -->
+</div>
+</div>
+</header>
+<!-- Editor Layout -->
+<div class="flex-1 flex overflow-hidden p-16 gap-16 bg-background">
+<!-- Left Side: Metadata Panel -->
+<aside class="w-80 flex-shrink-0 flex flex-col gap-16 overflow-y-auto">
+<div class="bg-surface-container-low rounded border border-outline-variant p-16 flex flex-col gap-16">
+<div class="flex items-center justify-between mb-8">
+<h3 class="font-h3 text-h3 text-on-surface flex items-center gap-8">
+<span class="material-symbols-outlined text-primary" style="font-size: 20px;">info</span>
+                            Metadata
+                        </h3>
+<span class="px-8 py-4 rounded-xl bg-primary-container/10 text-primary border border-primary/20 font-label-caps text-label-caps flex items-center gap-4">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+                            Active
+                        </span>
+</div>
+<!-- Input Fields -->
+<div class="flex flex-col gap-4">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Name</label>
+<input class="bg-surface-dim border border-outline-variant text-on-surface rounded px-8 py-4 font-body text-body focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary h-32" type="text" value="IP Reputation Enrichment"/>
+</div>
+<div class="flex flex-col gap-4">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Description</label>
+<textarea class="bg-surface-dim border border-outline-variant text-on-surface rounded px-8 py-4 font-body text-body focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary h-64 resize-none">Automated workflow to extract IPs from alerts and query VirusTotal for reputation scoring. Auto-escalates if score &gt; 50.</textarea>
+</div>
+<div class="flex flex-col gap-4">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Author</label>
+<input class="bg-surface-dim border border-outline-variant text-on-surface-variant rounded px-8 py-4 font-body text-body focus:outline-none h-32" disabled="" readonly="" type="text" value="system_admin"/>
+</div>
+<div class="flex flex-col gap-4">
+<label class="font-label-caps text-label-caps text-on-surface-variant">Environment</label>
+<select class="bg-surface-dim border border-outline-variant text-on-surface rounded px-8 py-4 font-body text-body focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary h-32 appearance-none">
+<option>Production (US-East)</option>
+<option>Staging</option>
+<option>Development</option>
+</select>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex gap-8 mt-auto">
+<button class="flex-1 bg-surface-variant border border-outline-variant text-on-surface font-label-caps text-label-caps py-8 rounded hover:bg-surface-container-highest transition-colors">Discard</button>
+<button class="flex-1 bg-primary text-on-primary font-label-caps text-label-caps py-8 rounded hover:bg-primary-container transition-colors shadow-[0_0_10px_rgba(6,182,212,0.3)]">Save Changes</button>
+</div>
+</aside>
+<!-- Right Side: Editor Card -->
+<section class="flex-1 flex flex-col bg-surface-container-lowest border border-outline-variant rounded overflow-hidden shadow-lg">
+<!-- Tabs -->
+<div class="flex border-b border-outline-variant bg-surface-container-low h-12">
+<button class="px-16 py-8 font-label-caps text-label-caps text-primary border-b-2 border-primary bg-surface-container-highest/50 flex items-center gap-8">
+<span class="material-symbols-outlined" style="font-size: 16px;">code</span>
+                        Code
+                    </button>
+<button class="px-16 py-8 font-label-caps text-label-caps text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors flex items-center gap-8">
+<span class="material-symbols-outlined" style="font-size: 16px;">tune</span>
+                        Config
+                    </button>
+<button class="px-16 py-8 font-label-caps text-label-caps text-on-surface-variant hover:text-on-surface hover:bg-surface-container-highest transition-colors flex items-center gap-8">
+<span class="material-symbols-outlined" style="font-size: 16px;">history</span>
+                        History
+                    </button>
+<div class="ml-auto flex items-center px-16 gap-8 text-on-surface-variant font-body-sm text-body-sm">
+<span class="flex items-center gap-4"><span class="w-2 h-2 rounded-full bg-green-500"></span> Python 3.9</span>
+</div>
+</div>
+<!-- Code Editor Area -->
+<div class="flex-1 bg-[#282c34] overflow-auto font-code text-code text-[#abb2bf] p-16 relative">
+<!-- Line Numbers & Code -->
+<div class="whitespace-pre flex">
+<div class="flex flex-col text-right pr-16 border-r border-[#3e4451] mr-16 text-[#4b5263] select-none">
+<span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span><span>11</span><span>12</span><span>13</span><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span><span>19</span><span>20</span><span>21</span><span>22</span>
+</div><div><span class="token-keyword">import</span> requests
+<span class="token-keyword">import</span> json
+<span class="token-keyword">from</span> sentinel_sdk <span class="token-keyword">import</span> Context, Alert
+
+<span class="token-keyword">def</span> <span class="token-function">enrich_ip</span>(ip_address: <span class="token-keyword">str</span>) -&gt; <span class="token-keyword">dict</span>:
+    <span class="token-comment">"""Queries VirusTotal for IP reputation."""</span>
+    api_key = Context.get_secret(<span class="token-string">'VT_API_KEY'</span>)
+    url = <span class="token-string">f"https://www.virustotal.com/api/v3/ip_addresses/{ip_address}"</span>
+    
+    headers = {
+        <span class="token-string">"accept"</span>: <span class="token-string">"application/json"</span>,
+        <span class="token-string">"x-apikey"</span>: api_key
+    }
+    
+    response = requests.get(url, headers=headers)
+    <span class="token-keyword">if</span> response.status_code <span class="token-operator">==</span> <span class="token-number">200</span>:
+        data = response.json()
+        stats = data.get(<span class="token-string">'data'</span>, {}).get(<span class="token-string">'attributes'</span>, {}).get(<span class="token-string">'last_analysis_stats'</span>, {})
+        <span class="token-keyword">return</span> stats
+    <span class="token-keyword">else</span>:
+        <span class="token-keyword">return</span> {<span class="token-string">"error"</span>: <span class="token-string">f"VT API Error: {response.status_code}"</span>}
+
+<span class="token-keyword">def</span> <span class="token-function">main</span>(alert: Alert):
+    <span class="token-comment"># Extract IPs from the incoming alert</span>
+    target_ips = alert.get_observables(type=<span class="token-string">'ip'</span>)
+    
+    <span class="token-keyword">for</span> ip <span class="token-keyword">in</span> target_ips:
+        results = enrich_ip(ip)
+        
+        <span class="token-comment"># Evaluate malicious threshold</span>
+        malicious_count = results.get(<span class="token-string">'malicious'</span>, <span class="token-number">0</span>)
+        <span class="token-keyword">if</span> malicious_count <span class="token-operator">&gt;</span> <span class="token-number">5</span>:
+            alert.add_tag(<span class="token-string">"High_Severity_IP"</span>)
+            alert.escalate(reason=<span class="token-string">f"IP {ip} has {malicious_count} malicious hits."</span>)
+            
+        <span class="token-comment"># Attach raw data to alert context</span>
+        alert.add_context(<span class="token-string">f"VT_Report_{ip}"</span>, results)
+        
+    <span class="token-keyword">return</span> <span class="token-keyword">True</span>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+</body></html>

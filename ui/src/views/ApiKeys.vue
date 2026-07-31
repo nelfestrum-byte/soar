@@ -19,20 +19,20 @@
       </div>
     </div>
 
-    <div v-if="created" class="card" style="margin-bottom:12px; background:#e8f5e9;">
+    <div v-if="created" class="card" style="margin-bottom:12px; background:var(--status-completed-bg);">
       <h2>Key created — copy it now, it won't be shown again</h2>
       <pre>{{ created.key }}</pre>
       <button class="btn" @click="created = null">Dismiss</button>
     </div>
 
-    <div v-if="loading" class="loading">Loading...</div>
+    <Loading v-if="loading" />
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else class="card">
       <table v-if="keys.length">
         <tr><th>Name</th><th>Prefix</th><th>Role</th><th>Active</th><th>Last used</th><th>Expires</th><th></th></tr>
         <tr v-for="k in keys" :key="k.id">
           <td>{{ k.name }}</td>
-          <td style="font-family:monospace;">{{ k.key_prefix }}…</td>
+          <td style="font-family:var(--font-mono);">{{ k.key_prefix }}…</td>
           <td>{{ k.role }}</td>
           <td>
             <span class="badge" :class="k.is_active ? 'badge-completed' : 'badge-cancelled'">
@@ -48,7 +48,7 @@
           </td>
         </tr>
       </table>
-      <div v-else class="loading">No API keys yet</div>
+      <div v-else class="empty">No API keys yet</div>
     </div>
   </div>
 </template>
@@ -57,6 +57,7 @@
 import { ref, onMounted } from 'vue'
 import { api } from '../api.js'
 import { ROLES } from '../permissions.js'
+import Loading from '../components/Loading.vue'
 
 const keys = ref([])
 const loading = ref(true)

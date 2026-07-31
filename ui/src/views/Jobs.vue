@@ -15,13 +15,13 @@
       </div>
     </div>
 
-    <div v-if="loading" class="loading">Loading...</div>
+    <Loading v-if="loading" />
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else class="card">
       <table>
         <tr><th>ID</th><th>Workflow</th><th>Triggered</th><th>Status</th><th>Result</th><th>Duration</th><th>Actions</th></tr>
         <tr v-for="job in jobs" :key="job.id" class="job-row" @click="openDetail(job)">
-          <td style="font-family:monospace; font-size:11px;">{{ job.id.slice(0,8) }}</td>
+          <td style="font-family:var(--font-mono); font-size:11px;">{{ job.id.slice(0,8) }}</td>
           <td>{{ job.workflow_name }}</td>
           <td>{{ job.triggered_by }}</td>
           <td>
@@ -29,8 +29,8 @@
             <span v-if="job.context && job.context.dry_run" class="badge badge-pending" style="margin-left:4px;">dry-run</span>
           </td>
           <td style="max-width:260px;">
-            <span v-if="job.result_success === true" style="color:#2e7d32;">&#10003;</span>
-            <span v-else-if="job.result_success === false" style="color:#c62828;">
+            <span v-if="job.result_success === true" style="color:var(--color-result-ok);">&#10003;</span>
+            <span v-else-if="job.result_success === false" style="color:var(--color-result-fail);">
               &#10007; <span style="font-size:11px;">{{ firstLine(job.result_error) }}</span>
             </span>
             <span v-else>—</span>
@@ -46,7 +46,7 @@
           </td>
         </tr>
       </table>
-      <div v-if="!jobs.length" class="loading">No jobs found</div>
+      <div v-if="!jobs.length" class="empty">No jobs found</div>
     </div>
   </div>
 </template>
@@ -58,6 +58,7 @@ import { api } from '../api.js'
 import { auth } from '../store/auth.js'
 import { can } from '../permissions.js'
 import { notify } from '../store/toast.js'
+import Loading from '../components/Loading.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -109,5 +110,5 @@ onUnmounted(() => clearInterval(timer))
 
 <style scoped>
 .job-row { cursor: pointer; }
-.job-row:hover { background: #f5f7fa; }
+.job-row:hover { background: var(--color-surface-hover); }
 </style>

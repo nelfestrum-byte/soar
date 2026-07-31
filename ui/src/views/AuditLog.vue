@@ -20,27 +20,27 @@
         <button class="btn" style="font-size:11px;" @click="applyPreset('day')">Last 24h</button>
         <button class="btn" style="font-size:11px;" @click="applyPreset('week')">Last week</button>
       </div>
-      <div v-if="hasFilters" style="margin-top:8px; font-size:12px; color:#666;">
+      <div v-if="hasFilters" style="margin-top:8px; font-size:12px; color:var(--color-text-muted);">
         Showing only matching rows — clear filters to see the full audit log across all resources.
       </div>
     </div>
 
-    <div v-if="loading" class="loading">Loading...</div>
+    <Loading v-if="loading" />
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else class="card">
       <table>
         <tr><th>Time</th><th>Actor</th><th>Action</th><th>Resource</th><th>IP</th><th>Detail</th></tr>
         <tr v-for="row in rows" :key="row.id">
           <td style="white-space:nowrap; font-size:12px;">{{ new Date(row.created_at).toLocaleString() }}</td>
-          <td>{{ row.actor_name }} <span style="color:#999; font-size:11px;">({{ row.actor_type }})</span></td>
+          <td>{{ row.actor_name }} <span style="color:var(--color-text-faint); font-size:11px;">({{ row.actor_type }})</span></td>
           <td><span class="badge badge-running">{{ row.action }}</span></td>
           <td>
             <a href="#" style="text-decoration:none;" @click.prevent="filterByResource(row.resource_type, row.resource_id)">
               {{ row.resource_type }}/{{ row.resource_id }}
             </a>
           </td>
-          <td style="font-family:monospace; font-size:11px;">{{ row.client_ip || '—' }}</td>
-          <td style="font-family:monospace; font-size:11px; max-width:280px;">
+          <td style="font-family:var(--font-mono); font-size:11px;">{{ row.client_ip || '—' }}</td>
+          <td style="font-family:var(--font-mono); font-size:11px; max-width:280px;">
             <template v-if="row.detail">
               <span style="cursor:pointer; text-decoration:underline dotted;" @click="toggleDetail(row.id)">
                 {{ detailOpen[row.id] ? 'hide' : 'show' }}
@@ -54,10 +54,10 @@
           </td>
         </tr>
       </table>
-      <div v-if="!rows.length" class="loading">No audit entries found</div>
+      <div v-if="!rows.length" class="empty">No audit entries found</div>
       <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px;">
         <button class="btn" @click="prevPage" :disabled="offset === 0">Previous</button>
-        <span style="font-size:12px; color:#666;">Rows {{ offset + 1 }}–{{ offset + rows.length }}</span>
+        <span style="font-size:12px; color:var(--color-text-muted);">Rows {{ offset + 1 }}–{{ offset + rows.length }}</span>
         <button class="btn" @click="nextPage" :disabled="rows.length < limit">Next</button>
       </div>
     </div>
@@ -69,6 +69,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { api } from '../api.js'
 import { RESOURCE_TYPES, presetRange } from '../audit-filters.js'
+import Loading from '../components/Loading.vue'
 
 const route = useRoute()
 const router = useRouter()

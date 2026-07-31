@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>User Management - SentinelSOAR</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "tertiary-fixed": "#ffdcbf",
+                      "surface-tint": "#4cd7f6",
+                      "secondary-fixed": "#d8e2ff",
+                      "surface-container-lowest": "#060e20",
+                      "on-tertiary": "#4b2800",
+                      "on-error": "#690005",
+                      "primary-fixed": "#acedff",
+                      "surface": "#0b1326",
+                      "secondary-fixed-dim": "#adc6ff",
+                      "on-tertiary-container": "#5b3200",
+                      "on-secondary": "#002e6a",
+                      "on-surface-variant": "#bcc9cd",
+                      "surface-container-high": "#222a3d",
+                      "on-tertiary-fixed-variant": "#6a3b00",
+                      "background": "#0b1326",
+                      "surface-variant": "#2d3449",
+                      "on-primary-fixed": "#001f26",
+                      "surface-container-highest": "#2d3449",
+                      "surface-container": "#171f33",
+                      "outline": "#869397",
+                      "primary-fixed-dim": "#4cd7f6",
+                      "on-primary-container": "#00424f",
+                      "on-primary-fixed-variant": "#004e5c",
+                      "inverse-surface": "#dae2fd",
+                      "on-secondary-fixed-variant": "#004395",
+                      "tertiary": "#ffb873",
+                      "on-primary": "#003640",
+                      "primary": "#4cd7f6",
+                      "error-container": "#93000a",
+                      "on-surface": "#dae2fd",
+                      "on-secondary-fixed": "#001a42",
+                      "on-background": "#dae2fd",
+                      "inverse-on-surface": "#283044",
+                      "tertiary-fixed-dim": "#ffb873",
+                      "inverse-primary": "#00687a",
+                      "error": "#ffb4ab",
+                      "secondary": "#adc6ff",
+                      "tertiary-container": "#e89337",
+                      "surface-container-low": "#131b2e",
+                      "outline-variant": "#3d494c",
+                      "primary-container": "#06b6d4",
+                      "on-error-container": "#ffdad6",
+                      "on-tertiary-fixed": "#2d1600",
+                      "surface-bright": "#31394d",
+                      "secondary-container": "#0566d9",
+                      "surface-dim": "#0b1326",
+                      "on-secondary-container": "#e6ecff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "32": "32px",
+                      "64": "64px",
+                      "12": "12px",
+                      "4": "4px",
+                      "16": "16px",
+                      "8": "8px",
+                      "24": "24px",
+                      "48": "48px"
+              },
+              "fontFamily": {
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "code": [
+                              "JetBrains Mono"
+                      ],
+                      "body-sm": [
+                              "Inter"
+                      ],
+                      "body": [
+                              "Inter"
+                      ],
+                      "h1": [
+                              "Inter"
+                      ],
+                      "h3": [
+                              "Inter"
+                      ],
+                      "h2": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "label-caps": [
+                              "11px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "code": [
+                              "13px",
+                              {
+                                      "lineHeight": "18px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "h1": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "h3": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "h2": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+      },
+          },
+        }
+      </script>
+<style>
+        body {
+            background-color: #0b1326; /* bg-background */
+            color: #dae2fd; /* text-on-background */
+        }
+        
+        /* Custom form input styling based on Design System */
+        .form-input-dark {
+            background-color: #0f172a; /* Approximated dark bg for inputs from guidance */
+            border: 1px solid #334155; /* Approximated outline-variant */
+            color: #dae2fd;
+        }
+        .form-input-dark:focus {
+            outline: none;
+            border-color: #06b6d4; /* primary-container / Cyan */
+            box-shadow: none;
+        }
+        
+        .form-select-dark {
+             background-color: #0f172a;
+             border: 1px solid #334155;
+             color: #dae2fd;
+        }
+        
+        .form-select-dark:focus {
+            outline: none;
+            border-color: #06b6d4;
+            box-shadow: none;
+        }
+    </style>
+</head>
+<body class="font-body text-body bg-background text-on-background min-h-screen flex flex-col">
+<!-- TopNavBar (Settings active as this is User Management) -->
+<nav class="bg-surface dark:bg-surface font-body text-body border-b border-outline-variant flex justify-between items-center h-12 px-16 w-full z-50 docked full-width top-0">
+<!-- Brand / Search (left) -->
+<div class="flex items-center gap-24">
+<div class="font-h2 text-h2 text-primary dark:text-primary tracking-tight">SentinelSOAR</div>
+<!-- Search omitted for brevity as per component guidelines focus -->
+</div>
+<!-- Navigation Links -->
+<div class="flex items-center gap-16 h-full">
+<a class="text-on-surface-variant dark:text-on-surface-variant hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80 flex items-center h-full px-8" href="#">Dashboard</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80 flex items-center h-full px-8" href="#">Workflows</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80 flex items-center h-full px-8" href="#">Jobs</a>
+<a class="text-on-surface-variant dark:text-on-surface-variant hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80 flex items-center h-full px-8" href="#">Connectors</a>
+<a class="text-primary dark:text-primary border-b-2 border-primary pb-1 hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80 flex items-center h-full px-8" href="#">Settings</a>
+</div>
+<!-- Trailing Actions -->
+<div class="flex items-center gap-16">
+<button class="text-on-surface-variant hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined" data-icon="help">help</span>
+</button>
+<button class="text-on-surface-variant hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+<div class="w-8 h-8 rounded-full overflow-hidden border border-outline-variant ml-8">
+<img alt="Security Analyst Profile" class="w-full h-full object-cover" data-alt="A small, professional avatar image of a cybersecurity analyst in a dimly lit control room, wearing a headset, illuminated by blue screen glare. High-tech, focused mood." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA2Dci_vQ31xTVPtch4YeyiqjXYYK3jhCJLqHS2oGV0Ge4bC2BU_Lz4KmvzvXYT81hItS_hG4hDCJ6YgaWG6wbZslL0eCnMkk-bdJbCXYWA___-fDv6iojr0AFf_aWD2vXKrqqdAMHAO9lOneHe_c6qUG9e6dGbURRqDgFeGgccCoT-PFNaH2B6uXuK67zMCG7e4Lgon39pIXHMH8L_STsE5XyrGEt0rAEiO4zEmIG4wX5bDcOnuvdTHw"/>
+</div>
+</div>
+</nav>
+<div class="flex flex-1 overflow-hidden">
+<!-- SideNavBar -->
+<aside class="bg-surface-container-low dark:bg-surface-container-low font-label-caps text-label-caps fixed left-0 top-12 h-[calc(100vh-3rem)] w-64 border-r border-outline-variant flex flex-col py-12 z-40 hidden md:flex">
+<!-- Header -->
+<div class="px-16 mb-24 flex items-center gap-12">
+<div class="w-12 h-12 rounded bg-surface-variant flex items-center justify-center overflow-hidden border border-outline-variant">
+<img alt="SOAR System Node" class="w-full h-full object-cover" data-alt="A stylized, minimalist icon representing a secure server node in a network topology, using dark blue and cyan colors. Technical, sharp." src="https://lh3.googleusercontent.com/aida-public/AB6AXuADwWB_pwBZ8yY4ycKv5WaMUSsgdOCeTq-COQKuayhs7M8zI9wgx2k7lSZ460CaXrbSfFPeXn-DYrjxd-aXYVUjD-aQH2XcCjp0z1_blQcG8iHcj2kbBaECJpYCNYKf4ffpoyOSK9czgHmzbn2hRs3g6IAPywkYE_SbYT3Ot3PU0OMzB2iBOFxhvZj95mMiBuVNp9ztR_m5vbU2gBE_kB6FzglGY64ATdVFIsOCZJP3Cf_ZHZAZ3rz0XQ"/>
+</div>
+<div>
+<h2 class="font-h3 text-h3 text-on-surface">SOC-Alpha</h2>
+<div class="font-body-sm text-body-sm text-on-surface-variant mt-4 flex items-center gap-4">
+<span class="w-2 h-2 rounded-full bg-primary-container inline-block"></span> Active Session
+                    </div>
+</div>
+</div>
+<!-- Main Tabs -->
+<nav class="flex-1 flex flex-col gap-4 px-8">
+<a class="text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all duration-200 flex items-center gap-12 px-12 py-8 rounded" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+                    Dashboard
+                </a>
+<a class="text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all duration-200 flex items-center gap-12 px-12 py-8 rounded" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+                    Workflows
+                </a>
+<a class="text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all duration-200 flex items-center gap-12 px-12 py-8 rounded" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span>
+                    Jobs
+                </a>
+<a class="text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all duration-200 flex items-center gap-12 px-12 py-8 rounded" href="#">
+<span class="material-symbols-outlined" data-icon="extension">extension</span>
+                    Connectors
+                </a>
+<a class="bg-secondary-container text-on-secondary-container border-l-4 border-primary hover:bg-surface-container-highest transition-all duration-200 flex items-center gap-12 px-12 py-8 rounded" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+                    Settings
+                </a>
+</nav>
+<!-- Footer Tabs -->
+<div class="mt-auto flex flex-col gap-4 px-8 pt-16 border-t border-outline-variant">
+<a class="text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all duration-200 flex items-center gap-12 px-12 py-8 rounded" href="#">
+<span class="material-symbols-outlined" data-icon="terminal">terminal</span>
+                    Logs
+                </a>
+<a class="text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all duration-200 flex items-center gap-12 px-12 py-8 rounded" href="#">
+<span class="material-symbols-outlined" data-icon="list_alt">list_alt</span>
+                    Terminal
+                </a>
+</div>
+</aside>
+<!-- Main Canvas -->
+<main class="flex-1 ml-0 md:ml-64 p-24 overflow-y-auto">
+<div class="max-w-2xl mx-auto">
+<!-- Page Header -->
+<div class="mb-24">
+<h1 class="font-h1 text-h1 text-on-surface">Edit User Profile</h1>
+<p class="font-body-sm text-body-sm text-on-surface-variant mt-4">Manage access and identity credentials for this SOC operator.</p>
+</div>
+<!-- Form Card -->
+<div class="bg-surface-container border border-outline-variant rounded-xl overflow-hidden shadow-lg">
+<div class="p-24 flex flex-col gap-24">
+<!-- Username Field -->
+<div class="flex flex-col gap-8">
+<label class="font-label-caps text-label-caps text-on-surface-variant" for="username">Username</label>
+<input class="form-input-dark font-body text-body w-full px-12 py-8 rounded border" id="username" placeholder="Enter username" type="text" value="jdoe_op1"/>
+</div>
+<!-- Email Field -->
+<div class="flex flex-col gap-8">
+<label class="font-label-caps text-label-caps text-on-surface-variant" for="email">Email Address</label>
+<input class="form-input-dark font-body text-body w-full px-12 py-8 rounded border" id="email" placeholder="operator@domain.com" type="email" value="j.doe@sentinelsoar.local"/>
+</div>
+<!-- Role Field -->
+<div class="flex flex-col gap-8">
+<label class="font-label-caps text-label-caps text-on-surface-variant" for="role">System Role</label>
+<div class="relative">
+<select class="form-select-dark font-body text-body w-full px-12 py-8 rounded border appearance-none pr-32" id="role">
+<option value="viewer">Viewer</option>
+<option selected="" value="analyst">Analyst</option>
+<option value="admin">Administrator</option>
+</select>
+<span class="material-symbols-outlined absolute right-12 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none" data-icon="expand_more">expand_more</span>
+</div>
+</div>
+<!-- API Key Field -->
+<div class="flex flex-col gap-8">
+<label class="font-label-caps text-label-caps text-on-surface-variant" for="apikey">Integration API Key</label>
+<div class="flex items-center gap-8">
+<input class="form-input-dark font-code text-code w-full px-12 py-8 rounded border bg-surface-container-high text-on-surface-variant cursor-not-allowed" id="apikey" readonly="" type="text" value="sk_test_51Nx8a9..."/>
+<button class="flex-shrink-0 bg-surface-variant border border-outline-variant hover:bg-surface-bright text-on-surface px-12 py-8 rounded flex items-center gap-8 transition-colors" title="Copy to clipboard" type="button">
+<span class="material-symbols-outlined text-[18px]" data-icon="content_copy">content_copy</span>
+<span class="font-label-caps text-label-caps hidden sm:inline">Copy</span>
+</button>
+</div>
+<p class="font-body-sm text-body-sm text-outline mt-4">Required for automated playbook execution attribution.</p>
+</div>
+<div class="flex items-center gap-12 mt-8">
+<div class="flex items-center justify-center w-12 h-12 rounded-xl bg-[rgba(6,182,212,0.1)]">
+<span class="w-3 h-3 rounded-full bg-primary-container"></span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Account is currently active and in good standing.</span>
+</div>
+</div>
+<!-- Form Actions -->
+<div class="bg-surface-container-low border-t border-outline-variant p-16 flex items-center justify-end gap-12">
+<button class="px-16 py-8 rounded border border-outline-variant text-on-surface font-body text-body hover:bg-[rgba(255,255,255,0.1)] active:bg-[rgba(0,0,0,0.1)] transition-colors" type="button">
+                            Cancel
+                        </button>
+<button class="px-16 py-8 rounded bg-primary-container text-on-primary-container font-body text-body font-semibold hover:bg-[rgba(6,182,212,0.9)] active:bg-[rgba(0,0,0,0.1)] transition-colors flex items-center gap-8 focus-visible:ring-2 focus-visible:ring-primary-container focus-visible:ring-offset-2 focus-visible:ring-offset-background" type="button">
+<span class="material-symbols-outlined text-[18px]" data-icon="save">save</span>
+                            Save Changes
+                        </button>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

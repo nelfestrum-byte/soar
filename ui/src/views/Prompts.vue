@@ -4,8 +4,8 @@
 
     <div class="card">
       <h2>System prompt</h2>
-      <div v-if="systemLoading" class="loading">Loading...</div>
-      <div v-else-if="systemNotConfigured" data-test="system-not-configured" class="loading">
+      <Loading v-if="systemLoading" />
+      <div v-else-if="systemNotConfigured" data-test="system-not-configured" class="empty">
         Системный промпт не настроен (`soar.system_prompt_path` не задан или файл отсутствует)
       </div>
       <div v-else-if="systemError" class="error">{{ systemError }}</div>
@@ -19,13 +19,13 @@
           {{ saving ? 'Saving...' : 'Save' }}
         </button>
       </div>
-      <div v-if="userLoading" class="loading">Loading...</div>
+      <Loading v-if="userLoading" />
       <textarea v-else v-model="userContent" :readonly="!canWrite" data-test="user-prompt-editor"
-                style="width:100%; min-height:300px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical;"
+                style="width:100%; min-height:300px; font-family:var(--font-mono); font-size:12px; padding:8px; border:1px solid var(--color-border); border-radius:4px; resize:vertical;"
                 placeholder="Промпт не задан"></textarea>
       <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
-        <span v-if="saveResult.success" style="color:#2e7d32;">Saved (commit: {{ saveResult.commit }})</span>
-        <span v-else style="color:#c62828;">Error: {{ saveResult.error }}</span>
+        <span v-if="saveResult.success" style="color:var(--color-result-ok);">Saved (commit: {{ saveResult.commit }})</span>
+        <span v-else style="color:var(--color-result-fail);">Error: {{ saveResult.error }}</span>
       </div>
     </div>
   </div>
@@ -36,6 +36,7 @@ import { ref, computed, onMounted } from 'vue'
 import { api } from '../api.js'
 import { auth } from '../store/auth.js'
 import { can } from '../permissions.js'
+import Loading from '../components/Loading.vue'
 
 const canWrite = computed(() => can(auth.role, 'prompt.write'))
 

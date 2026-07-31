@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Workflows - SentinelSOAR</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#ffdcbf",
+                        "surface-tint": "#4cd7f6",
+                        "secondary-fixed": "#d8e2ff",
+                        "surface-container-lowest": "#060e20",
+                        "on-tertiary": "#4b2800",
+                        "on-error": "#690005",
+                        "primary-fixed": "#acedff",
+                        "surface": "#0b1326",
+                        "secondary-fixed-dim": "#adc6ff",
+                        "on-tertiary-container": "#5b3200",
+                        "on-secondary": "#002e6a",
+                        "on-surface-variant": "#bcc9cd",
+                        "surface-container-high": "#222a3d",
+                        "on-tertiary-fixed-variant": "#6a3b00",
+                        "background": "#0b1326",
+                        "surface-variant": "#2d3449",
+                        "on-primary-fixed": "#001f26",
+                        "surface-container-highest": "#2d3449",
+                        "surface-container": "#171f33",
+                        "outline": "#869397",
+                        "primary-fixed-dim": "#4cd7f6",
+                        "on-primary-container": "#00424f",
+                        "on-primary-fixed-variant": "#004e5c",
+                        "inverse-surface": "#dae2fd",
+                        "on-secondary-fixed-variant": "#004395",
+                        "tertiary": "#ffb873",
+                        "on-primary": "#003640",
+                        "primary": "#4cd7f6",
+                        "error-container": "#93000a",
+                        "on-surface": "#dae2fd",
+                        "on-secondary-fixed": "#001a42",
+                        "on-background": "#dae2fd",
+                        "inverse-on-surface": "#283044",
+                        "tertiary-fixed-dim": "#ffb873",
+                        "inverse-primary": "#00687a",
+                        "error": "#ffb4ab",
+                        "secondary": "#adc6ff",
+                        "tertiary-container": "#e89337",
+                        "surface-container-low": "#131b2e",
+                        "outline-variant": "#3d494c",
+                        "primary-container": "#06b6d4",
+                        "on-error-container": "#ffdad6",
+                        "on-tertiary-fixed": "#2d1600",
+                        "surface-bright": "#31394d",
+                        "secondary-container": "#0566d9",
+                        "surface-dim": "#0b1326",
+                        "on-secondary-container": "#e6ecff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "32": "32px",
+                        "64": "64px",
+                        "12": "12px",
+                        "4": "4px",
+                        "16": "16px",
+                        "8": "8px",
+                        "24": "24px",
+                        "48": "48px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter"],
+                        "code": ["JetBrains Mono"],
+                        "body-sm": ["Inter"],
+                        "body": ["Inter"],
+                        "h1": ["Inter"],
+                        "h3": ["Inter"],
+                        "h2": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["11px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                        "code": ["13px", { "lineHeight": "18px", "fontWeight": "400" }],
+                        "body-sm": ["12px", { "lineHeight": "16px", "fontWeight": "400" }],
+                        "body": ["14px", { "lineHeight": "20px", "fontWeight": "400" }],
+                        "h1": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "h3": ["16px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "h2": ["20px", { "lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: theme('colors.background'); color: theme('colors.on-background'); }
+        .data-table-row:nth-child(even) { background-color: rgba(30, 41, 59, 0.2); }
+        .data-table-row:hover { background-color: theme('colors.surface-container-high'); cursor: pointer; }
+        .expanded-row-content { display: none; }
+        .expanded .expanded-row-content { display: block; background-color: theme('colors.surface-container-lowest'); border-top: 1px solid theme('colors.outline-variant'); border-bottom: 1px solid theme('colors.outline-variant');}
+        .expanded .chevron { transform: rotate(180deg); }
+    </style>
+</head>
+<body class="flex h-screen overflow-hidden font-body text-body">
+<!-- SideNavBar -->
+<nav class="hidden md:flex flex-col h-full py-12 bg-surface-container-low dark:bg-surface-container-low border-r border-outline-variant fixed left-0 top-0 h-full w-64 z-40">
+<div class="px-16 mb-24">
+<div class="flex items-center gap-12">
+<img alt="SOAR System Node" class="w-32 h-32 rounded-lg object-cover bg-surface-container" data-alt="A highly detailed, futuristic abstract icon representing a security operations node, glowing with cyan and deep blue hues, set against a dark textured background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuByshAAEN72AkDg0QriyN6-g8K18u37A4Zb-Fi9gpMMzbxdjd6dHwWvBViXzZHSNAm9SLffnhfWg-HAyVJPBmfOQEfWBfYWaAutF-vPdviEafdsRTaT9SKfxmi0FmERSpslJ1dtJFqL8EZoOVmVZrclwD-82FQX6PSckN-d_dUW7KuNMhILgMrucsZKP5M9fVfs7gqNXC075aYP0vpErVRJi1qXhSPr3kTLXMgwTlFKWY4zB3KnkosNMg"/>
+<div>
+<h2 class="font-h3 text-h3 text-on-surface">SOC-Alpha</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Active Session</p>
+</div>
+</div>
+</div>
+<div class="flex-1 flex flex-col gap-4 px-8 overflow-y-auto">
+<a class="flex items-center gap-12 px-12 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center gap-12 px-12 py-8 rounded font-label-caps text-label-caps bg-secondary-container text-on-secondary-container border-l-4 border-primary transition-colors duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">account_tree</span>
+                Workflows
+            </a>
+<a class="flex items-center gap-12 px-12 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">analytics</span>
+                Jobs
+            </a>
+<a class="flex items-center gap-12 px-12 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">extension</span>
+                Connectors
+            </a>
+<a class="flex items-center gap-12 px-12 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings</span>
+                Settings
+            </a>
+</div>
+<div class="mt-auto px-8 flex flex-col gap-4 border-t border-outline-variant pt-12">
+<a class="flex items-center gap-12 px-12 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">terminal</span>
+                Logs
+            </a>
+<a class="flex items-center gap-12 px-12 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-high hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">list_alt</span>
+                Terminal
+            </a>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-1 flex flex-col ml-0 md:ml-64 h-full relative">
+<!-- TopNavBar (Mobile) -->
+<header class="md:hidden flex justify-between items-center h-[64px] px-16 w-full z-50 bg-surface dark:bg-surface border-b border-outline-variant">
+<span class="font-h2 text-h2 text-primary dark:text-primary tracking-tight">SentinelSOAR</span>
+<div class="flex items-center gap-16">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer">notifications</span>
+<img alt="Security Analyst Profile" class="w-[32px] h-[32px] rounded-full object-cover border border-outline-variant" data-alt="A small circular avatar of a security analyst wearing a headset in a dark, high-tech control room environment, glowing cyan monitors in the background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCDgf_8x_9B8B-FCf73klorqXwep2cvOEBnJk1SSPsc2ZejLp9OlO3qIJtDDK-DChtSFkMWiuz6TfIiazEFxwm0NLOeFlIxBZ8QQXR9TZ5GCBkCTR9MFvUM8LWuY_MMRcH8d0I_eKX_QSlk7MlW4zVi-c0LHdvm57Wm4VRoKHUrhDi3q6n31iS9YRa8RVY9HJQopDgNO90VCo43r-47c9zkIj-j6RSsAt9i4GF5j7w8xi8SPL7H5KZscA"/>
+</div>
+</header>
+<!-- Page Content -->
+<div class="flex-1 overflow-y-auto p-24">
+<div class="flex justify-between items-center mb-24">
+<h1 class="font-h1 text-h1 text-on-surface">Active Workflows</h1>
+<button class="bg-primary-container text-on-primary-container hover:bg-opacity-90 px-16 py-8 rounded flex items-center gap-8 font-label-caps text-label-caps transition-all">
+<span class="material-symbols-outlined text-[16px]">add</span> New Workflow
+                </button>
+</div>
+<!-- Toolbar -->
+<div class="flex justify-between items-center mb-16 bg-surface-container-low p-8 rounded border border-outline-variant">
+<div class="flex items-center gap-8">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-8 top-1/2 transform -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+<input class="bg-surface-dim border border-outline-variant rounded pl-32 pr-12 py-4 text-body-sm text-on-surface focus:border-primary focus:ring-0 w-64 h-[32px]" placeholder="Search workflows..." type="text"/>
+</div>
+<button class="border border-outline-variant text-on-surface-variant px-12 h-[32px] rounded flex items-center gap-4 hover:bg-surface-container-high transition-colors font-body-sm text-body-sm">
+<span class="material-symbols-outlined text-[16px]">filter_list</span> Filter
+                    </button>
+</div>
+<div class="flex items-center gap-16 text-on-surface-variant font-body-sm text-body-sm">
+<span>Showing 1-10 of 42</span>
+<div class="flex gap-4">
+<button class="hover:text-on-surface disabled:opacity-50"><span class="material-symbols-outlined">chevron_left</span></button>
+<button class="hover:text-on-surface"><span class="material-symbols-outlined">chevron_right</span></button>
+</div>
+</div>
+</div>
+<!-- Dense Data Table Container -->
+<div class="bg-surface-container-low rounded border border-outline-variant overflow-hidden">
+<div class="w-full">
+<!-- Header -->
+<div class="grid grid-cols-[48px_100px_minmax(200px,1fr)_120px_150px_48px] items-center px-12 border-b border-outline-variant bg-surface-container-high font-label-caps text-label-caps text-on-surface-variant h-[32px]">
+<div></div>
+<div class="flex items-center gap-4 cursor-pointer hover:text-on-surface">Status <span class="material-symbols-outlined text-[14px]">arrow_drop_down</span></div>
+<div class="flex items-center gap-4 cursor-pointer hover:text-on-surface text-primary">Workflow Name <span class="material-symbols-outlined text-[14px]">arrow_upward</span></div>
+<div class="flex items-center gap-4 cursor-pointer hover:text-on-surface">Last Run</div>
+<div class="flex items-center gap-4 cursor-pointer hover:text-on-surface">Trigger</div>
+<div class="text-center">Act</div>
+</div>
+<!-- Row 1 -->
+<div class="data-table-row border-b border-outline-variant last:border-0 group" onclick="this.classList.toggle('expanded')">
+<div class="grid grid-cols-[48px_100px_minmax(200px,1fr)_120px_150px_48px] items-center px-12 h-[32px] font-body-sm text-body-sm">
+<div class="flex justify-center text-on-surface-variant"><span class="material-symbols-outlined text-[18px] chevron transition-transform">expand_more</span></div>
+<div>
+<span class="inline-flex items-center gap-4 px-8 py-2 rounded-xl bg-[rgba(6,182,212,0.15)] text-primary font-label-caps text-label-caps w-fit">
+<span class="w-[6px] h-[6px] rounded-full bg-primary"></span> Active
+                                </span>
+</div>
+<div class="text-on-surface truncate font-semibold">Suspicious Login Investigation</div>
+<div class="font-code text-code text-on-surface-variant">10m ago</div>
+<div class="flex items-center gap-4 text-on-surface-variant"><span class="material-symbols-outlined text-[14px]">webhook</span> SIEM Alert</div>
+<div class="flex justify-center relative">
+<button class="text-on-surface-variant hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity" onclick="event.stopPropagation()"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+</div>
+</div>
+<!-- Expanded Details 1 -->
+<div class="expanded-row-content p-16">
+<div class="grid grid-cols-3 gap-24">
+<div class="bg-surface-container p-12 rounded border border-outline-variant">
+<div class="text-on-surface-variant font-label-caps text-label-caps mb-8">Execution Metrics</div>
+<div class="flex flex-col gap-4 font-code text-code text-on-surface">
+<div class="flex justify-between"><span>Duration:</span> <span class="text-primary">2.4s</span></div>
+<div class="flex justify-between"><span>Nodes Exec:</span> <span>14</span></div>
+<div class="flex justify-between"><span>Success Rate:</span> <span>99.2%</span></div>
+</div>
+</div>
+<div class="bg-surface-container p-12 rounded border border-outline-variant col-span-2">
+<div class="text-on-surface-variant font-label-caps text-label-caps mb-8">Recent Log</div>
+<div class="font-code text-code text-on-surface-variant text-[11px] leading-tight break-all">
+                                        [INFO] Trigger received from connector: splunk_enterprise<br/>
+                                        [INFO] Node: parse_ip_enrichment executed successfully.<br/>
+<span class="text-primary">[ACT]</span> Condition met: Risk Score &gt; 75. Isolating host...
+                                    </div>
+</div>
+</div>
+</div>
+</div>
+<!-- Row 2 -->
+<div class="data-table-row border-b border-outline-variant last:border-0 group" onclick="this.classList.toggle('expanded')">
+<div class="grid grid-cols-[48px_100px_minmax(200px,1fr)_120px_150px_48px] items-center px-12 h-[32px] font-body-sm text-body-sm">
+<div class="flex justify-center text-on-surface-variant"><span class="material-symbols-outlined text-[18px] chevron transition-transform">expand_more</span></div>
+<div>
+<span class="inline-flex items-center gap-4 px-8 py-2 rounded-xl bg-[rgba(255,180,171,0.15)] text-error font-label-caps text-label-caps w-fit">
+<span class="w-[6px] h-[6px] rounded-full bg-error"></span> Failed
+                                </span>
+</div>
+<div class="text-on-surface truncate font-semibold">Phishing Email Containment</div>
+<div class="font-code text-code text-on-surface-variant">1h ago</div>
+<div class="flex items-center gap-4 text-on-surface-variant"><span class="material-symbols-outlined text-[14px]">mail</span> Mailbox Watch</div>
+<div class="flex justify-center relative">
+<button class="text-on-surface-variant hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity" onclick="event.stopPropagation()"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+</div>
+</div>
+<!-- Expanded Details 2 -->
+<div class="expanded-row-content p-16">
+<div class="bg-[rgba(255,180,171,0.05)] border border-error p-12 rounded flex items-start gap-12">
+<span class="material-symbols-outlined text-error">error</span>
+<div>
+<div class="font-h3 text-h3 text-error mb-4">Execution Halted</div>
+<div class="font-code text-code text-on-surface-variant text-[11px]">API Timeout Error: Connector 'o365_graph_api' failed to respond within 30000ms. Node 'delete_message' aborted.</div>
+<button class="mt-8 border border-outline-variant px-12 py-4 rounded font-label-caps text-label-caps text-on-surface hover:bg-surface-container-high transition-colors">Retry Node</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Row 3 -->
+<div class="data-table-row border-b border-outline-variant last:border-0 group" onclick="this.classList.toggle('expanded')">
+<div class="grid grid-cols-[48px_100px_minmax(200px,1fr)_120px_150px_48px] items-center px-12 h-[32px] font-body-sm text-body-sm">
+<div class="flex justify-center text-on-surface-variant"><span class="material-symbols-outlined text-[18px] chevron transition-transform">expand_more</span></div>
+<div>
+<span class="inline-flex items-center gap-4 px-8 py-2 rounded-xl bg-[rgba(173,198,255,0.15)] text-secondary font-label-caps text-label-caps w-fit">
+<span class="w-[6px] h-[6px] rounded-full bg-secondary"></span> Idle
+                                </span>
+</div>
+<div class="text-on-surface truncate font-semibold">Daily Vulnerability Scan Report</div>
+<div class="font-code text-code text-on-surface-variant">14h ago</div>
+<div class="flex items-center gap-4 text-on-surface-variant"><span class="material-symbols-outlined text-[14px]">schedule</span> CRON: @daily</div>
+<div class="flex justify-center relative">
+<button class="text-on-surface-variant hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity" onclick="event.stopPropagation()"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+</div>
+</div>
+<div class="expanded-row-content p-16 text-on-surface-variant font-body-sm text-body-sm text-center">
+                            No recent execution data available.
+                        </div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

@@ -20,7 +20,7 @@
       </div>
     </div>
 
-    <div v-if="loading" class="loading">Loading...</div>
+    <Loading v-if="loading" />
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else class="card">
       <table v-if="users.length">
@@ -53,7 +53,7 @@
           </td>
         </tr>
       </table>
-      <div v-else class="loading">No users yet</div>
+      <div v-else class="empty">No users yet</div>
     </div>
 
     <div v-if="resetTarget" class="card" style="margin-top:12px;">
@@ -72,6 +72,7 @@ import { ref, onMounted } from 'vue'
 import { api } from '../api.js'
 import { auth } from '../store/auth.js'
 import { ROLES } from '../permissions.js'
+import Loading from '../components/Loading.vue'
 
 const users = ref([])
 const loading = ref(true)

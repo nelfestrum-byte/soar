@@ -16,51 +16,51 @@
       </div>
     </div>
 
-    <div v-if="loading" class="loading">Loading...</div>
+    <Loading v-if="loading" />
     <div v-else-if="error" class="error">{{ error }}</div>
     <template v-else>
       <div class="card">
         <div v-if="actions.length">
           <div v-for="action in actions" :key="action.name"
-               style="display:flex; align-items:center; gap:8px; padding:8px; border-bottom:1px solid #eee;"
-               :style="{background: selected===action.name ? '#e3f2fd' : ''}">
+               style="display:flex; align-items:center; gap:8px; padding:8px; border-bottom:1px solid var(--color-border-subtle);"
+               :style="{background: selected===action.name ? 'var(--status-running-bg)' : ''}">
             <span style="flex:1; cursor:pointer;" @click="loadAction(action.name)">
-              <span style="font-family:monospace;">{{ action.name }}.py</span>
-              <span v-if="action.summary" style="color:#888; font-size:12px; margin-left:8px;">{{ action.summary }}</span>
+              <span style="font-family:var(--font-mono);">{{ action.name }}.py</span>
+              <span v-if="action.summary" style="color:var(--color-text-faint); font-size:12px; margin-left:8px;">{{ action.summary }}</span>
             </span>
-            <router-link v-if="can(auth.role, 'audit.read')" class="btn" style="font-size:11px; text-decoration:none;"
-                         :to="{ path: '/audit-log', query: { resource_type: 'action', resource_id: action.name } }">Audit</router-link>
-            <button v-if="canWrite" class="btn btn-danger" style="font-size:11px;" @click="removeAction(action.name)">Delete</button>
+            <RowMenu>
+              <router-link v-if="can(auth.role, 'audit.read')" class="btn"
+                           :to="{ path: '/audit-log', query: { resource_type: 'action', resource_id: action.name } }">Audit</router-link>
+              <button v-if="canWrite" class="btn row-menu-item-danger" @click="removeAction(action.name)">Delete</button>
+            </RowMenu>
           </div>
         </div>
-        <div v-else class="loading">No actions yet</div>
+        <div v-else class="empty">No actions yet</div>
       </div>
 
       <div v-if="selected" class="card" style="margin-top:12px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <h2 style="margin:0;">{{ selected }}.py</h2>
-          <div style="display:flex; gap:8px;">
-            <button class="btn" :class="editTab==='code' ? 'btn-primary' : ''" @click="editTab='code'">Code</button>
-            <button class="btn" :class="editTab==='signature' ? 'btn-primary' : ''" @click="showSignature">Signature</button>
-            <button class="btn" :class="editTab==='history' ? 'btn-primary' : ''" @click="editTab='history'">History</button>
-            <button v-if="canWrite && editTab==='code'" class="btn btn-primary" @click="saveAction" :disabled="saving">
-              {{ saving ? 'Saving...' : 'Save' }}
-            </button>
-          </div>
+        <h2 style="margin:0 0 8px;">{{ selected }}.py</h2>
+        <div class="editor-toolbar">
+          <button class="btn" :class="editTab==='code' ? 'btn-primary' : ''" @click="editTab='code'">Code</button>
+          <button class="btn" :class="editTab==='signature' ? 'btn-primary' : ''" @click="showSignature">Signature</button>
+          <button class="btn" :class="editTab==='history' ? 'btn-primary' : ''" @click="editTab='history'">History</button>
+          <button v-if="canWrite && editTab==='code'" class="btn btn-primary" @click="saveAction" :disabled="saving">
+            {{ saving ? 'Saving...' : 'Save' }}
+          </button>
         </div>
         <template v-if="editTab==='code'">
-          <textarea v-model="content" :readonly="!canWrite" style="width:100%; min-height:400px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:4;"></textarea>
+          <textarea v-model="content" :readonly="!canWrite" style="width:100%; min-height:400px; font-family:var(--font-mono); font-size:12px; padding:8px; border:1px solid var(--color-border); border-radius:4px; resize:vertical; tab-size:4;"></textarea>
           <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
-            <span v-if="saveResult.success" style="color:#2e7d32;">Saved (commit: {{ saveResult.commit }})</span>
-            <span v-else style="color:#c62828;">Error: {{ saveResult.error }}</span>
+            <span v-if="saveResult.success" style="color:var(--color-result-ok);">Saved (commit: {{ saveResult.commit }})</span>
+            <span v-else style="color:var(--color-result-fail);">Error: {{ saveResult.error }}</span>
           </div>
         </template>
         <template v-else-if="editTab==='signature'">
           <div v-if="signatureError" class="error">{{ signatureError }}</div>
           <template v-else-if="signature">
-            <p style="font-family:monospace; font-size:13px;">{{ signature.name }}{{ signature.signature }}</p>
-            <p v-if="signature.docstring" style="color:#555; white-space:pre-wrap;">{{ signature.docstring }}</p>
-            <p v-else class="loading">No docstring</p>
+            <p style="font-family:var(--font-mono); font-size:13px;">{{ signature.name }}{{ signature.signature }}</p>
+            <p v-if="signature.docstring" style="color:var(--color-text-muted); white-space:pre-wrap;">{{ signature.docstring }}</p>
+            <p v-else class="empty">No docstring</p>
           </template>
         </template>
         <HistoryPanel v-else entity="action" :name="selected" @restored="loadAction(selected)" />
@@ -75,6 +75,8 @@ import { api } from '../api.js'
 import { auth } from '../store/auth.js'
 import { can } from '../permissions.js'
 import HistoryPanel from '../components/HistoryPanel.vue'
+import RowMenu from '../components/RowMenu.vue'
+import Loading from '../components/Loading.vue'
 
 const canWrite = computed(() => can(auth.role, 'code.write'))
 

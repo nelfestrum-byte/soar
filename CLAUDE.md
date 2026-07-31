@@ -74,6 +74,8 @@ docs/compose/reports/<feature>.md                    ← после заверш
 
 **Дрейф от модели сущностей — [`docs/concepts/ENTITY-MODEL.md`](docs/concepts/ENTITY-MODEL.md)** (разбор бэкенда на соответствие концепту, 2026-07-29). E1–E10 открыты, ни один не реализован. Четыре фазы: граница исполнения (два рантайма, AST-метаданные, аудит-хук, `GET /runtime`) → модель сущностей в коде (импорт-шимы + прокси, одним заходом) → контент как контентпак → сужение прав. **Режим: весь план целиком, потом релиз** — промежуточные состояния могут быть сломанными, переходные заглушки не пишем.
 
+**Визуальный стиль и редактирование UI — [`docs/concepts/UI-REDESIGN.md`](docs/concepts/UI-REDESIGN.md)** (черновик, 2026-07-31). Редизайн, сознательно исключённый из `2026-07-29-ui-control-visibility-design.md`: design tokens, collapsible nav, Monaco-редактор вместо `<textarea>`, промпт для Google Stitch. Стадия 5 (внедрение стиля) блокируется на результате Stitch — до этого можно делать только структурные стадии.
+
 Активные спеки (написаны, не выполнены):
 
 - [`docs/compose/specs/2026-07-03-v06-upgrade-design.md`](docs/compose/specs/2026-07-03-v06-upgrade-design.md) — per-workflow метрики, dry-run конвенция (Feature 1/`CachedHttpClient` реализована как `HttpClient` в v0.12, см. `2026-07-27-http-client-design.md` и пометку в файле; Feature 2/3 остаются неактивными)

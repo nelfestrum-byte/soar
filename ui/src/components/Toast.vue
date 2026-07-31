@@ -22,9 +22,9 @@ import { toasts, dismiss } from '../store/toast.js'
   box-shadow: 0 2px 8px rgba(0,0,0,.2);
 }
 .toast-msg { flex: 1; word-break: break-word; }
-.toast-error { background: #ffebee; color: #c62828; border-left: 3px solid #c62828; }
-.toast-success { background: #e8f5e9; color: #2e7d32; border-left: 3px solid #2e7d32; }
-.toast-info { background: #e3f2fd; color: #1565c0; border-left: 3px solid #1565c0; }
+.toast-error { background: var(--status-failed-bg); color: var(--color-result-fail); border-left: 3px solid var(--color-result-fail); }
+.toast-success { background: var(--status-completed-bg); color: var(--color-result-ok); border-left: 3px solid var(--color-result-ok); }
+.toast-info { background: var(--status-running-bg); color: var(--status-running-fg); border-left: 3px solid var(--status-running-fg); }
 .toast-close {
   background: none; border: none; cursor: pointer;
   font-size: 16px; line-height: 1; color: inherit; opacity: .6; padding: 0;

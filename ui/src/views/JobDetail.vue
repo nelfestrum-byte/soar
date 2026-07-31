@@ -5,7 +5,7 @@
       <router-link to="/jobs" class="btn btn-primary" style="text-decoration:none;">Back</router-link>
     </div>
 
-    <div v-if="loading" class="loading">Loading...</div>
+    <Loading v-if="loading" />
     <div v-else-if="error" class="error">{{ error }}</div>
     <template v-else-if="job">
       <div class="card">
@@ -13,13 +13,13 @@
           <div><strong>{{ job.workflow_name }}</strong></div>
           <span class="badge" :class="'badge-'+job.status">{{ job.status }}</span>
           <span v-if="isDryRun" class="badge badge-pending">dry-run</span>
-          <span style="font-size:12px; color:#666;">triggered by {{ job.triggered_by || '—' }}</span>
-          <span style="font-size:12px; color:#666;">
+          <span style="font-size:12px; color:var(--color-text-muted);">triggered by {{ job.triggered_by || '—' }}</span>
+          <span style="font-size:12px; color:var(--color-text-muted);">
             {{ job.duration_seconds != null ? job.duration_seconds.toFixed(1)+'s' : '—' }}
             <span v-if="job.timeout"> / timeout {{ job.timeout }}s</span>
           </span>
         </div>
-        <div style="margin-top:8px; font-size:12px; color:#999;">
+        <div style="margin-top:8px; font-size:12px; color:var(--color-text-faint);">
           <span>triggered: {{ fmt(job.triggered_at) }}</span>
           <span v-if="job.started_at"> · started: {{ fmt(job.started_at) }}</span>
           <span v-if="job.finished_at"> · finished: {{ fmt(job.finished_at) }}</span>
@@ -35,14 +35,14 @@
           <span v-else class="badge badge-failed">failure</span>
         </div>
         <div v-if="job.result_error" data-test="traceback">
-          <div style="color:#c62828; font-size:12px; margin-bottom:4px;">Error / traceback</div>
-          <pre style="border:2px solid #ef5350;">{{ job.result_error }}</pre>
+          <div style="color:var(--color-result-fail); font-size:12px; margin-bottom:4px;">Error / traceback</div>
+          <pre style="border:2px solid var(--color-danger);">{{ job.result_error }}</pre>
         </div>
         <div v-if="job.result_data" data-test="result-data">
-          <div style="color:#666; font-size:12px; margin-bottom:4px;">Result data</div>
+          <div style="color:var(--color-text-muted); font-size:12px; margin-bottom:4px;">Result data</div>
           <pre>{{ JSON.stringify(job.result_data, null, 2) }}</pre>
         </div>
-        <div v-if="!job.result_error && !job.result_data" class="loading">No result yet</div>
+        <div v-if="!job.result_error && !job.result_data" class="empty">No result yet</div>
       </div>
 
       <div v-if="job.context && Object.keys(job.context).length" class="card" style="margin-top:12px;">
@@ -62,7 +62,7 @@
       </div>
       <div v-else class="card" style="margin-top:12px;">
         <h2>Log</h2>
-        <div class="loading">Роль "{{ auth.role }}" не имеет доступа к логам джобов</div>
+        <div class="empty">Роль "{{ auth.role }}" не имеет доступа к логам джобов</div>
       </div>
     </template>
   </div>
@@ -74,6 +74,7 @@ import { useRoute } from 'vue-router'
 import { api } from '../api.js'
 import { auth } from '../store/auth.js'
 import { can } from '../permissions.js'
+import Loading from '../components/Loading.vue'
 
 const route = useRoute()
 const jobId = route.params.id

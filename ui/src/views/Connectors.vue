@@ -16,15 +16,15 @@
       </div>
     </div>
 
-    <div v-if="loading" class="loading">Loading...</div>
+    <Loading v-if="loading" />
     <div v-else-if="error" class="error">{{ error }}</div>
     <template v-else>
       <div class="card">
         <table>
           <tr><th>Name</th><th>Class</th><th>Config</th><th>Actions</th></tr>
           <tr v-for="c in connectors" :key="c.name">
-            <td style="font-family:monospace;">{{ c.name }}</td>
-            <td style="font-size:12px; color:#666;">{{ c.class_name || '—' }}</td>
+            <td style="font-family:var(--font-mono);">{{ c.name }}</td>
+            <td style="font-size:12px; color:var(--color-text-muted);">{{ c.class_name || '—' }}</td>
             <td>
               <span v-if="c.has_config" class="badge badge-completed">.yml</span>
               <span v-else class="badge badge-cancelled">none</span>
@@ -32,76 +32,74 @@
             <td style="white-space:nowrap;">
               <button class="btn btn-primary" style="font-size:11px;" @click="editCode(c.name)">{{ canWriteCode ? 'Edit' : 'View' }}</button>
               <button class="btn btn-success" style="font-size:11px;" @click="editConfig(c.name)">Setup</button>
-              <router-link v-if="can(auth.role, 'audit.read')" class="btn" style="font-size:11px; text-decoration:none;"
-                           :to="{ path: '/audit-log', query: { resource_type: 'connector', resource_id: c.name } }">Audit</router-link>
-              <button v-if="canManage" class="btn btn-danger" style="font-size:11px;" @click="removeConnector(c.name)">Delete</button>
+              <RowMenu>
+                <router-link v-if="can(auth.role, 'audit.read')" class="btn"
+                             :to="{ path: '/audit-log', query: { resource_type: 'connector', resource_id: c.name } }">Audit</router-link>
+                <button v-if="canManage" class="btn row-menu-item-danger" @click="removeConnector(c.name)">Delete</button>
+              </RowMenu>
             </td>
           </tr>
         </table>
       </div>
 
       <div v-if="editMode" class="card" style="margin-top:12px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <h2 style="margin:0;">{{ editName }}.py</h2>
-          <div style="display:flex; gap:8px;">
-            <button class="btn" :class="codeTab==='code' ? 'btn-primary' : ''" @click="codeTab='code'">Code</button>
-            <button class="btn" :class="codeTab==='signature' ? 'btn-primary' : ''" @click="showSignature">Signature</button>
-            <button class="btn" :class="codeTab==='history' ? 'btn-primary' : ''" @click="codeTab='history'">History</button>
-            <button v-if="canWriteCode && codeTab==='code'" class="btn btn-primary" @click="saveCode" :disabled="saving">
-              {{ saving ? 'Saving...' : 'Save' }}
-            </button>
-            <button class="btn" @click="editMode = false">Close</button>
-          </div>
+        <h2 style="margin:0 0 8px;">{{ editName }}.py</h2>
+        <div class="editor-toolbar">
+          <button class="btn" :class="codeTab==='code' ? 'btn-primary' : ''" @click="codeTab='code'">Code</button>
+          <button class="btn" :class="codeTab==='signature' ? 'btn-primary' : ''" @click="showSignature">Signature</button>
+          <button class="btn" :class="codeTab==='history' ? 'btn-primary' : ''" @click="codeTab='history'">History</button>
+          <button v-if="canWriteCode && codeTab==='code'" class="btn btn-primary" @click="saveCode" :disabled="saving">
+            {{ saving ? 'Saving...' : 'Save' }}
+          </button>
+          <button class="btn" @click="editMode = false">Close</button>
         </div>
         <template v-if="codeTab==='code'">
-          <textarea v-model="codeContent" :readonly="!canWriteCode" style="width:100%; min-height:400px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:4;"></textarea>
+          <textarea v-model="codeContent" :readonly="!canWriteCode" style="width:100%; min-height:400px; font-family:var(--font-mono); font-size:12px; padding:8px; border:1px solid var(--color-border); border-radius:4px; resize:vertical; tab-size:4;"></textarea>
           <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
-            <span v-if="saveResult.success" style="color:#2e7d32;">Saved (commit: {{ saveResult.commit }})</span>
-            <span v-else style="color:#c62828;">Error: {{ saveResult.error }}</span>
+            <span v-if="saveResult.success" style="color:var(--color-result-ok);">Saved (commit: {{ saveResult.commit }})</span>
+            <span v-else style="color:var(--color-result-fail);">Error: {{ saveResult.error }}</span>
           </div>
         </template>
         <template v-else-if="codeTab==='signature'">
           <div v-if="signatureError" class="error">{{ signatureError }}</div>
           <template v-else-if="signature">
-            <h2 style="margin:0 0 4px;">{{ signature.name }}<span style="color:#666; font-family:monospace; font-weight:400;">{{ signature.constructor }}</span></h2>
-            <p v-if="signature.docstring" style="color:#555; white-space:pre-wrap;">{{ signature.docstring }}</p>
+            <h2 style="margin:0 0 4px;">{{ signature.name }}<span style="color:var(--color-text-muted); font-family:var(--font-mono); font-weight:400;">{{ signature.constructor }}</span></h2>
+            <p v-if="signature.docstring" style="color:var(--color-text-muted); white-space:pre-wrap;">{{ signature.docstring }}</p>
             <table style="margin-top:12px;">
               <tr><th>Method</th><th>Signature</th><th>Description</th></tr>
               <tr v-for="m in signature.methods" :key="m.name">
-                <td style="font-family:monospace;">{{ m.name }}</td>
-                <td style="font-family:monospace;">{{ m.signature }}</td>
+                <td style="font-family:var(--font-mono);">{{ m.name }}</td>
+                <td style="font-family:var(--font-mono);">{{ m.signature }}</td>
                 <td>{{ m.docstring.split('\n')[0] }}</td>
               </tr>
             </table>
-            <div v-if="!signature.methods.length" class="loading">No public methods</div>
+            <div v-if="!signature.methods.length" class="empty">No public methods</div>
           </template>
         </template>
         <HistoryPanel v-else entity="connector_code" :name="editName" @restored="editCode(editName)" />
       </div>
 
       <div v-if="configMode" class="card" style="margin-top:12px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <h2 style="margin:0;">{{ configName }}.yml</h2>
-          <div style="display:flex; gap:8px;">
-            <button class="btn" :class="configTab==='config' ? 'btn-primary' : ''" @click="configTab='config'">Config</button>
-            <button class="btn" :class="configTab==='history' ? 'btn-primary' : ''" @click="configTab='history'">History</button>
-            <button v-if="canWriteConfig && configTab==='config'" class="btn btn-primary" @click="saveConfig" :disabled="saving">
-              {{ saving ? 'Saving...' : 'Save' }}
-            </button>
-            <button class="btn" @click="configMode = false">Close</button>
-          </div>
+        <h2 style="margin:0 0 8px;">{{ configName }}.yml</h2>
+        <div class="editor-toolbar">
+          <button class="btn" :class="configTab==='config' ? 'btn-primary' : ''" @click="configTab='config'">Config</button>
+          <button class="btn" :class="configTab==='history' ? 'btn-primary' : ''" @click="configTab='history'">History</button>
+          <button v-if="canWriteConfig && configTab==='config'" class="btn btn-primary" @click="saveConfig" :disabled="saving">
+            {{ saving ? 'Saving...' : 'Save' }}
+          </button>
+          <button class="btn" @click="configMode = false">Close</button>
         </div>
 
         <template v-if="configTab==='config'">
           <template v-if="!rawConfigMode">
             <div style="margin-bottom:8px;">
-              <label style="font-size:12px; color:#666;">Instance ID</label><br />
+              <label style="font-size:12px; color:var(--color-text-muted);">Instance ID</label><br />
               <input v-model="instanceId" style="width:100%;" />
             </div>
             <div v-for="f in visibleSchemaFields" :key="f.name" style="margin-bottom:8px;">
-              <label style="font-size:12px; color:#666;">
+              <label style="font-size:12px; color:var(--color-text-muted);">
                 {{ f.name }} <span style="opacity:0.6;">({{ f.type }})</span>
-                <span v-if="f.hidden" style="color:#c62828;"> — только admin может менять credentials</span>
+                <span v-if="f.hidden" style="color:var(--color-result-fail);"> — только admin может менять credentials</span>
               </label><br />
               <input v-if="f.type === 'bool'" type="checkbox" v-model="instanceValues[f.name]"
                      :disabled="!canWriteConfig || (f.hidden && auth.role !== 'admin')" />
@@ -112,11 +110,11 @@
                      v-model="instanceValues[f.name]" :disabled="!canWriteConfig" style="width:100%;" />
             </div>
           </template>
-          <textarea v-else v-model="configContent" :readonly="!canWriteConfig" style="width:100%; min-height:200px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:4;"></textarea>
+          <textarea v-else v-model="configContent" :readonly="!canWriteConfig" style="width:100%; min-height:200px; font-family:var(--font-mono); font-size:12px; padding:8px; border:1px solid var(--color-border); border-radius:4px; resize:vertical; tab-size:4;"></textarea>
 
           <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
-            <span v-if="saveResult.success" style="color:#2e7d32;">Saved (commit: {{ saveResult.commit }})</span>
-            <span v-else style="color:#c62828;">Error: {{ saveResult.error }}</span>
+            <span v-if="saveResult.success" style="color:var(--color-result-ok);">Saved (commit: {{ saveResult.commit }})</span>
+            <span v-else style="color:var(--color-result-fail);">Error: {{ saveResult.error }}</span>
           </div>
         </template>
         <HistoryPanel v-else entity="connector_config" :name="configName" @restored="editConfig(configName)" />
@@ -131,6 +129,8 @@ import { api } from '../api.js'
 import { auth } from '../store/auth.js'
 import { can } from '../permissions.js'
 import HistoryPanel from '../components/HistoryPanel.vue'
+import RowMenu from '../components/RowMenu.vue'
+import Loading from '../components/Loading.vue'
 
 const canManage = computed(() => can(auth.role, 'connector.manage'))
 const canWriteCode = computed(() => can(auth.role, 'connector.code.write'))

@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Job Detail - SentinelSOAR</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=JetBrains+Mono:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "tertiary-fixed": "#ffdcbf",
+                      "surface-tint": "#4cd7f6",
+                      "secondary-fixed": "#d8e2ff",
+                      "surface-container-lowest": "#060e20",
+                      "on-tertiary": "#4b2800",
+                      "on-error": "#690005",
+                      "primary-fixed": "#acedff",
+                      "surface": "#0b1326",
+                      "secondary-fixed-dim": "#adc6ff",
+                      "on-tertiary-container": "#5b3200",
+                      "on-secondary": "#002e6a",
+                      "on-surface-variant": "#bcc9cd",
+                      "surface-container-high": "#222a3d",
+                      "on-tertiary-fixed-variant": "#6a3b00",
+                      "background": "#0b1326",
+                      "surface-variant": "#2d3449",
+                      "on-primary-fixed": "#001f26",
+                      "surface-container-highest": "#2d3449",
+                      "surface-container": "#171f33",
+                      "outline": "#869397",
+                      "primary-fixed-dim": "#4cd7f6",
+                      "on-primary-container": "#00424f",
+                      "on-primary-fixed-variant": "#004e5c",
+                      "inverse-surface": "#dae2fd",
+                      "on-secondary-fixed-variant": "#004395",
+                      "tertiary": "#ffb873",
+                      "on-primary": "#003640",
+                      "primary": "#4cd7f6",
+                      "error-container": "#93000a",
+                      "on-surface": "#dae2fd",
+                      "on-secondary-fixed": "#001a42",
+                      "on-background": "#dae2fd",
+                      "inverse-on-surface": "#283044",
+                      "tertiary-fixed-dim": "#ffb873",
+                      "inverse-primary": "#00687a",
+                      "error": "#ffb4ab",
+                      "secondary": "#adc6ff",
+                      "tertiary-container": "#e89337",
+                      "surface-container-low": "#131b2e",
+                      "outline-variant": "#3d494c",
+                      "primary-container": "#06b6d4",
+                      "on-error-container": "#ffdad6",
+                      "on-tertiary-fixed": "#2d1600",
+                      "surface-bright": "#31394d",
+                      "secondary-container": "#0566d9",
+                      "surface-dim": "#0b1326",
+                      "on-secondary-container": "#e6ecff"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "32": "32px",
+                      "64": "64px",
+                      "12": "12px",
+                      "4": "4px",
+                      "16": "16px",
+                      "8": "8px",
+                      "24": "24px",
+                      "48": "48px"
+              },
+              "fontFamily": {
+                      "label-caps": [
+                              "Inter"
+                      ],
+                      "code": [
+                              "JetBrains Mono"
+                      ],
+                      "body-sm": [
+                              "Inter"
+                      ],
+                      "body": [
+                              "Inter"
+                      ],
+                      "h1": [
+                              "Inter"
+                      ],
+                      "h3": [
+                              "Inter"
+                      ],
+                      "h2": [
+                              "Inter"
+                      ]
+              },
+              "fontSize": {
+                      "label-caps": [
+                              "11px",
+                              {
+                                      "lineHeight": "16px",
+                                      "letterSpacing": "0.05em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "code": [
+                              "13px",
+                              {
+                                      "lineHeight": "18px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body-sm": [
+                              "12px",
+                              {
+                                      "lineHeight": "16px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "body": [
+                              "14px",
+                              {
+                                      "lineHeight": "20px",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "h1": [
+                              "24px",
+                              {
+                                      "lineHeight": "32px",
+                                      "letterSpacing": "-0.02em",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "h3": [
+                              "16px",
+                              {
+                                      "lineHeight": "24px",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "h2": [
+                              "20px",
+                              {
+                                      "lineHeight": "28px",
+                                      "letterSpacing": "-0.01em",
+                                      "fontWeight": "600"
+                              }
+                      ]
+              }
+            },
+          },
+        }
+    </script>
+<style>
+        .syntax-string { color: #adc6ff; }
+        .syntax-number { color: #ffb873; }
+        .syntax-boolean { color: #4cd7f6; }
+        .syntax-key { color: #dae2fd; font-weight: 600; }
+        .syntax-punctuation { color: #869397; }
+        
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #171f33; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #3d494c; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #869397; 
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body h-screen flex overflow-hidden">
+<!-- TopNavBar (Web) -->
+<nav class="hidden md:flex justify-between items-center h-12 px-16 w-full z-50 bg-surface border-b border-outline-variant fixed top-0 left-0 right-0">
+<div class="flex items-center gap-24">
+<div class="font-h2 text-h2 text-primary tracking-tight">SentinelSOAR</div>
+<div class="flex gap-16">
+<a class="font-body text-body text-on-surface-variant hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80" href="#">Dashboard</a>
+<a class="font-body text-body text-on-surface-variant hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80" href="#">Workflows</a>
+<a class="font-body text-body text-primary border-b-2 border-primary pb-1 hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80" href="#">Jobs</a>
+<a class="font-body text-body text-on-surface-variant hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80" href="#">Connectors</a>
+<a class="font-body text-body text-on-surface-variant hover:text-primary transition-colors duration-150 cursor-pointer active:opacity-80" href="#">Settings</a>
+</div>
+</div>
+<div class="flex items-center gap-12 text-on-surface-variant">
+<span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors duration-150" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors duration-150" data-icon="help">help</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors duration-150" data-icon="settings">settings</span>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest ml-4 overflow-hidden border border-outline-variant">
+<img class="w-full h-full object-cover" data-alt="A futuristic UI design showing a highly technical user avatar. The avatar is an abstract representation of a security analyst, rendered in sleek neon blue lines on a dark obsidian background, conveying expertise and high-tech security operations." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCm_Lz5rjOCEs5CCpplyG8D3h-ZwQ_qiKxvAzm6IJmVJrkFzaqyA3hXfOt-2jBtVzYOS5FsO0MFDMIGWxpBTEosOat_5i4_crX1J5tDcKI9qtQyFZlBlkmGJgyn9xiGKi4CUX9EwX5fLgculMahN0nzcGoAQbwD80SkVgzf4c3L_JABHjYw0pFVyiKjhgk0_Rw9pTkiAdJTPdV7rXOiRqXT4WlAO3qMUXzGaVmq2icE4yA05-wXYqFu-w"/>
+</div>
+</div>
+</nav>
+<!-- SideNavBar -->
+<nav class="hidden md:flex flex-col h-full py-12 bg-surface-container-low border-r border-outline-variant fixed left-0 top-12 w-64 z-40">
+<div class="px-16 mb-24 flex items-center gap-12">
+<div class="w-12 h-12 rounded-lg bg-surface-container-highest border border-outline-variant overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="Abstract visualization of a Security Operations Center network node. A glowing cyan core surrounded by dark slate geometry, representing a secure, active data processing terminal in a high-tech environment." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD8OuvcVjILAswdGqoWmdRZ0_UB0vl-8R2ZkebboyUnj387zPoWmcjn819fsylXfMeQnwSuE3FrTrNnq6WiKIBPkkob8Em3Y6WlOjTmqWAhpvwfeUIL5e_HgpVE6JJHqKQ-9Xnk_BWWvpFz9nlmb0VJYDnYI93Z0v1cSDW5XjZbh9LqtqjnJbymN-HwTUFoqQhHYV8QdOBPqC9BKSDFNtmp1tElGNOHoy6_Jcb3Q4uYIaR_pwoFcjy7Ug"/>
+</div>
+<div>
+<div class="font-h3 text-h3 text-on-surface">SOC-Alpha</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant">Active Session</div>
+</div>
+</div>
+<div class="flex-1 flex flex-col gap-4 px-8">
+<a class="flex items-center gap-12 px-12 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span> Dashboard
+            </a>
+<a class="flex items-center gap-12 px-12 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span> Workflows
+            </a>
+<a class="flex items-center gap-12 px-12 py-8 rounded font-label-caps text-label-caps bg-secondary-container text-on-secondary-container border-l-4 border-primary transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="analytics">analytics</span> Jobs
+            </a>
+<a class="flex items-center gap-12 px-12 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="extension">extension</span> Connectors
+            </a>
+<a class="flex items-center gap-12 px-12 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span> Settings
+            </a>
+</div>
+<div class="mt-auto px-8 pt-16 border-t border-outline-variant flex flex-col gap-4">
+<a class="flex items-center gap-12 px-12 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="terminal">terminal</span> Logs
+            </a>
+<a class="flex items-center gap-12 px-12 py-8 rounded font-label-caps text-label-caps text-on-surface-variant hover:bg-surface-container-highest transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="list_alt">list_alt</span> Terminal
+            </a>
+</div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="flex-1 ml-0 md:ml-64 mt-12 overflow-y-auto bg-background p-24 md:p-32">
+<div class="max-w-6xl mx-auto space-y-24">
+<!-- Header & Breadcrumbs -->
+<div class="flex flex-col gap-8">
+<div class="flex items-center gap-8 font-body-sm text-body-sm text-on-surface-variant">
+<a class="hover:text-primary transition-colors" href="#">Jobs</a>
+<span class="material-symbols-outlined text-outline text-[16px]">chevron_right</span>
+<a class="hover:text-primary transition-colors" href="#">Incident Response</a>
+<span class="material-symbols-outlined text-outline text-[16px]">chevron_right</span>
+<span class="text-on-surface">JOB-9824-A</span>
+</div>
+<div class="flex justify-between items-start">
+<div class="flex flex-col gap-4">
+<div class="flex items-center gap-12">
+<h1 class="font-h1 text-h1 text-on-surface">Malware Containment Protocol</h1>
+<div class="flex items-center gap-4 px-8 py-4 rounded-full bg-error/10 border border-error/20">
+<div class="w-2 h-2 rounded-full bg-error"></div>
+<span class="font-label-caps text-label-caps text-error">FAILED</span>
+</div>
+</div>
+<div class="font-body-sm text-body-sm text-on-surface-variant font-code text-code">
+                            Execution ID: <span class="text-on-surface">exe_8f92a1b4-c3d5-4e67-8f90-123456789abc</span>
+</div>
+</div>
+<div class="flex gap-8">
+<button class="flex items-center gap-8 px-16 py-8 rounded border border-outline hover:bg-surface-container-high transition-colors font-body-sm text-body-sm text-on-surface">
+<span class="material-symbols-outlined text-[18px]">refresh</span>
+                            Rerun Job
+                        </button>
+<button class="flex items-center gap-8 px-16 py-8 rounded bg-primary text-on-primary hover:bg-primary-container transition-colors font-body-sm text-body-sm font-semibold">
+<span class="material-symbols-outlined text-[18px]">stop_circle</span>
+                            Abort Protocol
+                        </button>
+</div>
+</div>
+</div>
+<!-- Detail Grid -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-16">
+<div class="bg-surface-container p-16 rounded-lg border border-outline-variant flex flex-col gap-4">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Trigger Source</span>
+<div class="flex items-center gap-8 font-body text-body text-on-surface">
+<span class="material-symbols-outlined text-secondary text-[20px]">webhook</span>
+                        CrowdStrike Falcon (Alert #4928)
+                    </div>
+</div>
+<div class="bg-surface-container p-16 rounded-lg border border-outline-variant flex flex-col gap-4">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Execution Time</span>
+<div class="flex items-center gap-8 font-body text-body text-on-surface">
+<span class="material-symbols-outlined text-outline text-[20px]">schedule</span>
+                        14s (Timeout at 300s)
+                    </div>
+</div>
+<div class="bg-surface-container p-16 rounded-lg border border-outline-variant flex flex-col gap-4">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Target Endpoints</span>
+<div class="flex items-center gap-8 font-body text-body text-on-surface">
+<span class="material-symbols-outlined text-outline text-[20px]">desktop_windows</span>
+                        3 Hosts (2 Isolated, 1 Pending)
+                    </div>
+</div>
+</div>
+<!-- JSON Payload Block -->
+<div class="bg-surface-container-low rounded-lg border border-outline-variant overflow-hidden">
+<div class="flex justify-between items-center px-16 py-8 border-b border-outline-variant bg-surface-container cursor-pointer hover:bg-surface-container-high transition-colors" onclick="document.getElementById('json-payload').classList.toggle('hidden')">
+<div class="flex items-center gap-8 font-label-caps text-label-caps text-on-surface">
+<span class="material-symbols-outlined text-[18px]">data_object</span>
+                        Input Payload (JSON)
+                    </div>
+<div class="flex items-center gap-8">
+<button class="text-on-surface-variant hover:text-primary p-4 rounded hover:bg-surface-variant transition-colors" title="Copy to clipboard">
+<span class="material-symbols-outlined text-[16px]">content_copy</span>
+</button>
+<span class="material-symbols-outlined text-on-surface-variant">expand_more</span>
+</div>
+</div>
+<div class="p-16 overflow-x-auto bg-[#0a0f1c]" id="json-payload">
+<pre class="font-code text-code leading-loose m-0"><span class="syntax-punctuation">{</span>
+  <span class="syntax-key">"alert_id"</span><span class="syntax-punctuation">:</span> <span class="syntax-string">"cs_4928_xyz"</span><span class="syntax-punctuation">,</span>
+  <span class="syntax-key">"severity"</span><span class="syntax-punctuation">:</span> <span class="syntax-string">"CRITICAL"</span><span class="syntax-punctuation">,</span>
+  <span class="syntax-key">"detect_timestamp"</span><span class="syntax-punctuation">:</span> <span class="syntax-string">"2023-10-27T14:32:01Z"</span><span class="syntax-punctuation">,</span>
+  <span class="syntax-key">"targets"</span><span class="syntax-punctuation">:</span> <span class="syntax-punctuation">[</span>
+    <span class="syntax-punctuation">{</span>
+      <span class="syntax-key">"hostname"</span><span class="syntax-punctuation">:</span> <span class="syntax-string">"LON-DESK-042"</span><span class="syntax-punctuation">,</span>
+      <span class="syntax-key">"ip_address"</span><span class="syntax-punctuation">:</span> <span class="syntax-string">"10.24.5.112"</span><span class="syntax-punctuation">,</span>
+      <span class="syntax-key">"os"</span><span class="syntax-punctuation">:</span> <span class="syntax-string">"Windows 10 Pro"</span><span class="syntax-punctuation">,</span>
+      <span class="syntax-key">"isolate"</span><span class="syntax-punctuation">:</span> <span class="syntax-boolean">true</span>
+    <span class="syntax-punctuation">}</span><span class="syntax-punctuation">,</span>
+    <span class="syntax-punctuation">{</span>
+      <span class="syntax-key">"hostname"</span><span class="syntax-punctuation">:</span> <span class="syntax-string">"LON-DESK-088"</span><span class="syntax-punctuation">,</span>
+      <span class="syntax-key">"ip_address"</span><span class="syntax-punctuation">:</span> <span class="syntax-string">"10.24.5.188"</span><span class="syntax-punctuation">,</span>
+      <span class="syntax-key">"os"</span><span class="syntax-punctuation">:</span> <span class="syntax-string">"Windows 11 Ent"</span><span class="syntax-punctuation">,</span>
+      <span class="syntax-key">"isolate"</span><span class="syntax-punctuation">:</span> <span class="syntax-boolean">true</span>
+    <span class="syntax-punctuation">}</span>
+  <span class="syntax-punctuation">]</span><span class="syntax-punctuation">,</span>
+  <span class="syntax-key">"auto_remediate"</span><span class="syntax-punctuation">:</span> <span class="syntax-boolean">false</span><span class="syntax-punctuation">,</span>
+  <span class="syntax-key">"confidence_score"</span><span class="syntax-punctuation">:</span> <span class="syntax-number">0.98</span>
+<span class="syntax-punctuation">}</span></pre>
+</div>
+</div>
+<!-- Terminal / Logs Panel -->
+<div class="flex flex-col h-[500px] border border-outline-variant rounded-lg overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+<div class="flex justify-between items-center px-16 py-8 bg-surface-container-high border-b border-outline-variant">
+<div class="flex items-center gap-8 font-label-caps text-label-caps text-on-surface">
+<span class="material-symbols-outlined text-[18px]">terminal</span>
+                        Logs &amp; Traceback
+                    </div>
+<div class="flex gap-16 font-code text-[11px] text-on-surface-variant">
+<div class="flex items-center gap-4"><div class="w-2 h-2 rounded-full bg-primary"></div> Info</div>
+<div class="flex items-center gap-4"><div class="w-2 h-2 rounded-full bg-tertiary"></div> Warn</div>
+<div class="flex items-center gap-4"><div class="w-2 h-2 rounded-full bg-error"></div> Error</div>
+</div>
+</div>
+<div class="flex-1 bg-[#050914] p-16 overflow-y-auto font-code text-code">
+<div class="table w-full border-collapse">
+<!-- Log Line 1 -->
+<div class="table-row hover:bg-surface/30 group">
+<div class="table-cell whitespace-nowrap pr-16 py-2 text-outline-variant select-none">14:32:01.042</div>
+<div class="table-cell whitespace-nowrap pr-8 py-2 text-primary select-none">[INFO]</div>
+<div class="table-cell w-full py-2 text-on-surface-variant group-hover:text-on-surface transition-colors">Initializing job exe_8f92a... from trigger 'CrowdStrike Alert #4928'</div>
+</div>
+<!-- Log Line 2 -->
+<div class="table-row hover:bg-surface/30 group">
+<div class="table-cell whitespace-nowrap pr-16 py-2 text-outline-variant select-none">14:32:01.108</div>
+<div class="table-cell whitespace-nowrap pr-8 py-2 text-primary select-none">[INFO]</div>
+<div class="table-cell w-full py-2 text-on-surface-variant group-hover:text-on-surface transition-colors">Parsed input payload successfully. Target endpoints: 2.</div>
+</div>
+<!-- Log Line 3 -->
+<div class="table-row hover:bg-surface/30 group">
+<div class="table-cell whitespace-nowrap pr-16 py-2 text-outline-variant select-none">14:32:02.550</div>
+<div class="table-cell whitespace-nowrap pr-8 py-2 text-primary select-none">[INFO]</div>
+<div class="table-cell w-full py-2 text-on-surface-variant group-hover:text-on-surface transition-colors">Step 1: Requesting network isolation for LON-DESK-042 (10.24.5.112)...</div>
+</div>
+<!-- Log Line 4 -->
+<div class="table-row hover:bg-surface/30 group">
+<div class="table-cell whitespace-nowrap pr-16 py-2 text-outline-variant select-none">14:32:04.120</div>
+<div class="table-cell whitespace-nowrap pr-8 py-2 text-primary select-none">[INFO]</div>
+<div class="table-cell w-full py-2 text-on-surface-variant group-hover:text-on-surface transition-colors">Isolation successful for LON-DESK-042. Status: Confirmed.</div>
+</div>
+<!-- Log Line 5 -->
+<div class="table-row hover:bg-surface/30 group">
+<div class="table-cell whitespace-nowrap pr-16 py-2 text-outline-variant select-none">14:32:04.135</div>
+<div class="table-cell whitespace-nowrap pr-8 py-2 text-primary select-none">[INFO]</div>
+<div class="table-cell w-full py-2 text-on-surface-variant group-hover:text-on-surface transition-colors">Step 2: Requesting network isolation for LON-DESK-088 (10.24.5.188)...</div>
+</div>
+<!-- Log Line 6 -->
+<div class="table-row hover:bg-surface/30 group bg-tertiary/5">
+<div class="table-cell whitespace-nowrap pr-16 py-2 text-outline-variant select-none">14:32:09.002</div>
+<div class="table-cell whitespace-nowrap pr-8 py-2 text-tertiary select-none">[WARN]</div>
+<div class="table-cell w-full py-2 text-tertiary-fixed-dim">API response delayed for LON-DESK-088. Retrying attempt 1/3...</div>
+</div>
+<!-- Log Line 7 -->
+<div class="table-row hover:bg-surface/30 group">
+<div class="table-cell whitespace-nowrap pr-16 py-2 text-outline-variant select-none">14:32:12.450</div>
+<div class="table-cell whitespace-nowrap pr-8 py-2 text-primary select-none">[INFO]</div>
+<div class="table-cell w-full py-2 text-on-surface-variant group-hover:text-on-surface transition-colors">Isolation successful for LON-DESK-088 after retry. Status: Confirmed.</div>
+</div>
+<!-- Log Line 8 -->
+<div class="table-row hover:bg-surface/30 group">
+<div class="table-cell whitespace-nowrap pr-16 py-2 text-outline-variant select-none">14:32:12.500</div>
+<div class="table-cell whitespace-nowrap pr-8 py-2 text-primary select-none">[INFO]</div>
+<div class="table-cell w-full py-2 text-on-surface-variant group-hover:text-on-surface transition-colors">Step 3: Initiating memory dump via EDRAgent API...</div>
+</div>
+<!-- Log Line 9 -->
+<div class="table-row hover:bg-surface/30 group bg-error/10">
+<div class="table-cell whitespace-nowrap pr-16 py-2 text-error/70 select-none">14:32:15.011</div>
+<div class="table-cell whitespace-nowrap pr-8 py-2 text-error select-none">[ERROR]</div>
+<div class="table-cell w-full py-2 text-error">Failed to initiate memory dump on LON-DESK-042. Error Code: EDR_AGENT_UNREACHABLE</div>
+</div>
+<!-- Log Line 10 (Traceback) -->
+<div class="table-row">
+<div class="table-cell whitespace-nowrap pr-16 py-2"></div>
+<div class="table-cell whitespace-nowrap pr-8 py-2"></div>
+<div class="table-cell w-full py-2 text-error/80 whitespace-pre-wrap">Traceback (most recent call last):
+  File "/opt/soar/runners/python3/executor.py", line 442, in execute_step
+    result = plugin_conn.invoke(action="memory_dump", target=host)
+  File "/opt/soar/plugins/crowdstrike/client.py", line 128, in invoke
+    raise AgentConnectionError(f"Agent on {target} is unresponsive.")
+AgentConnectionError: Agent on 10.24.5.112 is unresponsive.</div>
+</div>
+<!-- Log Line 11 -->
+<div class="table-row hover:bg-surface/30 group bg-error/5">
+<div class="table-cell whitespace-nowrap pr-16 py-2 text-error/70 select-none">14:32:15.015</div>
+<div class="table-cell whitespace-nowrap pr-8 py-2 text-error select-none">[FATAL]</div>
+<div class="table-cell w-full py-2 text-error font-semibold">Job execution halted due to critical failure in Step 3.</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>

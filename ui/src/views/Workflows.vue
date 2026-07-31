@@ -21,7 +21,7 @@
       </div>
     </div>
 
-    <div v-if="loading" class="loading">Loading...</div>
+    <Loading v-if="loading" />
     <div v-else-if="error" class="error">{{ error }}</div>
     <template v-else>
       <div class="card">
@@ -29,36 +29,40 @@
           <tr><th></th><th>Name</th><th>Type</th><th>Status</th><th>Actions</th></tr>
           <template v-for="wf in fileWorkflows" :key="wf.name">
             <tr>
-              <td style="cursor:pointer; width:16px;" @click="toggleDetail(wf.name)">{{ isOpen(wf.name) ? '▾' : '▸' }}</td>
-              <td style="font-family:monospace; cursor:pointer;" @click="toggleDetail(wf.name)">{{ wf.name }}.py</td>
+              <td style="cursor:pointer; width:16px;" @click="toggleDetail(wf.name)">
+                <span class="material-symbols-outlined">{{ isOpen(wf.name) ? 'expand_more' : 'chevron_right' }}</span>
+              </td>
+              <td style="font-family:var(--font-mono); cursor:pointer;" @click="toggleDetail(wf.name)">{{ wf.name }}.py</td>
               <td><span class="badge" :class="'badge-'+wf.type">{{ wf.type }}</span></td>
               <td>
                 <template v-if="wf.meta">
                   <span v-if="wf.meta.enabled" class="badge badge-completed">enabled</span>
                   <span v-else class="badge badge-cancelled">disabled</span>
                 </template>
-                <span v-else class="loading">—</span>
+                <span v-else class="empty">—</span>
               </td>
               <td style="white-space:nowrap;">
-                <template v-if="wf.meta && canToggle">
-                  <button v-if="wf.meta.enabled" class="btn btn-danger" style="font-size:11px;" @click="toggle(wf.className, false)">Disable</button>
-                  <button v-else class="btn btn-success" style="font-size:11px;" @click="toggle(wf.className, true)">Enable</button>
-                </template>
                 <button class="btn btn-primary" style="font-size:11px;" @click="editWorkflow(wf.name)">{{ canWrite ? 'Edit' : 'View' }}</button>
-                <button v-if="wf.type === 'manual' && canRun" class="btn btn-success" style="font-size:11px;" @click="showRun(wf.className)">Run</button>
-                <router-link class="btn" style="font-size:11px; text-decoration:none;" :to="{ path: '/jobs', query: { workflow_name: wf.name } }">Jobs</router-link>
-                <router-link v-if="can(auth.role, 'audit.read')" class="btn" style="font-size:11px; text-decoration:none;"
-                             :to="{ path: '/audit-log', query: { resource_type: 'workflow', resource_id: wf.name } }">Audit</router-link>
-                <button v-if="canWrite" class="btn btn-danger" style="font-size:11px;" @click="removeWorkflow(wf.name)">Delete</button>
+                <RowMenu>
+                  <template v-if="wf.meta && canToggle">
+                    <button v-if="wf.meta.enabled" class="btn row-menu-item-danger" @click="toggle(wf.className, false)">Disable</button>
+                    <button v-else class="btn" @click="toggle(wf.className, true)">Enable</button>
+                  </template>
+                  <button v-if="wf.type === 'manual' && canRun" class="btn" @click="showRun(wf.className)">Run</button>
+                  <router-link class="btn" :to="{ path: '/jobs', query: { workflow_name: wf.name } }">Jobs</router-link>
+                  <router-link v-if="can(auth.role, 'audit.read')" class="btn"
+                               :to="{ path: '/audit-log', query: { resource_type: 'workflow', resource_id: wf.name } }">Audit</router-link>
+                  <button v-if="canWrite" class="btn row-menu-item-danger" @click="removeWorkflow(wf.name)">Delete</button>
+                </RowMenu>
               </td>
             </tr>
             <tr v-if="isOpen(wf.name)" data-test="detail-row">
               <td></td>
-              <td colspan="4" style="background:#fafafa; font-size:13px;">
-                <p v-if="wf.meta && wf.meta.docstring" style="white-space:pre-wrap; color:#555;">{{ wf.meta.docstring }}</p>
-                <p v-else style="color:#999;">No docstring</p>
+              <td colspan="4" style="background:var(--color-surface-alt); font-size:13px;">
+                <p v-if="wf.meta && wf.meta.docstring" style="white-space:pre-wrap; color:var(--color-text-muted);">{{ wf.meta.docstring }}</p>
+                <p v-else style="color:var(--color-text-faint);">No docstring</p>
 
-                <div v-if="wf.meta" style="display:flex; gap:16px; flex-wrap:wrap; color:#666; margin-bottom:8px;">
+                <div v-if="wf.meta" style="display:flex; gap:16px; flex-wrap:wrap; color:var(--color-text-muted); margin-bottom:8px;">
                   <span v-if="wf.meta.schedule">schedule: <code>{{ wf.meta.schedule }}</code></span>
                   <span v-if="wf.meta.interval">interval: {{ wf.meta.interval }}s</span>
                   <span v-if="wf.meta.timeout">timeout: {{ wf.meta.timeout }}s</span>
@@ -86,22 +90,20 @@
       </div>
 
       <div v-if="editMode" class="card" style="margin-top:12px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <h2 style="margin:0;">{{ editName }}.py</h2>
-          <div style="display:flex; gap:8px;">
-            <button class="btn" :class="editTab==='code' ? 'btn-primary' : ''" @click="editTab='code'">Code</button>
-            <button class="btn" :class="editTab==='history' ? 'btn-primary' : ''" @click="editTab='history'">History</button>
-            <button v-if="canWrite && editTab==='code'" class="btn btn-primary" @click="saveWorkflow" :disabled="saving">
-              {{ saving ? 'Saving...' : 'Save' }}
-            </button>
-            <button class="btn" @click="editMode = false">Close</button>
-          </div>
+        <h2 style="margin:0 0 8px;">{{ editName }}.py</h2>
+        <div class="editor-toolbar">
+          <button class="btn" :class="editTab==='code' ? 'btn-primary' : ''" @click="editTab='code'">Code</button>
+          <button class="btn" :class="editTab==='history' ? 'btn-primary' : ''" @click="editTab='history'">History</button>
+          <button v-if="canWrite && editTab==='code'" class="btn btn-primary" @click="saveWorkflow" :disabled="saving">
+            {{ saving ? 'Saving...' : 'Save' }}
+          </button>
+          <button class="btn" @click="editMode = false">Close</button>
         </div>
         <template v-if="editTab==='code'">
-          <textarea v-model="content" :readonly="!canWrite" style="width:100%; min-height:400px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:4;"></textarea>
+          <textarea v-model="content" :readonly="!canWrite" style="width:100%; min-height:400px; font-family:var(--font-mono); font-size:12px; padding:8px; border:1px solid var(--color-border); border-radius:4px; resize:vertical; tab-size:4;"></textarea>
           <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
-            <span v-if="saveResult.success" style="color:#2e7d32;">Saved (commit: {{ saveResult.commit }})</span>
-            <span v-else style="color:#c62828;">Error: {{ saveResult.error }}</span>
+            <span v-if="saveResult.success" style="color:var(--color-result-ok);">Saved (commit: {{ saveResult.commit }})</span>
+            <span v-else style="color:var(--color-result-fail);">Error: {{ saveResult.error }}</span>
           </div>
         </template>
         <HistoryPanel v-else entity="workflow" :name="editName" @restored="editWorkflow(editName)" />
@@ -112,16 +114,16 @@
           <h2 style="margin:0;">Run: {{ runName }}</h2>
           <button class="btn" @click="runMode = false">Close</button>
         </div>
-        <div style="margin-bottom:8px; font-size:13px; color:#666;">Payload (JSON):</div>
-        <textarea v-model="payload" style="width:100%; min-height:150px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:4;"></textarea>
+        <div style="margin-bottom:8px; font-size:13px; color:var(--color-text-muted);">Payload (JSON):</div>
+        <textarea v-model="payload" style="width:100%; min-height:150px; font-family:var(--font-mono); font-size:12px; padding:8px; border:1px solid var(--color-border); border-radius:4px; resize:vertical; tab-size:4;"></textarea>
         <div style="margin-top:8px;">
           <button class="btn btn-success" @click="runJob" :disabled="running">
             {{ running ? 'Running...' : 'Run' }}
           </button>
         </div>
         <div v-if="runResult" style="margin-top:8px; font-size:13px;">
-          <span v-if="runResult.success" style="color:#2e7d32;">Job created: {{ runResult.job_id }}</span>
-          <span v-else style="color:#c62828;">Error: {{ runResult.error }}</span>
+          <span v-if="runResult.success" style="color:var(--color-result-ok);">Job created: {{ runResult.job_id }}</span>
+          <span v-else style="color:var(--color-result-fail);">Error: {{ runResult.error }}</span>
         </div>
       </div>
     </template>
@@ -135,6 +137,8 @@ import { auth } from '../store/auth.js'
 import { can } from '../permissions.js'
 import { notify } from '../store/toast.js'
 import HistoryPanel from '../components/HistoryPanel.vue'
+import RowMenu from '../components/RowMenu.vue'
+import Loading from '../components/Loading.vue'
 import { webhookUrl, webhookCurl } from '../webhook.js'
 
 const canWrite = computed(() => can(auth.role, 'code.write'))

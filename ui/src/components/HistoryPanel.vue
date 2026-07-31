@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div v-if="loading" class="loading">Loading history...</div>
+    <Loading v-if="loading" label="Loading history…" />
     <div v-else-if="error" class="error">{{ error }}</div>
     <template v-else>
       <table v-if="commits.length">
@@ -8,19 +8,19 @@
         <tr v-for="c in commits" :key="c.hash">
           <td><input type="radio" name="side-a" :data-test="'radio-a-'+c.hash" :value="c.hash" v-model="sideA" /></td>
           <td><input type="radio" name="side-b" :data-test="'radio-b-'+c.hash" :value="c.hash" v-model="sideB" /></td>
-          <td style="font-family:monospace; cursor:pointer;" :data-test="'commit-'+c.hash" @click="showVersion(c.hash)">
+          <td style="font-family:var(--font-mono); cursor:pointer;" :data-test="'commit-'+c.hash" @click="showVersion(c.hash)">
             {{ c.hash.slice(0,8) }}
           </td>
           <td>{{ c.message }}</td>
           <td>{{ c.author }}</td>
-          <td style="font-size:12px; color:#999;">{{ fmt(c.timestamp) }}</td>
+          <td style="font-size:12px; color:var(--color-text-faint);">{{ fmt(c.timestamp) }}</td>
         </tr>
       </table>
-      <div v-else class="loading">No history yet</div>
+      <div v-else class="empty">No history yet</div>
 
       <div v-if="version !== null" style="margin-top:12px;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <div style="font-size:12px; color:#666;">Version {{ activeCommit.slice(0,8) }}</div>
+          <div style="font-size:12px; color:var(--color-text-muted);">Version {{ activeCommit.slice(0,8) }}</div>
           <button v-if="canRestore" class="btn btn-danger" data-test="restore" @click="doRestore(activeCommit)">
             Restore this version
           </button>
@@ -30,7 +30,7 @@
 
       <div v-if="diff !== null" style="margin-top:12px;">
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <div style="font-size:12px; color:#666;">Diff {{ sideA.slice(0,8) }} → {{ sideB.slice(0,8) }}</div>
+          <div style="font-size:12px; color:var(--color-text-muted);">Diff {{ sideA.slice(0,8) }} → {{ sideB.slice(0,8) }}</div>
           <button v-if="canRestore" class="btn btn-danger" data-test="restore" @click="doRestore(sideB)">
             Restore {{ sideB.slice(0,8) }}
           </button>
@@ -48,6 +48,7 @@ import { api } from '../api.js'
 import { auth } from '../store/auth.js'
 import { can } from '../permissions.js'
 import { notify } from '../store/toast.js'
+import Loading from './Loading.vue'
 
 const props = defineProps({
   entity: { type: String, required: true }, // 'workflow' | 'action' | 'connector_code' | 'connector_config'
@@ -133,6 +134,6 @@ onMounted(load)
 
 <style scoped>
 .diff { white-space: pre; }
-.diff-add { color: #2e7d32; }
-.diff-del { color: #c62828; }
+.diff-add { color: var(--color-result-ok); }
+.diff-del { color: var(--color-result-fail); }
 </style>

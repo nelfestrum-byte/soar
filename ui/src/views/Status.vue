@@ -1,18 +1,18 @@
 <template>
   <div>
-    <div v-if="loading" class="loading">Loading...</div>
+    <Loading v-if="loading" />
     <div v-else-if="error" class="error">{{ error }}</div>
     <template v-else>
       <div style="display:grid; grid-template-columns: repeat(4,1fr); gap:12px; margin-bottom:16px;">
         <div class="card">
           <h2>Workers</h2>
           <div style="font-size:28px; font-weight:700;">{{ status.workers.total }}</div>
-          <div style="color:#999; font-size:12px;">busy: {{ status.workers.busy }} / idle: {{ status.workers.idle }}</div>
+          <div style="color:var(--color-text-faint); font-size:12px;">busy: {{ status.workers.busy }} / idle: {{ status.workers.idle }}</div>
         </div>
         <div class="card">
           <h2>Queue</h2>
           <div style="font-size:28px; font-weight:700;">{{ status.queue.pending }}</div>
-          <div style="color:#999; font-size:12px;">backend: {{ status.queue.backend }}</div>
+          <div style="color:var(--color-text-faint); font-size:12px;">backend: {{ status.queue.backend }}</div>
         </div>
         <div class="card">
           <h2>Running</h2>
@@ -21,9 +21,9 @@
         <div class="card">
           <h2>Today</h2>
           <div style="font-size:13px;">
-            <span style="color:#2e7d32;">&#10003; {{ status.jobs.completed_today }}</span> &nbsp;
-            <span style="color:#c62828;">&#10007; {{ status.jobs.failed_today }}</span> &nbsp;
-            <span style="color:#ad1457;">&#9202; {{ status.jobs.timeout_today }}</span>
+            <span style="color:var(--color-result-ok);">&#10003; {{ status.jobs.completed_today }}</span> &nbsp;
+            <span style="color:var(--color-result-fail);">&#10007; {{ status.jobs.failed_today }}</span> &nbsp;
+            <span style="color:var(--status-timeout-fg);">&#9202; {{ status.jobs.timeout_today }}</span>
           </div>
         </div>
       </div>
@@ -37,7 +37,7 @@
             <td>{{ new Date(r.at).toLocaleString() }}</td>
           </tr>
         </table>
-        <div v-else class="loading">No scheduled runs</div>
+        <div v-else class="empty">No scheduled runs</div>
       </div>
     </template>
   </div>
@@ -46,6 +46,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { api } from '../api.js'
+import Loading from '../components/Loading.vue'
 
 const status = ref(null)
 const loading = ref(true)

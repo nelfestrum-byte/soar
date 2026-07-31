@@ -13,7 +13,7 @@
         <textarea
           v-model="spec"
           placeholder="Paste your OpenAPI spec here..."
-          style="width:100%; min-height:300px; font-family:monospace; font-size:12px; padding:8px; border:1px solid #ddd; border-radius:4px; resize:vertical; tab-size:2;"
+          style="width:100%; min-height:300px; font-family:var(--font-mono); font-size:12px; padding:8px; border:1px solid var(--color-border); border-radius:4px; resize:vertical; tab-size:2;"
         ></textarea>
       </div>
 
@@ -48,30 +48,30 @@
       <div style="font-size:13px; margin-bottom:8px;">
         <strong>{{ preview.title }}</strong> v{{ preview.version }}
       </div>
-      <div v-if="preview.servers.length" style="font-size:13px; margin-bottom:8px; color:#666;">
+      <div v-if="preview.servers.length" style="font-size:13px; margin-bottom:8px; color:var(--color-text-muted);">
         Server: {{ preview.servers[0] }}
       </div>
-      <div v-if="preview.auth.length" style="font-size:13px; margin-bottom:8px; color:#666;">
+      <div v-if="preview.auth.length" style="font-size:13px; margin-bottom:8px; color:var(--color-text-muted);">
         Auth: <span v-for="(a, i) in preview.auth" :key="i">{{ a.type }} ({{ a.name }})<span v-if="i < preview.auth.length - 1">, </span></span>
       </div>
       <table style="margin-top:8px;">
         <tr><th>Method</th><th>Path</th><th>Operation ID</th></tr>
         <tr v-for="(ep, i) in preview.endpoints" :key="i">
           <td><span class="badge" :class="methodBadge(ep.method)">{{ ep.method }}</span></td>
-          <td style="font-family:monospace; font-size:12px;">{{ ep.path }}</td>
-          <td style="font-size:12px; color:#666;">{{ ep.operationId || '—' }}</td>
+          <td style="font-family:var(--font-mono); font-size:12px;">{{ ep.path }}</td>
+          <td style="font-size:12px; color:var(--color-text-muted);">{{ ep.operationId || '—' }}</td>
         </tr>
       </table>
     </div>
 
     <div v-if="result" class="card" style="margin-top:12px;">
-      <h2 style="margin-bottom:8px; color:#2e7d32;">✓ Connector "{{ result.name }}" generated!</h2>
+      <h2 style="margin-bottom:8px; color:var(--color-result-ok);">✓ Connector "{{ result.name }}" generated!</h2>
       <div style="font-size:13px; margin-bottom:8px;">Files created:</div>
       <ul style="font-size:13px; margin:0; padding-left:20px;">
-        <li v-for="f in result.files" :key="f" style="font-family:monospace;">{{ f }}</li>
+        <li v-for="f in result.files" :key="f" style="font-family:var(--font-mono);">{{ f }}</li>
       </ul>
       <div v-if="result.warnings.length" style="margin-top:8px;">
-        <div v-for="w in result.warnings" :key="w" style="color:#e65100; font-size:12px;">⚠ {{ w }}</div>
+        <div v-for="w in result.warnings" :key="w" style="color:var(--status-pending-fg); font-size:12px;">⚠ {{ w }}</div>
       </div>
       <router-link :to="'/connectors'" class="btn btn-primary" style="display:inline-block; margin-top:12px; text-decoration:none;">
         View Connectors →

@@ -109,7 +109,7 @@ export default {
 </script>
 
 <style scoped>
-.conflicts { margin-top: 12px; padding: 12px; background: #fff3e0; border-radius: 4px; }
+.conflicts { margin-top: 12px; padding: 12px; background: var(--status-pending-bg); border-radius: 4px; }
 .conflicts ul { margin: 8px 0; padding-left: 20px; }
-.result { margin-top: 12px; padding: 12px; background: #e8f5e9; border-radius: 4px; }
+.result { margin-top: 12px; padding: 12px; background: var(--status-completed-bg); border-radius: 4px; }
 </style>

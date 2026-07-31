@@ -51,6 +51,6 @@ async function submit() {
 .login-wrap { display: flex; justify-content: center; margin-top: 80px; }
 .login-card { width: 320px; }
 .field { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
-.field label { font-size: 12px; color: #666; }
+.field label { font-size: 12px; color: var(--color-text-muted); }
 .field input { width: 100%; box-sizing: border-box; }
 </style>

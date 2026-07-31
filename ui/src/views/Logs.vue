@@ -4,7 +4,7 @@
       <h2>Log: {{ route.params.id.slice(0,8) }}</h2>
       <router-link to="/jobs" class="btn btn-primary" style="text-decoration:none;">Back</router-link>
     </div>
-    <div v-if="loading" class="loading">Loading...</div>
+    <Loading v-if="loading" />
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else class="card">
       <pre>{{ logs }}</pre>
@@ -16,6 +16,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '../api.js'
+import Loading from '../components/Loading.vue'
 
 const route = useRoute()
 const logs = ref('')

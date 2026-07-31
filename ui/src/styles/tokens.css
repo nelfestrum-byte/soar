@@ -1,0 +1,67 @@
+:root {
+  /* surfaces — Material 3 dark palette, docs/concepts/stitch_sentinel_soar_design_system */
+  --color-surface: #0b1326;
+  --color-surface-alt: #171f33;      /* th, hover rows, detail-row background — surface-container */
+  --color-surface-dark: #060e20;     /* nav, <pre> (log) — surface-container-lowest */
+  --color-surface-hover: #222a3d;    /* .job-row:hover — surface-container-high */
+
+  /* text */
+  --color-text: #dae2fd;             /* on-surface */
+  --color-text-muted: #bcc9cd;       /* on-surface-variant */
+  --color-text-faint: #869397;       /* outline */
+  --color-text-on-dark: #dae2fd;     /* text inside <pre> */
+
+  /* borders */
+  --color-border: #3d494c;           /* outline-variant */
+  --color-border-subtle: #2d3449;    /* surface-variant */
+
+  /* accent/actions */
+  --color-accent: #4cd7f6;           /* primary */
+  --color-accent-fg: #003640;        /* on-primary */
+  --color-danger: #ffb4ab;           /* error — also used for destructive buttons */
+  --color-success: #6ee7b7;          /* not in Stitch export (no green anywhere in it) — added
+                                         in the same "light tone over saturated container" pattern
+                                         as primary/tertiary/error, see spec [S2] */
+  --color-result-ok: #10b981;        /* success-container */
+  --color-result-fail: #93000a;      /* error-container — badge fg/bg differ from danger-button
+                                         tone on purpose, see spec [S2] (Stitch gives one red for
+                                         both roles; we split by saturation, not hue) */
+
+  /* status badges — six job states, background/foreground pair */
+  --status-pending-bg: #e89337;    --status-pending-fg: #ffb873;    /* tertiary */
+  --status-running-bg: #06b6d4;    --status-running-fg: #4cd7f6;    /* primary */
+  --status-completed-bg: #10b981;  --status-completed-fg: #6ee7b7;  /* success (added) */
+  --status-failed-bg: #93000a;     --status-failed-fg: #ffdad6;     /* error */
+  --status-cancelled-bg: #3d494c;  --status-cancelled-fg: #bcc9cd;  /* neutral, reused from Stitch */
+  --status-timeout-bg: #0566d9;    --status-timeout-fg: #adc6ff;    /* secondary */
+
+  /* spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* radius */
+  --radius-sm: 2px;
+  --radius: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+
+  /* typography */
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --text-h1: 24px; --text-h1-weight: 600; --text-h1-line: 32px; --text-h1-tracking: -0.02em;
+  --text-h2: 20px; --text-h2-weight: 600; --text-h2-line: 28px; --text-h2-tracking: -0.01em;
+  --text-h3: 16px; --text-h3-weight: 600; --text-h3-line: 24px;
+  --text-body: 14px; --text-body-line: 20px;
+  --text-body-sm: 12px; --text-body-sm-line: 16px;
+  --text-code: 13px; --text-code-line: 18px;
+  --text-label-caps: 11px; --text-label-caps-line: 16px; --text-label-caps-tracking: 0.05em;
+}
