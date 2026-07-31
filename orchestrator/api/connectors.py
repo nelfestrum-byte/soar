@@ -548,10 +548,11 @@ async def save_connector_code(
         )
     except RuntimeError as e:
         return {"status": "saved", "commit": "", "warning": str(e)}
-    await audit_service.record(
-        db, user=user, action="connector.update_code", resource_type="connector",
-        resource_id=name, request=request, detail={"commit": commit_hash},
-    )
+    if commit_hash:
+        await audit_service.record(
+            db, user=user, action="connector.update_code", resource_type="connector",
+            resource_id=name, request=request, detail={"commit": commit_hash},
+        )
     return {"status": "saved", "commit": commit_hash}
 
 
@@ -662,10 +663,11 @@ async def save_connector_config(
         )
     except RuntimeError as e:
         return {"status": "saved", "commit": "", "warning": str(e)}
-    await audit_service.record(
-        db, user=user, action="connector.update_config", resource_type="connector",
-        resource_id=name, request=request, detail={"commit": commit_hash},
-    )
+    if commit_hash:
+        await audit_service.record(
+            db, user=user, action="connector.update_config", resource_type="connector",
+            resource_id=name, request=request, detail={"commit": commit_hash},
+        )
     return {"status": "saved", "commit": commit_hash}
 
 
@@ -711,10 +713,11 @@ async def create_connector(
         )
     except RuntimeError as e:
         return {"status": "created", "commit": "", "warning": str(e)}
-    await audit_service.record(
-        db, user=user, action="connector.create", resource_type="connector",
-        resource_id=name, request=request, detail={"commit": commit_hash},
-    )
+    if commit_hash:
+        await audit_service.record(
+            db, user=user, action="connector.create", resource_type="connector",
+            resource_id=name, request=request, detail={"commit": commit_hash},
+        )
     return {"status": "created", "commit": commit_hash}
 
 
@@ -741,8 +744,9 @@ async def delete_connector(
         )
     except RuntimeError as e:
         return {"status": "deleted", "commit": "", "warning": str(e)}
-    await audit_service.record(
-        db, user=user, action="connector.delete", resource_type="connector",
-        resource_id=name, request=request, detail={"commit": commit_hash},
-    )
+    if commit_hash:
+        await audit_service.record(
+            db, user=user, action="connector.delete", resource_type="connector",
+            resource_id=name, request=request, detail={"commit": commit_hash},
+        )
     return {"status": "deleted", "commit": commit_hash}

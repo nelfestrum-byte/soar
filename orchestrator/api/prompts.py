@@ -56,8 +56,9 @@ async def save_user_prompt(
         )
     except RuntimeError as e:
         return {"status": "saved", "commit": "", "warning": str(e)}
-    await audit_service.record(
-        db, user=user, action="prompt.update_user", resource_type="prompt",
-        resource_id="user", request=request, detail={"commit": commit_hash},
-    )
+    if commit_hash:
+        await audit_service.record(
+            db, user=user, action="prompt.update_user", resource_type="prompt",
+            resource_id="user", request=request, detail={"commit": commit_hash},
+        )
     return {"status": "saved", "commit": commit_hash}

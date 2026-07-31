@@ -271,6 +271,25 @@ async def test_save_connector_config():
 
 
 @pytest.mark.asyncio
+async def test_save_connector_config_noop_writes_no_audit_row():
+    # GitManager.commit() returns "" when the file is byte-identical (real
+    # no-op, see orchestrator/core/git_manager.py) — resending the same
+    # config body must not produce a second audit row (D5).
+    app.state.git.commit.side_effect = ["create1234", "cfg1234", ""]
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/noop_conn")
+        r1 = await c.put("/connectors/noop_conn/config", content=b"instances: {}")
+        assert r1.json()["commit"] == "cfg1234"
+        r2 = await c.put("/connectors/noop_conn/config", content=b"instances: {}")
+        assert r2.json()["commit"] == ""
+
+    rows = await _audit_rows("connector", "noop_conn")
+    actions = [row.action for row in rows]
+    assert actions.count("connector.update_config") == 1
+
+
+@pytest.mark.asyncio
 async def test_delete_connector_not_found():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:

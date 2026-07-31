@@ -320,10 +320,11 @@ async def save_workflow_code(
     job_manager.set_metas(workflows)
     await scheduler.reload(workflows)
 
-    await audit_service.record(
-        db, user=user, action="workflow.update", resource_type="workflow",
-        resource_id=name, request=request, detail={"commit": commit_hash},
-    )
+    if commit_hash:
+        await audit_service.record(
+            db, user=user, action="workflow.update", resource_type="workflow",
+            resource_id=name, request=request, detail={"commit": commit_hash},
+        )
 
     return {"status": "saved", "commit": commit_hash}
 
@@ -361,9 +362,10 @@ async def delete_workflow_code(
     job_manager.set_metas(workflows)
     await scheduler.reload(workflows)
 
-    await audit_service.record(
-        db, user=user, action="workflow.delete", resource_type="workflow",
-        resource_id=name, request=request, detail={"commit": commit_hash},
-    )
+    if commit_hash:
+        await audit_service.record(
+            db, user=user, action="workflow.delete", resource_type="workflow",
+            resource_id=name, request=request, detail={"commit": commit_hash},
+        )
 
     return {"status": "deleted", "commit": commit_hash}

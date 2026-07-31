@@ -201,10 +201,11 @@ async def save_action(
         )
     except RuntimeError as e:
         return {"status": "saved", "commit": "", "warning": str(e)}
-    await audit_service.record(
-        db, user=user, action="action.update", resource_type="action",
-        resource_id=name, request=request, detail={"commit": commit_hash},
-    )
+    if commit_hash:
+        await audit_service.record(
+            db, user=user, action="action.update", resource_type="action",
+            resource_id=name, request=request, detail={"commit": commit_hash},
+        )
     return {"status": "saved", "commit": commit_hash}
 
 
@@ -230,8 +231,9 @@ async def delete_action(
         )
     except RuntimeError as e:
         return {"status": "deleted", "commit": "", "warning": str(e)}
-    await audit_service.record(
-        db, user=user, action="action.delete", resource_type="action",
-        resource_id=name, request=request, detail={"commit": commit_hash},
-    )
+    if commit_hash:
+        await audit_service.record(
+            db, user=user, action="action.delete", resource_type="action",
+            resource_id=name, request=request, detail={"commit": commit_hash},
+        )
     return {"status": "deleted", "commit": commit_hash}
