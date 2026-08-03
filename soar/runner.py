@@ -1,3 +1,4 @@
+import importlib
 import json
 import os
 import sys
@@ -10,8 +11,17 @@ from soar.audit_hook import flush as flush_audit_hook
 from soar.audit_hook import install as install_audit_hook
 from soar.connectors import connectors
 from soar.logger import setup_logging
-from soar.tools.http_client import CacheBackend, HttpClient, InMemoryCache, RedisCache, SyncHttpClient
+from soar.tools._cache import CacheBackend, InMemoryCache, RedisCache
+from soar.tools.http_client import CachingHttpClient, LoggingHttpClient
 from soar.workflows import workflows
+
+# `soar.tools.__init__` rebinds the name `http_client` in the package
+# namespace to a LoggingHttpClient instance (tools.http_client below), so
+# `import soar.tools.http_client as http_client_module` (an attribute-chain
+# lookup) would resolve to that instance, not the submodule —
+# importlib.import_module goes through sys.modules instead, same pitfall
+# documented in tests/soar/tools/test_new_client.py.
+http_client_module = importlib.import_module("soar.tools.http_client")
 
 setup_logging(level="INFO")
 if __name__ == "__main__":
@@ -64,24 +74,22 @@ def _build_cache(http_cfg: dict, queue_cfg: dict) -> CacheBackend | None:
     raise ValueError(f"Unknown http_client.cache_backend: {cache_backend!r}")
 
 
-def _build_http_client(config: dict) -> HttpClient:
+def _build_http_client(config: dict) -> LoggingHttpClient:
     http_cfg = config.get("http_client", {})
     cache = _build_cache(http_cfg, config.get("queue", {}))
-    return HttpClient(
-        cache=cache,
-        default_ttl=http_cfg.get("default_ttl", 3600),
-        domain_ttl=http_cfg.get("domain_ttl", {}),
-    )
-
-
-def _build_http_client_sync(http_client: HttpClient) -> SyncHttpClient:
-    # Reuses the already-built cache/ttl config so both singletons share one
-    # CacheBackend instance instead of each building (and connecting) its own.
-    return SyncHttpClient(
-        cache=http_client._cache,
-        default_ttl=http_client._default_ttl,
-        domain_ttl=http_client._domain_ttl,
-    )
+    default_ttl = http_cfg.get("default_ttl", 3600)
+    domain_ttl = http_cfg.get("domain_ttl", {})
+    # Fills soar/tools/http_client.py's module-level _shared_* globals so
+    # new_client() (called from a connector's _connect_impl for verify_ssl=
+    # False/persistent-cookie-jar cases) shares the same cache/ttl config as
+    # the tools.http_client singleton built below, instead of each building
+    # (and connecting) its own CacheBackend.
+    http_client_module._shared_cache = cache
+    http_client_module._shared_default_ttl = default_ttl
+    http_client_module._shared_domain_ttl = domain_ttl
+    if cache is None:
+        return LoggingHttpClient()
+    return CachingHttpClient(cache=cache, default_ttl=default_ttl, domain_ttl=domain_ttl)
 
 
 # Must run before workflows.init()/connectors.init()/actions.init() below:
@@ -90,7 +98,6 @@ def _build_http_client_sync(http_client: HttpClient) -> SyncHttpClient:
 # whatever soar.tools.http_client already is at that moment (see
 # docs/compose/specs/2026-07-28-http-client-init-order-design.md [S1]).
 tools.http_client = _build_http_client(config)
-tools.http_client_sync = _build_http_client_sync(tools.http_client)
 
 connectors.init(external_dir=external_dirs.get("connectors"))
 actions.init(external_dir=external_dirs.get("actions"))

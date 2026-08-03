@@ -28,6 +28,14 @@ class _Hidden:
     """Should not be listed — underscore-prefixed."""
 '''
 
+FACTORY_MODULE = '''"""Example factory module for tests."""
+
+
+def new_widget(path: str, ttl: int = 60):
+    """Build a Widget instance."""
+    return None
+'''
+
 BROKEN_IMPORT_MODULE = '''import nonexistent_package_xyz_does_not_exist
 
 
@@ -43,15 +51,20 @@ def _write_tool(tmp_path, filename: str, content: str) -> None:
     (tmp_path / "tools" / filename).write_text(content, encoding="utf-8")
 
 
-def _write_init(tmp_path, public_names: list[str]) -> None:
-    names = ", ".join(f'"{n}"' for n in public_names)
-    (tmp_path / "tools" / "__init__.py").write_text(f"__all__ = [{names}]\n", encoding="utf-8")
+def _write_registry(tmp_path, registry: dict) -> None:
+    lines = ["TOOL_REGISTRY = {"]
+    for name, meta in registry.items():
+        meta_repr = ", ".join(f'"{k}": "{v}"' for k, v in meta.items())
+        lines.append(f'    "{name}": {{{meta_repr}}},')
+    lines.append("}")
+    lines.append("__all__ = list(TOOL_REGISTRY)")
+    (tmp_path / "tools" / "__init__.py").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 @pytest.mark.asyncio
-async def test_list_tools_filters_by_dunder_all(tmp_path):
+async def test_list_tools_kind_class(tmp_path):
     _write_tool(tmp_path, "widget.py", FIXTURE_MODULE)
-    _write_init(tmp_path, ["Widget"])
+    _write_registry(tmp_path, {"Widget": {"kind": "class", "module": "widget"}})
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         r = await c.get("/tools")
@@ -66,9 +79,9 @@ async def test_list_tools_filters_by_dunder_all(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_get_tool_returns_docstring_and_signature(tmp_path):
+async def test_get_tool_kind_class_returns_docstring_and_signature(tmp_path):
     _write_tool(tmp_path, "widget.py", FIXTURE_MODULE)
-    _write_init(tmp_path, ["Widget"])
+    _write_registry(tmp_path, {"Widget": {"kind": "class", "module": "widget"}})
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         r = await c.get("/tools/Widget")
@@ -85,23 +98,102 @@ async def test_get_tool_returns_docstring_and_signature(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_get_tool_returns_synthetic_entry_for_non_class_singleton(tmp_path):
-    """Mirrors test_list_tools_shows_non_class_singletons_from_dunder_all,
-    but on GET /tools/{name} — Д3: get_tool only searched parse_classes
-    results, so a public name in __all__ that isn't a class (a singleton
-    like http_client) 404'd even though GET /tools lists it fine."""
+async def test_list_tools_kind_instance_resolves_to_underlying_class(tmp_path):
     _write_tool(tmp_path, "widget.py", FIXTURE_MODULE)
-    _write_init(tmp_path, ["Widget", "some_singleton"])
+    _write_registry(tmp_path, {
+        "Widget": {"kind": "class", "module": "widget"},
+        "the_widget": {"kind": "instance", "of": "Widget", "module": "widget"},
+    })
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
-        r = await c.get("/tools/some_singleton")
+        r = await c.get("/tools")
         assert r.status_code == 200
-        assert r.json() == {"name": "some_singleton", "module": "__init__", "summary": ""}
+        data = r.json()
+        entry = next(t for t in data if t["name"] == "the_widget")
+        assert entry["instance_of"] == "Widget"
+        assert entry["summary"] == "A small reusable widget."
+        assert entry["constructor"] == "(path, ttl)"
+        methods = {m["name"] for m in entry["methods"]}
+        assert "get" in methods
+
+
+@pytest.mark.asyncio
+async def test_get_tool_kind_instance(tmp_path):
+    _write_tool(tmp_path, "widget.py", FIXTURE_MODULE)
+    _write_registry(tmp_path, {
+        "Widget": {"kind": "class", "module": "widget"},
+        "the_widget": {"kind": "instance", "of": "Widget", "module": "widget"},
+    })
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/tools/the_widget")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["name"] == "the_widget"
+        assert data["instance_of"] == "Widget"
+
+
+@pytest.mark.asyncio
+async def test_list_tools_kind_factory(tmp_path):
+    _write_tool(tmp_path, "widget.py", FACTORY_MODULE)
+    _write_registry(tmp_path, {"new_widget": {"kind": "factory", "module": "widget"}})
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/tools")
+        assert r.status_code == 200
+        data = r.json()
+        entry = next(t for t in data if t["name"] == "new_widget")
+        assert entry["kind"] == "function"
+        assert entry["signature"] == "(path, ttl)"
+        assert entry["docstring"] == "Build a Widget instance."
+
+
+@pytest.mark.asyncio
+async def test_get_tool_kind_factory(tmp_path):
+    _write_tool(tmp_path, "widget.py", FACTORY_MODULE)
+    _write_registry(tmp_path, {"new_widget": {"kind": "factory", "module": "widget"}})
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/tools/new_widget")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["kind"] == "function"
+        assert data["signature"] == "(path, ttl)"
+
+
+@pytest.mark.asyncio
+async def test_list_tools_unresolved_entry_reports_error_not_silent_stub(tmp_path):
+    """Registry names a class that doesn't exist in the module — this must
+    surface as a flagged configuration error, not the old silent
+    `{"summary": ""}` stub (spec [S2](a): the registry covers 100% of
+    public names by construction, so "nothing found" only happens for a
+    broken tool file and must be visible, not swallowed)."""
+    _write_tool(tmp_path, "widget.py", FIXTURE_MODULE)
+    _write_registry(tmp_path, {"NoSuchClass": {"kind": "class", "module": "widget"}})
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/tools")
+        assert r.status_code == 200
+        data = r.json()
+        entry = next(t for t in data if t["name"] == "NoSuchClass")
+        assert entry["error"] == "unresolved"
+        assert entry["summary"] == ""
+
+
+@pytest.mark.asyncio
+async def test_get_tool_unresolved_entry_reports_error(tmp_path):
+    _write_tool(tmp_path, "widget.py", FIXTURE_MODULE)
+    _write_registry(tmp_path, {"NoSuchClass": {"kind": "class", "module": "widget"}})
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/tools/NoSuchClass")
+        assert r.status_code == 200
+        assert r.json()["error"] == "unresolved"
 
 
 @pytest.mark.asyncio
 async def test_get_tool_unknown_404(tmp_path):
-    _write_init(tmp_path, [])
+    _write_registry(tmp_path, {})
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         r = await c.get("/tools/DoesNotExist")
@@ -113,7 +205,7 @@ async def test_parse_module_does_not_import(tmp_path):
     """A tool module with an unresolvable top-level import must still be
     listed/describable — GET /tools uses static AST parsing, never import."""
     _write_tool(tmp_path, "broken.py", BROKEN_IMPORT_MODULE)
-    _write_init(tmp_path, ["BrokenTool"])
+    _write_registry(tmp_path, {"BrokenTool": {"kind": "class", "module": "broken"}})
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         r = await c.get("/tools")
@@ -127,11 +219,12 @@ async def test_parse_module_does_not_import(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_list_tools_excludes_non_public_classes(tmp_path):
-    """Widget is defined but not in __all__ — must not show up (E5:
-    internal mechanics like CacheBackend/InMemoryCache/RedisCache today)."""
+async def test_list_tools_excludes_names_not_in_registry(tmp_path):
+    """Widget is defined but not declared in TOOL_REGISTRY — must not show
+    up (E5: internal mechanics like CacheBackend/InMemoryCache/RedisCache
+    today)."""
     _write_tool(tmp_path, "widget.py", FIXTURE_MODULE)
-    _write_init(tmp_path, [])  # nothing public
+    _write_registry(tmp_path, {})
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         r = await c.get("/tools")
@@ -140,27 +233,12 @@ async def test_list_tools_excludes_non_public_classes(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_list_tools_shows_non_class_singletons_from_dunder_all(tmp_path):
-    """http_client/http_client_sync/watermark_store/seen_store are module-
-    level values, not classes — parse_classes can't see them; __all__ must
-    still surface them as entries with module: '__init__'."""
-    _write_tool(tmp_path, "widget.py", FIXTURE_MODULE)
-    _write_init(tmp_path, ["Widget", "some_singleton"])
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        r = await c.get("/tools")
-        assert r.status_code == 200
-        data = r.json()
-        entry = next(t for t in data if t["name"] == "some_singleton")
-        assert entry["module"] == "__init__"
-
-
-@pytest.mark.asyncio
-async def test_real_soar_tools_dunder_all_excludes_internals():
+async def test_real_soar_tools_registry_excludes_internals():
     """Exercise the actual soar/tools/__init__.py against the real /tools
     route (default app.state.config.soar.tools_dir) — CacheBackend/
-    InMemoryCache/RedisCache/OpenAPIGenerator must be absent, http_client/
-    http_client_sync/WatermarkStore/SeenStore must be present."""
+    InMemoryCache/RedisCache/_validate_external_url must be absent,
+    http_client/WatermarkStore/SeenStore/watermark_store/seen_store/
+    new_client/LoggingHttpClient/CachingHttpClient must be present."""
     config = app.state.config
     original = config.soar.tools_dir
     config.soar.tools_dir = "soar/tools"
@@ -176,8 +254,14 @@ async def test_real_soar_tools_dunder_all_excludes_internals():
     assert "CacheBackend" not in names
     assert "InMemoryCache" not in names
     assert "RedisCache" not in names
-    assert "OpenAPIGenerator" not in names
-    assert "http_client" in names
-    assert "http_client_sync" in names
-    assert "WatermarkStore" in names
-    assert "SeenStore" in names
+    assert "_validate_external_url" not in names
+    assert names == {
+        "http_client",
+        "LoggingHttpClient",
+        "CachingHttpClient",
+        "new_client",
+        "WatermarkStore",
+        "SeenStore",
+        "watermark_store",
+        "seen_store",
+    }

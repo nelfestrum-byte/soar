@@ -127,12 +127,14 @@ http_client:
 
 `cache_backend: redis` переиспользует `queue.redis_url` — отдельного поля
 нет; пустой `queue.redis_url` с `cache_backend: redis` — ошибка конфигурации
-при старте, не тихий fallback на memory. `POST` никогда не кэшируется.
-Singleton `soar.tools.http_client`, инициализируется в `soar/runner.py` из
-того же `SOAR_CONFIG`, что и остальной конфиг subprocess-раннера. Пока не
-используется существующими коннекторами — миграция на этот клиент
-отдельная задача (см. `docs/compose/specs/2026-07-27-http-client-design.md`
-[S9]).
+при старте, не тихий fallback на memory. `POST`/`PUT`/`DELETE` никогда не
+кэшируются. Singleton `soar.tools.http_client` (`LoggingHttpClient`/
+`CachingHttpClient` — подклассы `httpx.Client`, единый `send()` покрывает
+любой HTTP-метод), инициализируется в `soar/runner.py` из того же
+`SOAR_CONFIG`, что и остальной конфиг subprocess-раннера. Все 10 HTTP-
+коннекторов `soar-content-pack` используют его (или `new_client(verify=...)`
+для нестандартного TLS-доверия/persistent-состояния) — см.
+`docs/compose/specs/2026-08-03-tools-redesign-design.md`.
 
 ## Database backend (SQLite/PostgreSQL) и table prefix
 

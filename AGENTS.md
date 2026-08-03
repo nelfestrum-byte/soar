@@ -196,7 +196,7 @@ orchestrator/
 │   ├── git_manager.py         # Git операции через subprocess (commit принимает author_name/author_email override; nothing-to-commit определяется через `git diff --cached --quiet`, не string-match stderr)
 │   ├── history.py             # Тонкие обёртки над GitManager для history/diff/restore (общие для workflows/actions/connectors)
 │   ├── workflow_state.py      # Единственный читатель/писатель orchestrator_state.yaml (enable/disable + webhook token)
-│   ├── introspect.py          # parse_classes/parse_functions/parse_workflow_meta/_public_names — AST-интроспекция без импорта, общая для tools.py/actions.py/connectors.py/workflows.py; parse_classes также извлекает fields (тип+дефолт) и hidden_fields (HIDDEN_FIELDS) для connector schema; _public_names читает __all__ (GET /tools, E5)
+│   ├── introspect.py          # parse_classes/parse_functions/parse_workflow_meta/parse_tool_registry — AST-интроспекция без импорта, общая для tools.py/actions.py/connectors.py/workflows.py; parse_classes также извлекает fields (тип+дефолт) и hidden_fields (HIDDEN_FIELDS) для connector schema; parse_tool_registry читает TOOL_REGISTRY (GET /tools, tools-redesign)
 │   ├── audit_parse.py          # parse_audit_events() — парсит SOAR_AUDIT_EVENT-строки из лога джобы (пишет soar/connectors/_proxy.py), Worker._execute передаёт результат в audit.service.record_job_event
 │   ├── openapi_generator.py    # OpenAPIGenerator — перенесён из soar/tools/openapi.py (Фаза 2, E5): механизм оркестратора (генерация коннектора из спеки), не runtime-инструмент воркфлоу, единственный потребитель — api/connectors.py
 │   ├── pack_install.py          # read_manifest/check_runtime_compat/check_dependencies/plan_install/apply_install/apply_install_dir — чистая install-логика контентпака (Фаза 3), общая для api/packs.py (zip-загрузка) и main.py::seed_connector_pack (base pack, директория, каждый старт)
@@ -220,7 +220,7 @@ orchestrator/
     ├── logs.py                  # GET лог + SSE стрим
     ├── status.py                # GET /status, GET /health
     ├── transfer.py               # POST export/import — импорт/экспорт конфигурации
-    ├── tools.py                  # GET /tools — read-only discovery (AST, без импорта) для soar/tools/, отфильтровано по __all__ (_public_names) — синглтоны без класса (http_client, watermark_store, ...) отдаются отдельной веткой с module: "__init__"
+    ├── tools.py                  # GET /tools — read-only discovery (AST, без импорта) для soar/tools/; TOOL_REGISTRY (kind: class/instance/factory) резолвится через _resolve — нерезолвящееся имя отдаёт {"error": "unresolved"}, не тихую заглушку
     ├── runtime.py                 # GET /runtime — read-only, содержимое content-venv по soar/runtime_contract.py (guaranteed/present_not_guaranteed)
     ├── prompts.py                 # GET /prompts/system (read-only, versioned с кодом) + GET/PUT /prompts/user (admin, git-CRUD)
     ├── audit.py                  # GET /audit-log — admin-only, paginated, фильтры
@@ -232,10 +232,10 @@ soar/
 ├── runtime_state.py             # process-wide dry_run flag (один subprocess = одна джоба) — set_dry_run/is_dry_run, читает ConnectorProxy
 ├── actions/__init__.py         # ActionsRegistry — автообнаружение actions, регистрирует все public top-level callables модуля (не только одноимённый файлу)
 ├── workflows/                  # __init__.py (WorkflowRegistry), base.py (BaseWorkflow/ScheduledWorkflow/WebhookWorkflow/ManualWorkflow)
-├── tools/                      # __init__.py::__all__ — единственный источник того, что видно GET /tools; watermark.py (WatermarkStore/SeenStore + watermark_store()/seen_store() фабрики, путь из soar.state_dir), http_client.py (HttpClient async + SyncHttpClient — тот же контракт логирования/кэша/SSRF-guard, sync для вызова из синхронных коннекторов; SyncHttpClient также несёт put_json) — см. File map. OpenAPIGenerator — не здесь, см. orchestrator/core/openapi_generator.py
+├── tools/                      # __init__.py::TOOL_REGISTRY — единственный источник того, что видно GET /tools (class/instance/factory); watermark.py (WatermarkStore/SeenStore + watermark_store()/seen_store() фабрики, путь из soar.state_dir), http_client.py (LoggingHttpClient/CachingHttpClient — httpx.Client-подклассы, единый send() покрывает любой HTTP-метод и .json()/.content; new_client(verify=...) — для connect_impl с нестандартным TLS-доверием или persistent-состоянием); _cache.py/_net.py — внутренняя механика (CacheBackend/InMemoryCache/RedisCache, SSRF-guard), не в TOOL_REGISTRY. См. File map. OpenAPIGenerator — не здесь, см. orchestrator/core/openapi_generator.py
 ├── runtime_contract.py         # CONTRACT (dist name → import_names/kind) + RUNTIME_VERSION — версионированный контракт content-venv, источник для GET /runtime; версии пакетов по-прежнему только в soar/requirements.txt
 ├── audit_hook.py                # sys.addaudithook — платформенная наблюдаемость egress/файлов/подпроцессов + deny-policy на приватные адреса, ставится в runner.py до любого init()
-├── runner.py                   # Точка входа для subprocess workflows — см. Runner contract; ставит audit-хук, собирает http_client/http_client_sync из SOAR_CONFIG, выставляет runtime_state.set_dry_run(context["dry_run"]) до workflows.execute() — до workflows.init()/connectors.init()/actions.init() — верхнеуровневый `from soar.tools import http_client` в пользовательском коде видит сконфигурированный инстанс
+├── runner.py                   # Точка входа для subprocess workflows — см. Runner contract; ставит audit-хук, собирает единственный tools.http_client из SOAR_CONFIG (заполняет http_client.py::_shared_cache/_shared_default_ttl/_shared_domain_ttl для new_client()), выставляет runtime_state.set_dry_run(context["dry_run"]) до workflows.execute() — до workflows.init()/connectors.init()/actions.init() — верхнеуровневый `from soar.tools import http_client` в пользовательском коде видит сконфигурированный инстанс
 └── examples/nadproject_integration.py
 
 ui/src/                         # Vue 3 SPA, полный список views — см. File map
@@ -457,7 +457,7 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 | Установка/обновление базового пака коннекторов | `soarctl content install\|list\|remove` (`deploy/soarctl_lib/content.py`), `POST /connectors/pack/install` (`orchestrator/api/packs.py`, admin-only), сидинг на старте — `orchestrator/main.py::seed_connector_pack` (каждый старт, не только на пустом volume — закрывает E4) |
 | Install-планирование пака (чистая логика) | `orchestrator/core/pack_install.py` — `read_manifest`/`check_runtime_compat`/`check_dependencies`/`plan_install`/`apply_install`, маркер происхождения `.soar-content.yaml` |
 | Watermark / дедуп событий | `soar/tools/watermark.py` — WatermarkStore, SeenStore (durable JSON, generic) + `watermark_store(name)`/`seen_store(name, ttl)` фабрики (путь строится из `soar.state_dir` конфига, синглтон-контракт как у `http_client`) |
-| HTTP client (логирование + опциональный кэш) | `soar/tools/http_client.py` — `HttpClient` (async) + `SyncHttpClient` (sync-фасад для коннекторов, `http_client_sync` синглтон), `http_client:` секция конфига, см. `docs/agents/config-reference.md` |
+| HTTP client (логирование + опциональный кэш) | `soar/tools/http_client.py` — `LoggingHttpClient`/`CachingHttpClient` (httpx.Client-подклассы, единый `send()`, `http_client` синглтон), `new_client(verify=...)` для нестандартного TLS-доверия/persistent-состояния, `http_client:` секция конфига, см. `docs/agents/config-reference.md` |
 | Connector config schema / секреты | `orchestrator/core/introspect.py` (`_fields`/`_hidden_fields`), `orchestrator/api/connectors.py` (`GET /schema`, редакция config/history/diff), `HIDDEN_FIELDS` на каждом коннекторе |
 | Connector dry-run / audit trail | `soar/connectors/_proxy.py` (`ConnectorProxy`, `MUTATING_METHODS`), `soar/runtime_state.py` (`is_dry_run`), `orchestrator/core/audit_parse.py` + `orchestrator/audit/service.py::record_job_event` (парсинг `SOAR_AUDIT_EVENT` → `AuditLog` в `Worker._execute`) |
 | Новый action | `soar/actions/`, один файл может экспортировать несколько public top-level функций — все регистрируются под своим именем (`ActionsRegistry`, E7); `GET /actions` листит их через AST, без импорта |
@@ -543,8 +543,9 @@ API (UI или LLM-агентом) **без передеплоя**. Три шт�
   второй, не связанной интеграции без изменения кода, только другими
   параметрами конструктора?". Примеры: `WatermarkStore`/
   `SeenStore` (durable курсор/TTL-дедуп — общий примитив для любого
-  polling/webhook-приёмника), `HttpClient` (v0.12 — логирование безусловно +
-  TTL-кэш per-domain опционален, для threat-intel actions).
+  polling/webhook-приёмника), `LoggingHttpClient`/`CachingHttpClient`
+  (httpx.Client-подклассы — логирование безусловно + TTL-кэш per-domain
+  опционален, для threat-intel actions).
   **Универсальности недостаточно — нужна ещё обращённость к рабочему
   потоку.** Контрпример: `OpenAPIGenerator` универсален по OpenAPI, но его
   единственный потребитель — `orchestrator/api/connectors.py`, рантайму он
@@ -560,12 +561,14 @@ API (UI или LLM-агентом) **без передеплоя**. Три шт�
   fallback — универсален, форма конкретной policy и её endpoint — нет)
   — механику оставить в `tools/`, специфику вынести в `actions/`
 - **Публичная поверхность `soar/tools/` объявляется явно, а не выводится из
-  файловой раскладки.** Публикуется то, что предназначено рабочему потоку, —
-  в той форме, в которой поток этим пользуется (для `http_client` это
-  сконфигурированный синглтон, не класс). Внутренняя механика (кэш-бэкенды,
-  генераторы, хелперы) приватна и в витрину не попадает. Сегодня `GET /tools`
-  делает glob по каталогу и отдаёт все классы всех файлов — это дрейф,
-  см. E5 в `docs/concepts/ENTITY-MODEL.md`
+  файловой раскладки.** `soar/tools/__init__.py::TOOL_REGISTRY` — литеральный
+  dict (`kind`: `class`/`instance`/`factory`), единственный источник и для
+  `__all__`, и для `GET /tools` (`orchestrator/core/introspect.py::parse_tool_registry`,
+  AST, без импорта). Публикуется то, что предназначено рабочему потоку, — в
+  той форме, в которой поток этим пользуется (для `http_client` это
+  `kind: instance`, сконфигурированный синглтон, не класс). Внутренняя
+  механика (`_cache.py`/`_net.py` — кэш-бэкенды, SSRF-guard) — в `_`-префиксных
+  модулях, никогда не в `TOOL_REGISTRY`, в витрину не попадает
 - **Публичный инструмент обязан быть документирован и обнаружим
   через read-only API** (`GET /tools`, `GET /tools/{name}`) — разработчик
   триажа (человек или LLM-агент), пишущий action/workflow, должен узнать

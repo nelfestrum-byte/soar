@@ -6,7 +6,8 @@ import pytest
 
 import soar.tools as tools
 from soar import runner
-from soar.tools.http_client import InMemoryCache, RedisCache
+from soar.tools._cache import InMemoryCache, RedisCache
+from soar.tools.http_client import CachingHttpClient, LoggingHttpClient
 from soar.workflows import WorkflowRegistry
 
 
@@ -54,13 +55,15 @@ def test_main_workflow_run_failure_includes_full_traceback(monkeypatch, capsys):
 
 def test_build_http_client_defaults_to_memory_cache():
     client = runner._build_http_client({})
+    assert isinstance(client, CachingHttpClient)
     assert isinstance(client._cache, InMemoryCache)
     assert client._default_ttl == 3600
 
 
 def test_build_http_client_none_backend_has_no_cache():
     client = runner._build_http_client({"http_client": {"cache_backend": "none"}})
-    assert client._cache is None
+    assert isinstance(client, LoggingHttpClient)
+    assert not isinstance(client, CachingHttpClient)
 
 
 def test_build_http_client_reads_ttl_and_domain_ttl():
@@ -98,19 +101,26 @@ def test_build_http_client_unknown_backend_raises():
         runner._build_http_client({"http_client": {"cache_backend": "bogus"}})
 
 
-def test_build_http_client_sync_shares_cache_with_async_client():
-    http_client = runner._build_http_client({
+def test_build_http_client_fills_shared_new_client_state():
+    """_build_http_client must populate http_client.py's module-level
+    _shared_* globals so new_client() (called from a connector's
+    _connect_impl) shares the same cache/ttl config as the tools.http_client
+    singleton — see soar/tools/http_client.py::new_client and spec
+    2026-08-03-tools-redesign-design.md [S2](d)/(e)."""
+    import importlib
+    http_client_module = importlib.import_module("soar.tools.http_client")
+
+    client = runner._build_http_client({
         "http_client": {
             "cache_backend": "memory",
             "default_ttl": 60,
             "domain_ttl": {"api.virustotal.com": 86400},
         }
     })
-    sync_client = runner._build_http_client_sync(http_client)
 
-    assert sync_client._cache is http_client._cache
-    assert sync_client._default_ttl == http_client._default_ttl == 60
-    assert sync_client._domain_ttl == http_client._domain_ttl == {"api.virustotal.com": 86400}
+    assert http_client_module._shared_cache is client._cache
+    assert http_client_module._shared_default_ttl == 60
+    assert http_client_module._shared_domain_ttl == {"api.virustotal.com": 86400}
 
 
 def _write_capture_fixture(tmp_path, filename: str, class_name: str):

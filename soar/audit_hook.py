@@ -4,7 +4,7 @@
 httpx, requests, paramiko, ldap3, raw socket — независимо от того, звал ли
 код http_client. Хук нельзя снять (sys.removeaudithook не существует) — это
 и есть разница со сегодняшним SSRF-guard внутри soar/tools/http_client.py,
-который наблюдает только то, что прошло через HttpClient/SyncHttpClient.
+который наблюдает только то, что прошло через LoggingHttpClient/CachingHttpClient.
 _validate_external_url там остаётся как pre-flight (быстрый отказ до
 открытия сокета, с понятным ValueError) — хук не заменяет его, а
 гарантирует то же самое там, где pre-flight-проверки нет и быть не может

@@ -4,6 +4,7 @@ from orchestrator.core.introspect import (
     parse_classes,
     parse_connector_usage,
     parse_functions,
+    parse_tool_registry,
     parse_workflow_meta,
 )
 
@@ -469,3 +470,31 @@ def test_parse_connector_usage_action_import_cycle_does_not_recurse_infinitely(t
 
     result = parse_connector_usage(workflow_path, actions_dir=actions_dir)
     assert set(result) == {("virus_total", "vt_main"), ("shodan", "shodan_prod")}
+
+
+# --- parse_tool_registry ---
+
+
+def test_parse_tool_registry_reads_literal_dict(tmp_path):
+    init_path = tmp_path / "__init__.py"
+    init_path.write_text(
+        'TOOL_REGISTRY = {\n'
+        '    "http_client": {"kind": "instance", "of": "LoggingHttpClient", "module": "http_client"},\n'
+        '    "LoggingHttpClient": {"kind": "class", "module": "http_client"},\n'
+        '    "watermark_store": {"kind": "factory", "module": "watermark"},\n'
+        '}\n'
+        '__all__ = list(TOOL_REGISTRY)\n',
+        encoding="utf-8",
+    )
+    registry = parse_tool_registry(init_path)
+    assert registry == {
+        "http_client": {"kind": "instance", "of": "LoggingHttpClient", "module": "http_client"},
+        "LoggingHttpClient": {"kind": "class", "module": "http_client"},
+        "watermark_store": {"kind": "factory", "module": "watermark"},
+    }
+
+
+def test_parse_tool_registry_missing_declaration_returns_empty_dict(tmp_path):
+    init_path = tmp_path / "__init__.py"
+    init_path.write_text('__all__ = ["Foo"]\n', encoding="utf-8")
+    assert parse_tool_registry(init_path) == {}

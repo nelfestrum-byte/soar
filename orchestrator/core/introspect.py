@@ -76,21 +76,21 @@ def parse_classes(path: Path) -> list[dict]:
     return classes
 
 
-def _public_names(init_path: Path) -> list[str]:
-    """Read a module's `__all__ = [...]` declaration via AST — no import.
-    Used by GET /tools (soar/tools/__init__.py::__all__, E5) to filter what
-    the API surfaces down to the deliberately-public names, same pattern as
-    _hidden_fields above."""
+def parse_tool_registry(init_path: Path) -> dict[str, dict]:
+    """Read a module's `TOOL_REGISTRY = {...}` literal dict via AST — no
+    import. Single source of what GET /tools surfaces (soar/tools/__init__.py,
+    see docs/compose/specs/2026-08-03-tools-redesign-design.md [S2](a));
+    replaces the old `__all__`-only declaration, which named what's public
+    but not how to introspect it."""
     if not init_path.is_file():
-        return []
+        return {}
     tree = ast.parse(init_path.read_text(encoding="utf-8"))
     for node in ast.iter_child_nodes(tree):
         if isinstance(node, ast.Assign) and len(node.targets) == 1:
             target = node.targets[0]
-            if isinstance(target, ast.Name) and target.id == "__all__":
-                if isinstance(node.value, (ast.List, ast.Tuple, ast.Set)):
-                    return [el.value for el in node.value.elts if isinstance(el, ast.Constant)]
-    return []
+            if isinstance(target, ast.Name) and target.id == "TOOL_REGISTRY":
+                return ast.literal_eval(node.value)
+    return {}
 
 
 def parse_functions(path: Path) -> list[dict]:
