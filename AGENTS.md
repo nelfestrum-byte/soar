@@ -609,7 +609,31 @@ API (UI или LLM-агентом) **без передеплоя**. Три шт�
 
 Полная история версий — **[CHANGELOG.md](CHANGELOG.md)**.
 
-Текущая версия: **v0.20** (2026-07-30) — Модель сущностей, Фаза 4:
+Текущая версия: **v0.22** (2026-08-05) — Docs-only: `orchestrator/prompts/
+system_prompt.md` (встроенный системный промпт агента, `GET /prompts/system`)
+переписан — не обновлялся с v0.15 (2026-07-29), за это время ENTITY-MODEL
+Фазы 1-4 (v0.17-v0.20) и редизайн tools (v0.21) увели фактуру промпта в
+сторону: §2 называл буквальные пути `soar/connectors/<name>/...` вместо
+сконфигурированных директорий (`connectors_dir` и т. п.) после отделения
+контента в контентпак; способ импортировать инстанс коннектора в коде
+воркфлоу/экшена не был описан вовсе, хотя от него зависит credential
+scoping (Фаза 4); `GET /runtime` (Фаза 3) не упоминался; примеры про
+`/tools` называли классы, удалённые редизайном (`HttpClient` →
+`LoggingHttpClient`/`CachingHttpClient`/`new_client`). Новый §3 "Using a
+connector from your code" — обе формы импорта, почему концептная
+(`from soar.connectors.<type> import <instance>`) предпочтительна:
+падает на импорте вместо `AttributeError` в рантайме джобы, и именно её
+статически читает credential scoping. Структура выросла с 7 до 8
+разделов; RBAC-граница роли `agent` и dev loop сверены с текущим кодом и
+перенесены без содержательных изменений (в список исключённых эндпоинтов
+добавлен `POST /connectors/pack/install`, не существовавший на v0.15).
+`tests/orchestrator/api/test_prompts_api.py` не задет по конструкции
+(проверяет только что файл читается/пишется, не его текст) — 5 passed.
+Спек/план/отчёт: `docs/compose/specs/2026-08-05-system-prompt-rewrite-design.md`,
+`docs/compose/plans/2026-08-05-system-prompt-rewrite.md`,
+`docs/compose/reports/system-prompt-rewrite.md`.
+
+Предыдущая версия: **v0.20** (2026-07-30) — Модель сущностей, Фаза 4:
 сужение прав (`docs/concepts/ENTITY-MODEL.md`, слой 3 изоляции).
 Завершает весь план `ENTITY-MODEL.md` (Фазы 1–4, v0.17–v0.20, одна сессия).
 Credential scoping — всегда включён: `orchestrator/core/introspect.py

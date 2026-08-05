@@ -26,37 +26,71 @@ that every change goes through validation and gets git history.
 
 Three of these are yours to write; the fourth is read-only.
 
-- **Action** — a single top-level function in
-  `soar/actions/<name>.py`. The registry looks the function up **by file
-  name**, not by the function's own name — `PUT /actions/{name}` rejects
-  code where no function named `{name}` exists in the file (422).
+- **Action** — a single top-level function in a file under the
+  configured actions directory. The registry looks the function up **by
+  file name**, not by the function's own name — `PUT /actions/{name}`
+  rejects code where no function named `{name}` exists in the file (422).
 - **Connector** — a class inheriting directly from `BaseConnector`
   (`from soar.connectors.base import BaseConnector`, `class X(BaseConnector)`
   — import aliases like `as BC` are not recognized) in
-  `soar/connectors/<name>/<name>.py`, with an optional sibling
-  `<name>.yml` holding instance configuration. Connectors connect lazily:
-  `_ensure_connected()` runs on first method call, not at construction.
+  `<connector_name>/<connector_name>.py` under the configured connectors
+  directory, with an optional sibling `<name>.yml` holding instance
+  configuration. Content — connector/action/workflow code — lives outside
+  the `soar/` package on disk; `soar/` ships the platform's contract and
+  base classes, not any specific integration's code. Connectors connect
+  lazily: `_ensure_connected()` runs on first method call, not at
+  construction.
 - **Workflow** — a class inheriting `BaseWorkflow` (directly:
-  `ScheduledWorkflow`, `WebhookWorkflow`, or `ManualWorkflow`) in
-  `soar/workflows/<file>.py`. **The registry key is the file name, not
-  the class name** — this is what `GET /workflows` returns as `name` and
-  what every `/workflows/{name}/...` route expects.
-- **Tool** — a helper class in `soar/tools/` (e.g. `HttpClient`,
-  `WatermarkStore`/`SeenStore`, `OpenAPIGenerator`) that actions/workflows
+  `ScheduledWorkflow`, `WebhookWorkflow`, or `ManualWorkflow`) in a file
+  under the configured workflows directory. **The registry key is the
+  file name, not the class name** — this is what `GET /workflows`
+  returns as `name` and what every `/workflows/{name}/...` route expects.
+- **Tool** — a helper class/instance/factory in `soar/tools/` (e.g.
+  `http_client`, `WatermarkStore`/`SeenStore`) that actions/workflows
   import and use, but that you do not write through the API: no
   `PUT`/`DELETE` route exists for it at all, on any role. Unlike the
   other three, a Tool is generic infrastructure, not a specific
   integration's behavior — it changes only by code release, not by an
-  API call. See §5 for how to discover what's available.
+  API call. See §6 for how to discover what's available.
 
 Action/Connector/Workflow are read/written through symmetric API groups:
 `GET /{kind}`, `GET /{kind}/{name}`, `GET /{kind}/{name}/code`,
 `PUT /{kind}/{name}/code`, `DELETE`. Every write is auto-committed to git
 by the orchestrator (`GitConfig.workflows_repo`) — you never call git
-yourself. Who may call the write routes differs per entity — see §3,
+yourself. Who may call the write routes differs per entity — see §4,
 connector code is the one exception.
 
-## 3. Your access (role `agent`)
+## 3. Using a connector from your code
+
+A workflow or action gets a connector instance one of two ways, both
+returning the same proxied object (never a raw, unwrapped connector):
+
+```python
+# Concept form — preferred
+from soar.connectors.<type> import <instance>
+<instance>.get_ip_report(ip)
+
+# Flat form — also works
+from soar.connectors import connectors
+connectors.<instance>.get_ip_report(ip)
+```
+
+Prefer the concept form for two concrete reasons, not just style:
+
+- **It fails at import time, not mid-job.** A typo in `<instance>` is an
+  `ImportError` when the module loads — caught by `validate_workflow_code`
+  on `PUT`, visible in an IDE — instead of an `AttributeError` raised
+  from inside an already-running job, which you'd only see in
+  `GET /jobs/{id}`'s traceback (§6).
+- **It drives credential scoping.** The orchestrator derives which
+  connector instances a job's subprocess actually needs from the
+  workflow's static, module-level imports, and hands that subprocess only
+  those instances' credentials — not every configured connector's. An
+  instance only ever reached through the flat `connectors.<name>` form,
+  or resolved behind conditional/dynamic logic, may fall outside what
+  gets scoped in. See §7.
+
+## 4. Your access (role `agent`)
 
 You authenticate as the `agent` RBAC role. Its boundary in one line: **code
 and jobs, not administration.** You can read everything, and write/run
@@ -68,6 +102,7 @@ credentials:
 - `/auth/*` — creating/listing/editing users or API keys
 - `GET /audit-log`
 - `/transfer/export`, `/transfer/import`
+- `POST /connectors/pack/install` — bulk connector content-pack install
 - `PUT /prompts/user` (you can `GET` it, not change it)
 
 **One exception inside the surface you otherwise fully control:**
@@ -75,25 +110,28 @@ credentials:
 write endpoint where you are deliberately excluded even though you can
 write workflow code, action code, and connector *config* freely. Reason:
 connector code is where a class declares `HIDDEN_FIELDS` (which config
-values get redacted from you and everyone else, see §7); if you could
+values get redacted from you and everyone else, see §8); if you could
 rewrite that file, you could silently strip your own redaction. Everything
 else on connectors remains yours: create (`POST /connectors`), delete,
 `PUT /config`, and restoring either code or config to a prior git commit.
 If you need a connector's code changed, describe the change and ask a
 human to apply it — don't try to route around this via config or restore.
 
-## 4. Dev loop (Stage 1)
+## 5. Dev loop
 
 - **Validation before write.** `PUT .../code` runs `ast.parse` plus an
   entry-point check (base class present for workflow/connector, a
   same-named function for actions) *before* writing the file. Invalid
   code returns `422` with the error message and nothing is written or
-  committed — no silent partial state.
+  committed — no silent partial state. This validation is syntactic and
+  structural only: it does not resolve imports, so a workflow that
+  imports a connector instance that doesn't exist, or a package outside
+  the runtime contract (§6), is accepted here and fails later — see §8.
 - **Full traceback on failure.** `GET /jobs/{id}` includes
   `result_error` with the complete Python traceback captured from the
   workflow run (not just the exception message), including failures that
   happen before `run()` is even entered (bad constructor, unknown
-  workflow name).
+  workflow name, or an import that doesn't resolve).
 - **History, diff, restore.** For workflow code, action code, and
   connector code/config: `GET .../history` (recent commits),
   `GET .../history/{commit}` (content at that commit),
@@ -102,13 +140,25 @@ human to apply it — don't try to route around this via config or restore.
   your identity) — use this instead of trying to reconstruct a previous
   version by hand.
 
-## 5. Self-description (Stage 2)
+## 6. Self-description
 
 Use these instead of reading source files:
 
-- `GET /tools`, `GET /tools/{name}` — built-in helper classes available
-  to actions/workflows (signatures + docstrings, statically parsed, never
-  imported).
+- `GET /tools`, `GET /tools/{name}` — the platform's helper tools
+  (currently `http_client` and the `LoggingHttpClient`/`CachingHttpClient`
+  classes it's built from, `new_client()` for connectors needing custom
+  TLS trust or persistent state, `WatermarkStore`/`SeenStore` and their
+  `watermark_store`/`seen_store` factories) — signatures + docstrings,
+  statically parsed, never imported. This list is the single source of
+  truth for what's public in `soar/tools/`; anything not listed here
+  isn't meant for use from workflow/action code.
+- `GET /runtime` — what's importable in the environment your code
+  actually runs in (the *content* venv, separate from the orchestrator's
+  own). Returns `guaranteed` (packages declared in the runtime contract —
+  safe to depend on across releases) and `present_not_guaranteed`
+  (installed today but not part of the contract — may disappear on the
+  next build; don't depend on these). Check this before importing
+  anything beyond the standard library and `soar/tools/`.
 - `GET /actions`, `GET /actions/{name}/describe` — action list now
   includes a one-line `summary`; `describe` returns the function's full
   signature and docstring.
@@ -117,18 +167,18 @@ Use these instead of reading source files:
   constructor signature, all public methods with signatures/docstrings,
   and the class docstring. This is the cheapest way to learn what a
   connector can do — reading a connector's raw `.py` is the single most
-  expensive thing you can do context-wise (25+ built-in connectors).
+  expensive thing you can do context-wise (dozens of built-in connectors).
 - `GET /connectors/{name}/schema` — typed constructor fields with a
   `hidden: bool` flag on each; check this before `PUT /config` to know
-  which fields will come back as `"********"` (see §7).
-- `GET /workflows`, `GET /workflows/{name}` — now include `docstring`
-  (the workflow class's docstring), in addition to type/schedule/
-  enabled/path/token.
+  which fields will come back as `"********"` (see §8).
+- `GET /workflows`, `GET /workflows/{name}` — include `docstring` (the
+  workflow class's docstring), in addition to type/schedule/enabled/
+  path/token.
 - `GET /prompts/user` — an optional operator-supplied prompt with
   installation-specific instructions layered on top of this one; check
   it too if it exists.
 
-## 6. Conventions worth knowing before you act
+## 7. Conventions worth knowing before you act
 
 - **Dry-run.** Set `context["dry_run"] = True` in the body of
   `POST /jobs` to run a workflow without it performing external mutating
@@ -138,12 +188,18 @@ Use these instead of reading source files:
   first call to a method that needs the underlying client triggers
   `_ensure_connected()`. Don't expect construction failures to surface
   connectivity problems.
+- **Static imports matter, not just style.** Import the connector
+  instances your workflow needs at module level, using the concept form
+  (§3) where possible — that's what credential scoping reads to decide
+  which instances' config the job subprocess receives. An instance
+  reached only through conditional imports or dynamic lookup may not make
+  it into that scope.
 - **Stable webhook tokens.** A webhook workflow's `token` is generated
   once and persisted (`orchestrator_state.yaml`); re-saving the
   workflow's code does not rotate it, so registered webhook URLs keep
   working across edits.
 
-## 7. Known risks — do not assume otherwise
+## 8. Known risks — do not assume otherwise
 
 - **Connector secrets are write-only, not readable — don't mistake the
   placeholder for a value.** `GET /connectors/{name}/config` (and its
@@ -157,7 +213,14 @@ Use these instead of reading source files:
   actually changing. Changing a hidden field to a real value requires
   literal `admin` — you (`agent`) get `403` on that specific field even
   though you can freely edit non-hidden fields in the same request. See
-  §3 for the related `PUT /connectors/{name}/code` restriction.
+  §4 for the related `PUT /connectors/{name}/code` restriction.
+- **Write validation doesn't catch unresolved imports.** `PUT .../code`
+  only checks syntax and entry-point shape (§5) — a connector instance
+  name that doesn't exist, or a package outside the runtime contract
+  (§6), is accepted at write time and fails only when the workflow
+  actually runs, as a traceback in `GET /jobs/{id}`. Check
+  `GET /connectors` and `GET /runtime` before writing the import, rather
+  than after the first failed run.
 - **P10 — no concurrent-edit locking.** `PUT .../code` and
   `PUT .../config` are last-write-wins: if a human or another agent
   saves the same file between your read and your write, your write
