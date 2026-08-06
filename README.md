@@ -50,8 +50,9 @@ mypy orchestrator/ soar/ --ignore-missing-imports
 ./soarctl package --output soar-bundle.tar.gz   # --version не нужен, берётся из git describe
 
 # 2. Перенести soar-bundle.tar.gz на целевую машину (scp/USB), там:
-python soarctl install soar-bundle.tar.gz --dir soar-prod && cd soar-prod
-python soarctl init && python soarctl up && python soarctl migrate --fresh
+mkdir -p soar-prod && tar xzf soar-bundle.tar.gz -C soar-prod && cd soar-prod
+docker load -i images.tar && rm images.tar
+python3 soarctl init && python3 soarctl up && python3 soarctl migrate --fresh
 ```
 
 Подробности, day-2 операции и апгрейд — ниже.
@@ -133,17 +134,26 @@ Docker), тянет `redis:7-alpine`/`postgres:16-alpine`, и сохраняет
 `config.yaml.template` и сам `soarctl` в один tar. Перенести файл на
 целевую машину (USB, scp — вне зоны ответственности `soarctl`).
 
-На целевой машине запускать через `python`, не `./soarctl` — исполняемый
-бит при переносе архива (USB/scp с не-Linux хоста) может не сохраниться:
+На целевой машине **для первой установки** просто распакуйте архив
+целиком — `soarctl install <bundle>` вызывается через сам `soarctl`,
+который лежит внутри бандла, так что для первого раза это циклическая
+зависимость (нечем его вызвать до распаковки). `soarctl install` —
+это ровно `tar xzf` + `docker load` + удаление `images.tar`, только
+через сам файл, а не заранее распакованную копию:
 
 ```bash
-python soarctl install soar-bundle.tar.gz --dir soar-prod
+mkdir -p soar-prod
+tar xzf soar-bundle.tar.gz -C soar-prod
 cd soar-prod
-python soarctl doctor            # preflight: docker, порты, место на диске
-python soarctl init               # генерирует .env-секреты + config.yaml — один раз
+docker load -i images.tar && rm images.tar
+python3 soarctl doctor            # preflight: docker, порты, место на диске
+python3 soarctl init              # генерирует .env-секреты + config.yaml — один раз
 ```
 
-Ни один шаг после `install` сети не касается.
+Запускать через `python3 soarctl ...`, не `./soarctl` — исполняемый бит
+при переносе архива (USB/scp с не-Linux хоста) может не сохраниться.
+
+Ни один шаг после распаковки сети не касается.
 
 Отредактируйте `config.yaml` и задайте `auth.cors_origins` под реальный
 origin UI (например, `["https://soar.example.com"]`) — `soarctl init`
@@ -164,18 +174,21 @@ TLS-терминирующий LB/reverse proxy — `soarctl` его не раз
 M11 в `docs/concepts/BAGFIX_PLAN.md`).
 
 ```bash
-python soarctl up
-python soarctl migrate --fresh   # первый запуск — см. "Миграции" ниже
-python soarctl users create --username admin --role admin
+python3 soarctl up
+python3 soarctl migrate --fresh   # первый запуск — см. "Миграции" ниже
+python3 soarctl users create --username admin --role admin
 ```
 
-Обновление на новую версию:
+Обновление на новую версию (в отличие от первой установки, здесь уже
+есть `soarctl` в директории инстанса от прошлого раза — вызываете его
+им же, циклической зависимости нет):
 
 1. На машине сборки: `soarctl package --output ...` (или `--version X.Y.Z`
    явно), перенести новый бандл.
-2. На целевой: `soarctl install <new-bundle> --dir <та же директория
-   инстанса>` — это `docker load`-ит новые образы и (раз `.env` уже
-   существует) бампает только `SOAR_VERSION` в нём, никогда не трогая
+2. На целевой, из директории инстанса: `python3 soarctl install
+   <new-bundle> --dir .` (или `--dir <путь к ней>` откуда угодно) — это
+   `docker load`-ит новые образы и (раз `.env` уже существует) бампает
+   только `SOAR_VERSION` в нём, никогда не трогая
    `AUTH_SECRET_KEY`/`POSTGRES_PASSWORD` (это заблокировало бы доступ
    инстанса к его же БД) — `init` заново запускать не нужно.
 3. `soarctl up` — compose пересоздаёт контейнеры на новом теге образа
