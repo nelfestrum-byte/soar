@@ -45,7 +45,7 @@ class GitManager:
             await self._run("init")
             await self._run("add", ".")
             await self._run(
-                "commit", "-m", "Initial commit",
+                "commit", "--allow-empty", "-m", "Initial commit",
                 f"--author={self.author_name} <{self.author_email}>",
             )
             logger.info("Initialized git repository")

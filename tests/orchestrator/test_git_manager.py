@@ -27,6 +27,15 @@ async def test_git_manager_ensure_repo(git_repo):
 
 
 @pytest.mark.asyncio
+async def test_git_manager_ensure_repo_on_empty_dir(tmp_path):
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    gm = GitManager(repo_path=str(empty_dir), author_name="Test", author_email="test@test.com")
+    await gm.ensure_repo()
+    assert os.path.exists(os.path.join(str(empty_dir), ".git"))
+
+
+@pytest.mark.asyncio
 async def test_git_manager_commit(git_repo):
     gm = GitManager(repo_path=git_repo, author_name="Test", author_email="test@test.com")
     await gm.ensure_repo()
