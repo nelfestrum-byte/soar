@@ -43,6 +43,19 @@ mypy orchestrator/ soar/ --ignore-missing-imports
 (on-site флоу). Только один инстанс за раз — `soarctl` не умеет управлять
 несколькими параллельно, см. `AGENTS.md`, Known Limitations #8.
 
+**Быстрый рецепт — если ваш вариант "собрать на машине с интернетом, поставить на изолированную":**
+
+```bash
+# 1. На машине сборки (Linux/macOS — ./soarctl, Windows — ./soarctl.ps1):
+./soarctl package --output soar-bundle.tar.gz   # --version не нужен, берётся из git describe
+
+# 2. Перенести soar-bundle.tar.gz на целевую машину (scp/USB), там:
+python soarctl install soar-bundle.tar.gz --dir soar-prod && cd soar-prod
+python soarctl init && python soarctl up && python soarctl migrate --fresh
+```
+
+Подробности, day-2 операции и апгрейд — ниже.
+
 ### On-site (эта машина имеет интернет)
 
 Чекаут — сам инстанс, отдельной директории не заводится:
@@ -104,20 +117,30 @@ bundle-инстансы обновляются через `install <new-bundle>`
 ### Air-gapped (сборка на машине с интернетом → перенос бандла → офлайн-установка)
 
 ```bash
-python deploy/soarctl package --version X.Y.Z --output soar-bundle-X.Y.Z.tar.gz
+./soarctl package --output soar-bundle.tar.gz
+# или явной версией: ./soarctl package --version X.Y.Z --output soar-bundle-X.Y.Z.tar.gz
 ```
 
-Собирает `soar-orchestrator`/`soar-ui` из исходников, тянет
-`redis:7-alpine`/`postgres:16-alpine`, и сохраняет все четыре образа плюс
-`deploy/prod/docker-compose.yml`, `config.yaml.template` и сам `soarctl` в
-один tar. Перенести файл на целевую машину (USB, scp — вне зоны
-ответственности `soarctl`).
+`--version` необязателен — по умолчанию берётся `git describe --tags
+--always --dirty` из чекаута (та же логика, что у on-site `install`),
+можно не придумывать версию руками. На машине сборки без bash (Windows)
+используйте `./soarctl.ps1` вместо `./soarctl` — те же подкоманды, тот же
+`deploy/soarctl` под капотом, разница только в обёртке.
+
+Собирает `soar-orchestrator`/`soar-ui` из исходников (нужен запущенный
+Docker), тянет `redis:7-alpine`/`postgres:16-alpine`, и сохраняет все
+четыре образа плюс `deploy/prod/docker-compose.yml`,
+`config.yaml.template` и сам `soarctl` в один tar. Перенести файл на
+целевую машину (USB, scp — вне зоны ответственности `soarctl`).
+
+На целевой машине запускать через `python`, не `./soarctl` — исполняемый
+бит при переносе архива (USB/scp с не-Linux хоста) может не сохраниться:
 
 ```bash
-python soarctl install soar-bundle-X.Y.Z.tar.gz --dir soar-prod
+python soarctl install soar-bundle.tar.gz --dir soar-prod
 cd soar-prod
 python soarctl doctor            # preflight: docker, порты, место на диске
-python soarctl init              # генерирует .env-секреты + config.yaml — один раз
+python soarctl init               # генерирует .env-секреты + config.yaml — один раз
 ```
 
 Ни один шаг после `install` сети не касается.
@@ -148,8 +171,8 @@ python soarctl users create --username admin --role admin
 
 Обновление на новую версию:
 
-1. На машине сборки: `soarctl package --version X.Y.Z --output ...`,
-   перенести новый бандл.
+1. На машине сборки: `soarctl package --output ...` (или `--version X.Y.Z`
+   явно), перенести новый бандл.
 2. На целевой: `soarctl install <new-bundle> --dir <та же директория
    инстанса>` — это `docker load`-ит новые образы и (раз `.env` уже
    существует) бампает только `SOAR_VERSION` в нём, никогда не трогая

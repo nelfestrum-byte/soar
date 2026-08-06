@@ -26,6 +26,19 @@ def test_package_dispatches_to_bundle_package(monkeypatch, tmp_path):
     assert calls["output"] == tmp_path / "out.tar.gz"
 
 
+def test_package_defaults_version_from_git_describe(monkeypatch, tmp_path):
+    calls = {}
+    monkeypatch.setattr(cli.bundle, "package", lambda repo_root, version, output: calls.update(
+        repo_root=repo_root, version=version, output=output
+    ) or output)
+    monkeypatch.setattr(cli.paths, "repo_root", lambda start: Path("/fake/repo"))
+    monkeypatch.setattr(cli.git_source, "resolve_version", lambda checkout: "0.1-42-gabc1234")
+
+    cli.main(["package", "--output", str(tmp_path / "out.tar.gz")])
+
+    assert calls["version"] == "0.1-42-gabc1234"
+
+
 def test_install_dispatches_to_bundle_install(monkeypatch, tmp_path):
     calls = {}
     monkeypatch.setattr(

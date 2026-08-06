@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="cmd")
 
     pkg = sub.add_parser("package", help="Build images + save into a self-contained bundle (build machine)")
-    pkg.add_argument("--version", required=True)
+    pkg.add_argument("--version", default=None, help="Default: `git describe --tags --always --dirty` in the checkout")
     pkg.add_argument("--output", required=True)
 
     install = sub.add_parser(
@@ -122,7 +122,9 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     if args.cmd == "package":
-        bundle.package(paths.repo_root(Path(__file__)), version=args.version, output=Path(args.output))
+        repo_root = paths.repo_root(Path(__file__))
+        version = args.version or git_source.resolve_version(repo_root)
+        bundle.package(repo_root, version=version, output=Path(args.output))
         return
 
     if args.cmd == "install":
