@@ -31,31 +31,61 @@
 (`_DIFF_KV_RE` матчит все три префикса unified diff, B2) — секреты в этой системе write-only:
 задать можно, прочитать обратно через API нельзя никому. `PUT /config` —
 merge-on-write (плейсхолдер `"********"` = "не менять", берётся старое
-значение с диска) + разделение прав по полю, не по ручке: реальное
-изменение hidden-поля требует роль `admin` буквально (ручная проверка
-внутри обработчика, не через `dependencies=[...]`, т.к. решение зависит от
-содержимого запроса) — `agent` получает `403` при попытке сменить
-credential, но по-прежнему правит не-hidden поля наравне с `admin`. Формат
-хранения (`{name}.yml`, git-история) не меняется — секреты физически
-остаются в git, но никогда не возвращаются через API ни одной ролью.
-`PUT /connectors/{name}/code` — литеральный `admin`, не `_ADMIN` (B3):
-`HIDDEN_FIELDS` — та же политика редакции, что и значения, которые она
-маскирует, а не общий код коннектора, который `agent` вправе менять как
-раньше — иначе `agent` мог переписать файл без объявления `HIDDEN_FIELDS`
-и обнулить редакцию для этого коннектора. `POST /{name}/code/restore`
-остаётся на `_ADMIN` сознательно — restore лишь воспроизводит уже
-существующую в git-истории версию, не вводит нового содержимого.
-Тот же write-only периметр покрывает и `POST /transfer/export` (S3):
-экспортируемый `{name}.yml` редактируется той же `_redact_yaml`/
+значение с диска). Формат хранения (`{name}.yml`, git-история) не меняется —
+секреты физически остаются в git, но никогда не возвращаются через API ни
+одной ролью. Тот же write-only периметр покрывает и `POST /transfer/export`
+(S3): экспортируемый `{name}.yml` редактируется той же `_redact_yaml`/
 `_hidden_fields_for` перед упаковкой в архив — секрет, который нельзя
 прочитать через `GET /config`, нельзя прочитать и через `/export`.
+
+**Редакция fails closed.** `_hidden_fields_for` возвращает `set[str] | None`,
+где `None` = «политика не читается» (нет `.py`, `SyntaxError`, нет классов) —
+это не то же самое, что пустое множество («секретов нет», валидное
+объявление, его делает `CONNECTOR_TEMPLATE`). При `None` `_redact_yaml`/
+`_redact_diff` маскируют **все** значения под `instances.*`, а не ни одного.
+До 2026-08-06 неизвестная политика означала «показывай всё» — любой путь,
+оставляющий нечитаемый `.py` при живом `.yml`, раскрывал креды.
+
+### Разделение владения коннектором: код агенту, значения человеку (2026-08-06)
+Отменяет B3 (`PUT /connectors/{name}/code` — литеральный `admin`). Причина
+отмены: барьер не держал. `POST /connectors/{name}` (роль `_ADMIN`, т.е.
+агенту разрешена) коммитит шаблон с пустым `HIDDEN_FIELDS`, а `POST
+/{name}/code/restore` оставался на `_ADMIN` — агент откатывался на свой же
+шаблонный коммит и снимал редакцию, не касаясь `PUT`. Рассуждение B3 («любая
+версия в истории писалась `admin`-ом») не учло шаблон от `POST`.
+
+Действующая схема — `docs/compose/specs/2026-08-06-connector-code-agent-unlock-design.md`:
+
+- `PUT /{name}/code` — `_ADMIN`: писать код коннектора это работа агента, он
+  автор `__init__` и единственный, кто знает, какой параметр является credential.
+- Конфиг закрыт от `agent` целиком: `GET`/`PUT /{name}/config`,
+  `GET /{name}/config/history/{commit}`, `/config/diff`,
+  `POST /{name}/config/restore` — `_CONFIG_RO` (`_RO` минус `agent`) на чтении
+  и литеральный `admin` на записи. Агенту остаются `GET /{name}/schema`
+  (имена полей + флаг `hidden`, без значений) и `GET /{name}/config/history`
+  (факт изменения, не содержимое). Запись забрана вместе с чтением осознанно:
+  `PUT` пишет файл целиком, слепая запись затирала бы невидимые значения.
+- `HIDDEN_FIELDS` можно расширить, но не сузить: `_assert_hidden_fields_not_narrowed`
+  требует `new >= old` для всех ролей кроме `admin`, и вызывается во **всех
+  трёх** путях записи кода — `PUT /code`, `POST /code/restore` (содержимое
+  целевого коммита проверяется до отката) и `POST /generate` (перезапись
+  существующего коннектора). Полнота покрытия здесь и есть урок B3: политику
+  нужно проверять на каждом пути записи носителя политики, а не на одном.
+
+**Границы гарантии — не смягчать при пересказе.** Это защита целостности
+политики редакции и гигиена API-поверхности, а **не** обеспеченная граница
+против враждебного агента: у роли `agent` есть произвольное исполнение кода
+(код воркфлоу + `POST /jobs`), в субпроцесс монтируются креды открытым YAML,
+`ConnectorProxy` отдаёт `conn.api_key` и `conn._instance` сырыми, логи джоба
+не редактируются. См. `docs/agents/known-limitations.md` и
+`docs/compose/specs/2026-08-06-connector-secret-runtime-boundary-design.md`.
 
 ### Authentication (orchestrator/auth/)
 - **Auth-disabled mode**: когда `auth.secret_key = ""` — `get_current_user` возвращает анонимного admin. Backward-совместимость с Docker-сетевым доверием и существующими тестами.
 - **JWT access tokens** (HS256, TTL 30min): payload `{sub, role, type:"user", exp}`
 - **Refresh tokens**: opaque UUID, TTL 7d, хранятся как `SHA-256(token)` в Postgres, ротируются при каждом `/auth/refresh`
 - **API keys**: формат `soar_<32-byte-hex>`, хранятся как `SHA-256(key)`, для M2M сервисных аккаунтов
-- **RBAC роли**: `admin` (полный доступ), `analyst`, `viewer`, `service`, `agent` (Stage 3/P7 — код actions/connectors/workflows + jobs/logs на равных с `admin`, но НЕ `/auth/users`, `/auth/keys`, `/audit-log`, `/transfer/*`, `PUT /prompts/user` — эти остаются `admin`-only литералом, не через общий tuple); каждый эндпоинт декорирован `Depends(require_role(...))`
+- **RBAC роли**: `admin` (полный доступ), `analyst`, `viewer`, `service`, `agent` (Stage 3/P7 — код actions/connectors/workflows + jobs/logs на равных с `admin`, но НЕ `/auth/users`, `/auth/keys`, `/audit-log`, `/transfer/*`, `PUT /prompts/user`, а с 2026-08-06 и НЕ конфиг коннектора — ни чтение, ни запись; эти остаются `admin`-only литералом либо через `_CONFIG_RO`, не через общий tuple); каждый эндпоинт декорирован `Depends(require_role(...))`
 - **Lazy DB session**: `get_current_user` не принимает `Depends(get_db)` — создаёт сессию только когда нужна проверка API-ключа (через `request.app.state.db_session_factory`)
 - **bcrypt напрямую**: `import bcrypt` + `bcrypt.hashpw/checkpw` — passlib 1.7.4 несовместима с bcrypt≥5.0.0 (`__about__` был убран)
 - **CORS**: `allow_origins=config.auth.cors_origins` + `allow_credentials=True`; `allow_origins=["*"]` несовместим с `credentials=True` в браузерах

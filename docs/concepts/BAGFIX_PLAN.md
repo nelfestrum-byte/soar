@@ -98,6 +98,21 @@ P15 (`UPGRADE-v2.md`), который прямо опирается на раб�
 ### - [x] B3. Роль `agent` обходит редакцию секретов, переписав `HIDDEN_FIELDS`
 
 > Закрыто 2026-07-28 — отчёт: [`connector-code-agent-lockdown.md`](../compose/reports/connector-code-agent-lockdown.md).
+>
+> **Закрыто было неполно; перезакрыто 2026-08-06** —
+> [`connector-code-agent-unlock.md`](../compose/reports/connector-code-agent-unlock.md),
+> спека [`2026-08-06-connector-code-agent-unlock-design.md`](../compose/specs/2026-08-06-connector-code-agent-unlock-design.md).
+> Фикс 2026-07-28 запинил `PUT /{name}/code` на литеральный `admin`, но оставил
+> `POST /{name}/code/restore` на `_ADMIN`, полагая, что всякая версия в
+> git-истории писалась `admin`-ом. Это неверно: `POST /connectors/{name}`
+> (агенту разрешён) коммитит `CONNECTOR_TEMPLATE` с пустым `HIDDEN_FIELDS` —
+> откат на этот коммит снимал редакцию, минуя `PUT`. Уязвимость оставалась
+> рабочей, а ограничение легло на честный сценарий (агент пишет коннектор).
+> Действующее решение: `PUT /code` возвращён `_ADMIN`; `HIDDEN_FIELDS` нельзя
+> сузить не-админом ни через `PUT`, ни через `restore`, ни через `generate`;
+> `_hidden_fields_for` больше не fail-open; конфиг коннектора закрыт от роли
+> `agent` целиком. Урок для будущих фиксов такого рода: проверять политику на
+> **каждом** пути записи её носителя, а не на одном самом заметном.
 
 **Где:** `orchestrator/api/connectors.py:31` (`_ADMIN = ("admin", "agent")`),
 `91-104` (`_hidden_fields_for`), `512-547` (`PUT /{name}/code`),

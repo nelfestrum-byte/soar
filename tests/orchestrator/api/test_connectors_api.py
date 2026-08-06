@@ -212,7 +212,7 @@ async def test_save_connector_code_invalid():
 
 
 @pytest.mark.asyncio
-async def test_agent_forbidden_from_connector_code_write():
+async def test_agent_can_write_connector_code_keeping_hidden_fields():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         await c.post("/connectors/agent_code_conn")
@@ -223,9 +223,10 @@ async def test_agent_forbidden_from_connector_code_write():
         )
         try:
             r = await c.put(
-                "/connectors/agent_code_conn/code", content=VALID_CONNECTOR_CODE
+                "/connectors/agent_code_conn/code",
+                content=HIDDEN_FIELD_CONNECTOR_CODE + b"\n# agent edit\n",
             )
-            assert r.status_code == 403
+            assert r.status_code == 200
         finally:
             app.dependency_overrides[get_current_user] = lambda: CurrentUser(
                 id=1, role="admin", type="user", username="test_admin"
@@ -237,6 +238,7 @@ async def test_agent_forbidden_from_connector_code_write():
     with open(filepath) as f:
         raw = f.read()
     assert "HIDDEN_FIELDS" in raw
+    assert "# agent edit" in raw
 
 
 @pytest.mark.asyncio
@@ -807,7 +809,10 @@ async def test_put_config_admin_can_change_hidden_field():
 
 
 @pytest.mark.asyncio
-async def test_put_config_agent_can_change_non_hidden_field():
+async def test_put_config_agent_cannot_change_non_hidden_field():
+    # Config values belong to the operator. The agent cannot read the file, so
+    # a whole-file PUT from it would clobber what it can't see — the route is
+    # admin-only regardless of which field is being written.
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         await c.post("/connectors/agent_nonhidden_conn")
@@ -823,11 +828,18 @@ async def test_put_config_agent_can_change_non_hidden_field():
                 "/connectors/agent_nonhidden_conn/config",
                 content=b"instances:\n  a:\n    host: h2\n",
             )
-            assert r.status_code == 200
+            assert r.status_code == 403
         finally:
             app.dependency_overrides[get_current_user] = lambda: CurrentUser(
                 id=1, role="admin", type="user", username="test_admin"
             )
+
+    filepath = os.path.join(
+        app.state.config.soar.connectors_dir, "agent_nonhidden_conn", "agent_nonhidden_conn.yml"
+    )
+    with open(filepath) as f:
+        raw = f.read()
+    assert "h1" in raw
 
 
 @pytest.mark.asyncio

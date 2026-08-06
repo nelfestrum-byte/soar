@@ -20,7 +20,7 @@ from orchestrator.api.validation import (
 from orchestrator.audit import service as audit_service
 from orchestrator.auth.dependencies import CurrentUser, require_role
 from orchestrator.core import history
-from orchestrator.core.introspect import _summary, parse_classes
+from orchestrator.core.introspect import _summary, parse_classes, parse_classes_source
 from orchestrator.core.openapi_generator import OpenAPIGenerator
 from orchestrator.db.session import get_db
 
@@ -29,6 +29,9 @@ router = APIRouter(prefix="/connectors", tags=["connectors"])
 _RO = ("viewer", "analyst", "service", "admin", "agent")
 _RW = ("analyst", "admin", "agent")
 _ADMIN = ("admin", "agent")
+# Connector config holds credential values; the agent authors the code that
+# declares which of them are secret, but never touches the values themselves.
+_CONFIG_RO = ("viewer", "analyst", "service", "admin")
 
 _MASK = "********"
 _DIFF_KV_RE = re.compile(r"^([+\- ])(\s*)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
@@ -92,23 +95,33 @@ def _connector_py_path(config, name: str) -> Path:
     return Path(os.path.join(config.soar.connectors_dir, name, f"{name}.py"))
 
 
-def _hidden_fields_for(config, name: str) -> set[str]:
-    """Hidden field names declared on a connector's class, via AST — no import."""
-    filepath = _connector_py_path(config, name)
-    if not filepath.exists():
-        return set()
+def _hidden_fields_of_source(source: str) -> set[str] | None:
+    """`None` = the redaction policy could not be read at all, which is not the
+    same answer as "this connector declares no secrets" (an empty set)."""
     try:
-        classes = parse_classes(filepath)
+        classes = parse_classes_source(source)
     except SyntaxError:
-        return set()
+        return None
     if not classes:
-        return set()
+        return None
     cls = next((c for c in classes if not c["name"].startswith("Base")), classes[0])
     return cls["hidden_fields"]
 
 
-def _redact_yaml(content: str, hidden: set[str]) -> str:
-    if not hidden or not content:
+def _hidden_fields_for(config, name: str) -> set[str] | None:
+    """Hidden field names declared on a connector's class, via AST — no import.
+    `None` when the declaration is unreadable — callers redact everything."""
+    filepath = _connector_py_path(config, name)
+    if not filepath.exists():
+        return None
+    try:
+        return _hidden_fields_of_source(filepath.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+
+
+def _redact_yaml(content: str, hidden: set[str] | None) -> str:
+    if (hidden is not None and not hidden) or not content:
         return content
     try:
         data = pyyaml.safe_load(content)
@@ -119,16 +132,16 @@ def _redact_yaml(content: str, hidden: set[str]) -> str:
     for instance in data["instances"].values():
         if not isinstance(instance, dict):
             continue
-        for key in hidden:
-            if key in instance:
+        for key in list(instance):
+            if hidden is None or key in hidden:
                 instance[key] = _MASK
     return pyyaml.safe_dump(data, sort_keys=False)
 
 
-def _redact_diff(diff: str, hidden: set[str]) -> str:
+def _redact_diff(diff: str, hidden: set[str] | None) -> str:
     """Line-by-line redaction: mask the value of a `key: value` diff line
     when `key` is hidden — the fact of the change stays visible, the value doesn't."""
-    if not hidden or not diff:
+    if (hidden is not None and not hidden) or not diff:
         return diff
     out_lines = []
     for line in diff.split("\n"):
@@ -136,14 +149,33 @@ def _redact_diff(diff: str, hidden: set[str]) -> str:
             out_lines.append(line)
             continue
         match = _DIFF_KV_RE.match(line)
-        if match and match.group(3) in hidden:
+        if match and (hidden is None or match.group(3) in hidden):
             out_lines.append(f"{match.group(1)}{match.group(2)}{match.group(3)}: {_MASK}")
         else:
             out_lines.append(line)
     return "\n".join(out_lines)
 
 
-def _merge_hidden_fields(filepath: str, content: str, hidden: set[str], user: CurrentUser) -> str:
+def _assert_hidden_fields_not_narrowed(config, name: str, new_source: str, user: CurrentUser):
+    """HIDDEN_FIELDS is the redaction policy, stored in the very file the agent
+    writes — so only `admin` may shrink it. Widening, and any change that leaves
+    it intact, is ordinary connector authoring."""
+    if user.role == "admin":
+        return
+    old = _hidden_fields_for(config, name)
+    if old is None and not _connector_py_path(config, name).exists():
+        return
+    new = _hidden_fields_of_source(new_source) if new_source else None
+    if old is None or new is None or not new >= old:
+        raise HTTPException(
+            status_code=403,
+            detail="Only admin may narrow a connector's HIDDEN_FIELDS declaration",
+        )
+
+
+def _merge_hidden_fields(
+    filepath: str, content: str, hidden: set[str] | None, user: CurrentUser,
+) -> str:
     """Merge-on-write: a submitted `********` keeps the on-disk value; a real change
     to a hidden field requires the literal `admin` role (write-only secrets, field-level
     RBAC split, not endpoint-level — non-hidden fields are unaffected by this function)."""
@@ -171,7 +203,7 @@ def _merge_hidden_fields(filepath: str, content: str, hidden: set[str], user: Cu
         old_instance = old_instances.get(instance_id)
         if not isinstance(old_instance, dict):
             old_instance = {}
-        for key in hidden:
+        for key in list(instance) if hidden is None else hidden:
             if key not in instance:
                 continue
             new_value = instance[key]
@@ -364,6 +396,12 @@ async def generate_connector(
     # Validate and generate
     try:
         generator = OpenAPIGenerator(spec)
+        validate_name(body.name)
+        # Regenerating over an existing connector replaces its code, so it is a
+        # third way to weaken HIDDEN_FIELDS — same rule as PUT /code and restore.
+        _assert_hidden_fields_not_narrowed(
+            config, body.name, generator.render_class(body.name), user,
+        )
         result = generator.generate(body.name, connectors_dir)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -506,6 +544,11 @@ async def restore_connector_code(
     validate_name(name)
     validate_commit(body.commit)
     git = request.app.state.git
+    # Restore replays a past version, and a past version can carry a weaker
+    # HIDDEN_FIELDS than the current one — including the empty declaration in
+    # the template that `POST /connectors/{name}` commits.
+    target = await history.get_version(git, f"connectors/{name}/{name}.py", body.commit)
+    _assert_hidden_fields_not_narrowed(request.app.state.config, name, target, user)
     author_name, author_email = audit_service.git_author(user)
     await history.restore_version(
         git, f"connectors/{name}/{name}.py", body.commit, author_name, author_email,
@@ -520,7 +563,7 @@ async def restore_connector_code(
 @router.put("/{name}/code")
 async def save_connector_code(
     name: str, request: Request,
-    user: CurrentUser = Depends(require_role("admin")),
+    user: CurrentUser = Depends(require_role(*_ADMIN)),
     db: AsyncSession = Depends(get_db),
 ):
     validate_name(name)
@@ -537,6 +580,7 @@ async def save_connector_code(
     if "\x00" in content:
         raise HTTPException(status_code=400, detail="Content must not contain null bytes")
     validate_connector_code(content)
+    _assert_hidden_fields_not_narrowed(config, name, content, user)
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(content)
     git = request.app.state.git
@@ -556,7 +600,7 @@ async def save_connector_code(
     return {"status": "saved", "commit": commit_hash}
 
 
-@router.get("/{name}/config", dependencies=[Depends(require_role(*_RO))])
+@router.get("/{name}/config", dependencies=[Depends(require_role(*_CONFIG_RO))])
 async def get_connector_config(name: str, request: Request):
     validate_name(name)
     config = request.app.state.config
@@ -587,7 +631,7 @@ async def get_connector_config_history(name: str, request: Request):
     return await history.list_history(git, f"connectors/{name}/{name}.yml")
 
 
-@router.get("/{name}/config/history/{commit}", dependencies=[Depends(require_role(*_RO))])
+@router.get("/{name}/config/history/{commit}", dependencies=[Depends(require_role(*_CONFIG_RO))])
 async def get_connector_config_version(name: str, commit: str, request: Request):
     validate_name(name)
     validate_commit(commit)
@@ -598,7 +642,7 @@ async def get_connector_config_version(name: str, commit: str, request: Request)
     return {"content": _redact_yaml(content, hidden)}
 
 
-@router.get("/{name}/config/diff", dependencies=[Depends(require_role(*_RO))])
+@router.get("/{name}/config/diff", dependencies=[Depends(require_role(*_CONFIG_RO))])
 async def get_connector_config_diff(name: str, request: Request, a: str, b: str):
     validate_name(name)
     validate_commit(a)
@@ -613,7 +657,7 @@ async def get_connector_config_diff(name: str, request: Request, a: str, b: str)
 @router.post("/{name}/config/restore")
 async def restore_connector_config(
     name: str, request: Request, body: RestoreRequest,
-    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    user: CurrentUser = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     validate_name(name)
@@ -633,7 +677,7 @@ async def restore_connector_config(
 @router.put("/{name}/config")
 async def save_connector_config(
     name: str, request: Request,
-    user: CurrentUser = Depends(require_role(*_ADMIN)),
+    user: CurrentUser = Depends(require_role("admin")),
     db: AsyncSession = Depends(get_db),
 ):
     validate_name(name)
@@ -650,7 +694,7 @@ async def save_connector_config(
     if "\x00" in content:
         raise HTTPException(status_code=400, detail="Content must not contain null bytes")
     hidden = _hidden_fields_for(config, name)
-    if hidden:
+    if hidden is None or hidden:
         content = _merge_hidden_fields(filepath, content, hidden, user)
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(content)

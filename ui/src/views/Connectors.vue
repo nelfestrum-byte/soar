@@ -31,7 +31,7 @@
             </td>
             <td style="white-space:nowrap;">
               <button class="btn btn-primary" style="font-size:11px;" @click="editCode(c.name)">{{ canWriteCode ? 'Edit' : 'View' }}</button>
-              <button class="btn btn-success" style="font-size:11px;" @click="editConfig(c.name)">Setup</button>
+              <button v-if="canReadConfig" class="btn btn-success" style="font-size:11px;" @click="editConfig(c.name)">Setup</button>
               <RowMenu>
                 <router-link v-if="can(auth.role, 'audit.read')" class="btn"
                              :to="{ path: '/audit-log', query: { resource_type: 'connector', resource_id: c.name } }">Audit</router-link>
@@ -136,6 +136,7 @@ import CodeEditor from '../components/CodeEditor.vue'
 const canManage = computed(() => can(auth.role, 'connector.manage'))
 const canWriteCode = computed(() => can(auth.role, 'connector.code.write'))
 const canWriteConfig = computed(() => can(auth.role, 'connector.config.write'))
+const canReadConfig = computed(() => can(auth.role, 'connector.config.read'))
 
 const connectors = ref([])
 const loading = ref(true)

@@ -52,7 +52,13 @@ def _hidden_fields(node: ast.ClassDef) -> set[str]:
 def parse_classes(path: Path) -> list[dict]:
     """Static AST parse of a module's top-level classes — never imports it.
     Moved from orchestrator/api/tools.py without behavior change."""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return parse_classes_source(path.read_text(encoding="utf-8"))
+
+
+def parse_classes_source(source: str) -> list[dict]:
+    """Same parse over source that isn't on disk yet — lets a write be checked
+    against the file it would replace before anything is written."""
+    tree = ast.parse(source)
     classes = []
     for node in ast.iter_child_nodes(tree):
         if not isinstance(node, ast.ClassDef) or node.name.startswith("_"):

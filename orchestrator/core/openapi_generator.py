@@ -26,6 +26,11 @@ class OpenAPIGenerator:
         self.components = spec.get("components", {})
         self.security_schemes = self.components.get("securitySchemes", {})
 
+    def render_class(self, name: str) -> str:
+        """The connector source `generate()` would write — lets a caller inspect
+        it (e.g. its HIDDEN_FIELDS) before anything lands on disk."""
+        return self._generate_class(name)
+
     def generate(self, name: str, output_dir: Path) -> dict:
         """Generate connector files. Returns dict with 'files' and 'warnings'."""
         import re

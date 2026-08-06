@@ -262,7 +262,7 @@ tests/
 Быстрый ориентир по префиксам: `/workflows`, `/actions`, `/connectors` (CRUD кода/конфига,
 history/diff/restore, `/describe` — сигнатуры/докстринг без импорта, тот же AST-паттерн, что `/tools`;
 `/schema` — типизированные поля + `hidden: bool`; конфиг/история/diff редактируют значения hidden-полей
-для всех ролей включая admin, см. Security patterns),
+для всех ролей включая admin, а роли `agent` конфиг коннектора закрыт целиком, см. Security patterns),
 `/jobs`, `/webhooks/{name}`, `/logs/{id}`, `/status`, `/health` (без auth), `/tools` (read-only),
 `/runtime` (read-only, содержимое content-venv по контракту, см. E9/`ENTITY-MODEL.md`),
 `/prompts/system` (read-only, встроенный), `/prompts/user` (admin, git-CRUD), `/transfer/{export,import}`,
@@ -424,8 +424,11 @@ rate limiting, subprocess isolation, API hardening) —
 
 Коротко: `orchestrator/api/validation.py` валидирует имена/пути/commit-хэши и код
 (`ast.parse`, без импорта) перед записью; auth — JWT + refresh + API keys + RBAC
-(`admin`/`analyst`/`viewer`/`service`/`agent` — `agent`: код+jobs, не
-user-management/API-keys/audit-log/transfer, см. security-patterns.md),
+(`admin`/`analyst`/`viewer`/`service`/`agent` — `agent`: код (включая код
+коннектора) + jobs, но не user-management/API-keys/audit-log/transfer и не
+конфиг коннектора: значения кредов не читает и не пишет, `HIDDEN_FIELDS`
+может расширить, но не сузить — см. security-patterns.md; это гигиена
+API-поверхности, не граница безопасности, Known limitations #9),
 `auth.secret_key = ""` → анонимный admin; rate limit 120/60s (5/60s на login);
 все HTTP-коннекторы — `timeout=30`; job-субпроцесс получает конфиг-срез, не
 полный `config.yaml` (credential scoping), и опционально (POSIX/Docker,
@@ -444,9 +447,10 @@ user-management/API-keys/audit-log/transfer, см. security-patterns.md),
 6. `AuditLog.actor_name` для JWT — числовой id, не логин
 7. `PATCH /auth/users/{id}` не защищает от деактивации последнего admin'а (принято как остаточный риск — recovery вне API через `orchestrator/auth/cli.py create-user --role admin`)
 8. Мультиинстансность вне scope `soarctl` (нет CLI-контекста нескольких инстансов)
-9. ~~Правка кода встроенного коннектора через API молча не применяется — исполняется копия из пакета, а не из `connectors_dir`~~ — закрыто в Content-as-Contentpack Phase 3 (E1, E4): 24 встроенных коннектора переехали в отдельный репозиторий пака, `soar/connectors/` больше не содержит копий
-10. ~~Зависимости 11 из 24 встроенных коннекторов не установлены в образ~~ — закрыто в Runtime Boundary Phase 1 (E2)
-11. ~~Контент исполняется в рантайме платформы — тот же интерпретатор и те же site-packages, что у оркестратора; воркфлоу импортируются в процесс оркестратора при reload~~ — закрыто в Runtime Boundary Phase 1 (E10, включая E10.3): `deploy/{prod,stage}` теперь собирают отдельный `content-venv`, `SubprocessRunner`/`soar/runner.py` запускаются на нём (`SOAR_CONTENT_PYTHON`); `load_workflow_metas` больше не импортирует пользовательский код (AST-парсинг). Окружение исполнения теперь описано по API — `GET /runtime` (E9)
+9. Закрытость credential'ов от роли `agent` — гигиена API-поверхности, **не** обеспеченная граница: у `agent` есть произвольное исполнение кода (код воркфлоу + `POST /jobs`), креды монтируются в джоб открытым YAML, `ConnectorProxy` отдаёт `conn.api_key`/`conn._instance` сырыми, логи джоба не редактируются (follow-up: `docs/compose/specs/2026-08-06-connector-secret-runtime-boundary-design.md`)
+10. ~~(бывший #9) Правка кода встроенного коннектора через API молча не применяется — исполняется копия из пакета, а не из `connectors_dir`~~ — закрыто в Content-as-Contentpack Phase 3 (E1, E4): 24 встроенных коннектора переехали в отдельный репозиторий пака, `soar/connectors/` больше не содержит копий
+11. ~~(бывший #10) Зависимости 11 из 24 встроенных коннекторов не установлены в образ~~ — закрыто в Runtime Boundary Phase 1 (E2)
+12. ~~(бывший #11) Контент исполняется в рантайме платформы — тот же интерпретатор и те же site-packages, что у оркестратора; воркфлоу импортируются в процесс оркестратора при reload~~ — закрыто в Runtime Boundary Phase 1 (E10, включая E10.3): `deploy/{prod,stage}` теперь собирают отдельный `content-venv`, `SubprocessRunner`/`soar/runner.py` запускаются на нём (`SOAR_CONTENT_PYTHON`); `load_workflow_metas` больше не импортирует пользовательский код (AST-парсинг). Окружение исполнения теперь описано по API — `GET /runtime` (E9)
 
 ## File map (для быстрого навигации)
 
@@ -610,7 +614,37 @@ API (UI или LLM-агентом) **без передеплоя**. Три шт�
 
 Полная история версий — **[CHANGELOG.md](CHANGELOG.md)**.
 
-Текущая версия: **v0.22** (2026-08-05) — Docs-only: `orchestrator/prompts/
+Текущая версия: **v0.23** (2026-08-06) — Разделение владения коннектором:
+код агенту, значения кредов человеку. Отменяет B3 (`PUT /connectors/{name}/code`
+на литеральном `admin`) по фидбэку из боя — агент написал реальный коннектор и
+не смог его сохранить. Барьер к тому же не держал: `POST /connectors/{name}`
+(агенту разрешён) коммитит шаблон с пустым `HIDDEN_FIELDS`, а
+`POST /{name}/code/restore` оставался на `_ADMIN` — откат на собственный
+шаблонный коммит снимал редакцию, минуя `PUT`. Три части, ни одна не работает
+без остальных: **(1)** `PUT /code` → `_ADMIN`; конфиг коннектора закрыт от роли
+`agent` целиком (новый `_CONFIG_RO` на чтении, литеральный `admin` на
+`PUT /config` и `POST /config/restore`) — запись забрана вместе с чтением, т.к.
+`PUT` пишет файл целиком и слепая запись затирала бы невидимые значения; агенту
+остаются `GET /{name}/schema` и `GET /{name}/config/history`. **(2)**
+`_hidden_fields_for` → `set[str] | None`: «политика не читается» (нет `.py`,
+`SyntaxError`) больше не то же самое, что «секретов нет» — при `None`
+маскируется всё, раньше не маскировалось ничего. **(3)**
+`_assert_hidden_fields_not_narrowed` — сузить `HIDDEN_FIELDS` может только
+`admin`, проверка стоит на **всех трёх** путях записи кода (`PUT /code`,
+`POST /code/restore`, `POST /generate`); полнота покрытия и есть урок B3.
+UI зеркалит роли (`ui/src/permissions.js`, новая `connector.config.read`).
+Осознанно **не** закрыто и записано в Known Limitations #9: у роли `agent`
+есть произвольное исполнение кода, креды монтируются в джоб открытым YAML,
+`ConnectorProxy` отдаёт `conn.api_key`/`conn._instance` сырыми, логи не
+редактируются — `print(conn.api_key)` + `GET /logs/{id}` работает и до, и
+после; это гигиена API-поверхности, а не граница безопасности (follow-up
+спека `2026-08-06-connector-secret-runtime-boundary-design.md`, написана, не
+реализована). 831 passed / 3 pre-existing Redis-фейла / 9 skipped, UI 85 passed.
+Спек/план/отчёт: `docs/compose/specs/2026-08-06-connector-code-agent-unlock-design.md`,
+`docs/compose/plans/2026-08-06-connector-code-agent-unlock.md`,
+`docs/compose/reports/connector-code-agent-unlock.md`.
+
+Предыдущая версия: **v0.22** (2026-08-05) — Docs-only: `orchestrator/prompts/
 system_prompt.md` (встроенный системный промпт агента, `GET /prompts/system`)
 переписан — не обновлялся с v0.15 (2026-07-29), за это время ENTITY-MODEL
 Фазы 1-4 (v0.17-v0.20) и редизайн tools (v0.21) увели фактуру промпта в
@@ -634,7 +668,7 @@ connector from your code" — обе формы импорта, почему к�
 `docs/compose/plans/2026-08-05-system-prompt-rewrite.md`,
 `docs/compose/reports/system-prompt-rewrite.md`.
 
-Предыдущая версия: **v0.20** (2026-07-30) — Модель сущностей, Фаза 4:
+Ранее: **v0.20** (2026-07-30) — Модель сущностей, Фаза 4:
 сужение прав (`docs/concepts/ENTITY-MODEL.md`, слой 3 изоляции).
 Завершает весь план `ENTITY-MODEL.md` (Фазы 1–4, v0.17–v0.20, одна сессия).
 Credential scoping — всегда включён: `orchestrator/core/introspect.py

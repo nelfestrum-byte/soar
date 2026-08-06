@@ -124,13 +124,73 @@ async def test_agent_can_create_and_delete_connector(as_agent):
 
 
 @pytest.mark.asyncio
-async def test_agent_cannot_write_connector_code(as_agent):
-    # B3: PUT /connectors/{name}/code is admin-only — HIDDEN_FIELDS is the
-    # redaction policy itself, not code agent should be able to rewrite.
+async def test_agent_can_write_connector_code(as_agent):
+    # Writing connector code is the agent's job — it is the author that knows
+    # which constructor param is a credential. What it may not do is narrow
+    # HIDDEN_FIELDS (see test_connector_hidden_fields_integrity.py).
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         r = await c.put("/connectors/agent_conn_code/code", content=VALID_CONNECTOR_CODE)
+        assert r.status_code == 200
+
+
+# ── connector config: values are the operator's, not the agent's ──
+
+@pytest.mark.asyncio
+async def test_agent_cannot_read_connector_config(as_agent):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/connectors/agent_conn_code/config")
         assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_agent_cannot_read_connector_config_version(as_agent):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/connectors/agent_conn_code/config/history/abc1234")
+        assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_agent_cannot_read_connector_config_diff(as_agent):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/connectors/agent_conn_code/config/diff?a=abc1234&b=def5678")
+        assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_agent_cannot_write_connector_config(as_agent):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.put(
+            "/connectors/agent_conn_code/config",
+            content=b"instances:\n  a:\n    host: h\n",
+        )
+        assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_agent_cannot_restore_connector_config(as_agent):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.post(
+            "/connectors/agent_conn_code/config/restore", json={"commit": "abc1234"}
+        )
+        assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_agent_keeps_schema_and_config_history_list(as_agent):
+    # What the agent needs to author a connector: field names + hidden flags,
+    # and the fact that the operator filled the config in. Neither carries values.
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.get("/connectors/agent_conn_code/schema")
+        assert r.status_code != 403
+        r2 = await c.get("/connectors/agent_conn_code/config/history")
+        assert r2.status_code != 403
 
 
 @pytest.mark.asyncio

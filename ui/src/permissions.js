@@ -8,10 +8,12 @@ export const ROLES = ['viewer', 'analyst', 'service', 'admin', 'agent']
 const CAPS = {
   // workflows.py:20, actions.py:23 — _ADMIN
   'code.write': ['admin', 'agent'],
-  // connectors.py:516 — literal ("admin",) since BAGFIX B3
-  'connector.code.write': ['admin'],
-  // connectors.py:628 — _ADMIN; hidden fields inside are admin-only
-  'connector.config.write': ['admin', 'agent'],
+  // connectors.py — _ADMIN; narrowing HIDDEN_FIELDS inside is admin-only
+  'connector.code.write': ['admin', 'agent'],
+  // connectors.py — literal ("admin",): config holds credential values
+  'connector.config.write': ['admin'],
+  // connectors.py — _CONFIG_RO, _RO minus agent
+  'connector.config.read': ['viewer', 'analyst', 'service', 'admin'],
   // connectors.py:339,668,717 — _ADMIN
   'connector.manage': ['admin', 'agent'],
   // logs.py:13 — _RW

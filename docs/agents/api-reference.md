@@ -50,18 +50,29 @@
 | POST | /connectors/{name} | Создать коннектор |
 | DELETE | /connectors/{name} | Удалить коннектор |
 | GET | /connectors/{name}/code | Получить код .py |
-| PUT | /connectors/{name}/code | Сохранить код .py — 422 если код не парсится или нет класса-наследника `BaseConnector` (`validate_connector_code`) |
-| GET | /connectors/{name}/config | Получить конфиг .yml — значения hidden-полей замаскированы `"********"` для всех ролей, включая `admin` |
-| PUT | /connectors/{name}/config | Сохранить конфиг .yml — merge-on-write для hidden-полей (плейсхолдер `"********"` не затирает старое значение); реальное изменение hidden-поля требует роль `admin` буквально, не `agent` (`403` иначе) |
-| POST | /connectors/generate | Генерация коннектора из OpenAPI spec |
+| PUT | /connectors/{name}/code | Сохранить код .py — 422 если код не парсится или нет класса-наследника `BaseConnector` (`validate_connector_code`); `403` если не-`admin` сужает `HIDDEN_FIELDS` относительно версии на диске |
+| GET | /connectors/{name}/config | Получить конфиг .yml (`_CONFIG_RO` — `agent` получает `403`) — значения hidden-полей замаскированы `"********"` для всех ролей, включая `admin`; при нечитаемом `.py` маскируется всё |
+| PUT | /connectors/{name}/config | Сохранить конфиг .yml (роль `admin` буквально) — merge-on-write для hidden-полей (плейсхолдер `"********"` не затирает старое значение) |
+| POST | /connectors/generate | Генерация коннектора из OpenAPI spec — `HIDDEN_FIELDS` проставляются из `securitySchemes`; `403` если не-`admin` перезаписывает существующий коннектор кодом с более узким `HIDDEN_FIELDS` |
 | POST | /connectors/preview | Парсинг OpenAPI spec (POST, тело) |
 | GET | /connectors/preview | Парсинг OpenAPI spec (GET, URL) — SSRF-защищён |
 | GET | /connectors/{name}/code/history[/{commit}] | История/версия `.py` |
 | GET | /connectors/{name}/code/diff?a=&b= | Diff `.py` между коммитами |
-| POST | /connectors/{name}/code/restore `{"commit": "..."}` | Откат `.py` на коммит (admin), без reload |
-| GET | /connectors/{name}/config/history[/{commit}] | История/версия `.yml` — hidden-поля замаскированы, как и в `GET /config` |
-| GET | /connectors/{name}/config/diff?a=&b= | Diff `.yml` между коммитами — значения hidden-полей в `+`/`-` строках замаскированы, факт изменения виден |
-| POST | /connectors/{name}/config/restore `{"commit": "..."}` | Откат `.yml` на коммит (admin) |
+| POST | /connectors/{name}/code/restore `{"commit": "..."}` | Откат `.py` на коммит, без reload; `403` если не-`admin` откатывается на версию с более узким `HIDDEN_FIELDS` |
+| GET | /connectors/{name}/config/history | Список коммитов `.yml` — без значений, доступен и `agent` |
+| GET | /connectors/{name}/config/history/{commit} | Версия `.yml` (`_CONFIG_RO`) — hidden-поля замаскированы, как и в `GET /config` |
+| GET | /connectors/{name}/config/diff?a=&b= | Diff `.yml` между коммитами (`_CONFIG_RO`) — значения hidden-полей в `+`/`-` строках замаскированы, факт изменения виден |
+| POST | /connectors/{name}/config/restore `{"commit": "..."}` | Откат `.yml` на коммит (роль `admin` буквально) |
+
+**Разделение владения (v0.23):** код коннектора — роль `agent` наравне с
+`admin`; значения конфига — только `admin`. Роль `agent` получает `403` на
+всех ручках конфига, кроме `GET /{name}/schema` (имена полей, типы, флаг
+`hidden` — без значений) и `GET /{name}/config/history` (список коммитов).
+`HIDDEN_FIELDS` можно расширить, но сузить — только ролью `admin`, и это
+проверяется на всех трёх путях записи кода (`PUT /code`, `POST /code/restore`,
+`POST /generate`). Подробности и границы гарантии —
+`docs/agents/security-patterns.md`, спека
+`docs/compose/specs/2026-08-06-connector-code-agent-unlock-design.md`.
 
 ### Tools
 

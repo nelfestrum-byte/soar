@@ -34,25 +34,29 @@ describe('can()', () => {
     expect(can('agent', 'logs.read')).toBe(true)
   })
 
-  // UPGRADE.md stage 3 + BAGFIX_PLAN B3 — agent writes code, administers nothing
+  // UPGRADE.md stage 3 — agent writes code, administers nothing
   it('keeps agent out of administration', () => {
     expect(can('agent', 'code.write')).toBe(true)
+    expect(can('agent', 'connector.code.write')).toBe(true)
     expect(can('agent', 'job.create')).toBe(true)
     expect(can('agent', 'restore')).toBe(true)
 
-    expect(can('agent', 'connector.code.write')).toBe(false)
     expect(can('agent', 'prompt.write')).toBe(false)
     expect(can('agent', 'transfer')).toBe(false)
     expect(can('agent', 'audit.read')).toBe(false)
     expect(can('agent', 'auth.admin')).toBe(false)
   })
 
-  // orchestrator/api/connectors.py:516 — literal ("admin",) after B3
-  it('lets only admin write connector code', () => {
-    expect(can('admin', 'connector.code.write')).toBe(true)
-    for (const role of ['viewer', 'analyst', 'service', 'agent']) {
-      expect(can(role, 'connector.code.write'), role).toBe(false)
-    }
+  // 2026-08-06-connector-code-agent-unlock — agent owns connector code, the
+  // operator owns the credential values it declares
+  it('splits connector code from connector config for agent', () => {
+    expect(can('agent', 'connector.code.write')).toBe(true)
+    expect(can('agent', 'connector.config.read')).toBe(false)
+    expect(can('agent', 'connector.config.write')).toBe(false)
+
+    expect(can('admin', 'connector.config.read')).toBe(true)
+    expect(can('admin', 'connector.config.write')).toBe(true)
+    expect(can('viewer', 'connector.config.read')).toBe(true)
   })
 
   // orchestrator/api/jobs.py:14-15 — service may create a job but not cancel one

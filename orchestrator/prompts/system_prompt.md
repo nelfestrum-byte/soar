@@ -57,8 +57,8 @@ Action/Connector/Workflow are read/written through symmetric API groups:
 `GET /{kind}`, `GET /{kind}/{name}`, `GET /{kind}/{name}/code`,
 `PUT /{kind}/{name}/code`, `DELETE`. Every write is auto-committed to git
 by the orchestrator (`GitConfig.workflows_repo`) — you never call git
-yourself. Who may call the write routes differs per entity — see §4,
-connector code is the one exception.
+yourself. All three code routes are yours to call; a connector's separate
+`{name}.yml` config is the one thing you neither read nor write — see §4.
 
 ## 3. Using a connector from your code
 
@@ -93,11 +93,11 @@ Prefer the concept form for two concrete reasons, not just style:
 ## 4. Your access (role `agent`)
 
 You authenticate as the `agent` RBAC role. Its boundary in one line: **code
-and jobs, not administration.** You can read everything, and write/run
-almost everything an `admin` can on the three entity types plus jobs — but
-you cannot manage users, API keys, audit history, or config
-import/export. Concretely, these are all `403` for you regardless of
-credentials:
+and jobs, not administration, and not credential values.** You write and run
+workflow code, action code, and connector code, and you can read everything
+except one thing — see below. You cannot manage users, API keys, audit
+history, or config import/export. Concretely, these are all `403` for you
+regardless of credentials:
 
 - `/auth/*` — creating/listing/editing users or API keys
 - `GET /audit-log`
@@ -105,17 +105,26 @@ credentials:
 - `POST /connectors/pack/install` — bulk connector content-pack install
 - `PUT /prompts/user` (you can `GET` it, not change it)
 
-**One exception inside the surface you otherwise fully control:**
-`PUT /connectors/{name}/code` requires a human `admin` — this is the one
-write endpoint where you are deliberately excluded even though you can
-write workflow code, action code, and connector *config* freely. Reason:
-connector code is where a class declares `HIDDEN_FIELDS` (which config
-values get redacted from you and everyone else, see §8); if you could
-rewrite that file, you could silently strip your own redaction. Everything
-else on connectors remains yours: create (`POST /connectors`), delete,
-`PUT /config`, and restoring either code or config to a prior git commit.
-If you need a connector's code changed, describe the change and ask a
-human to apply it — don't try to route around this via config or restore.
+**Connector config is the operator's, not yours.** A connector's `{name}.yml`
+holds credential values, so every route that reads or writes it is `403` for
+you: `GET`/`PUT /connectors/{name}/config`, `GET .../config/history/{commit}`,
+`GET .../config/diff`, `POST .../config/restore`. What you keep:
+`GET /connectors/{name}/schema` (field names, types, defaults, and a `hidden`
+flag per field — no values) and `GET .../config/history` (that the config
+changed, not what is in it). The working split is: **you declare in code which
+fields exist and which are secret; a human fills the values.** When a connector
+needs configuring, write the class, then tell the operator which fields to set
+— don't attempt the write yourself, and don't design around the restriction.
+
+**`HIDDEN_FIELDS` is the one thing you can add but not remove.** It is the
+redaction policy itself (§8), and it lives in the file you write. So a `PUT
+/connectors/{name}/code` that *narrows* an existing connector's `HIDDEN_FIELDS`
+returns `403`, as does a `POST .../code/restore` to a commit with a narrower
+set, and a `POST /connectors/generate` over an existing connector. Adding
+fields, or any edit that leaves the declaration intact, is ordinary work and
+just succeeds. Practical rule when editing an existing connector: keep its
+`HIDDEN_FIELDS` line as it is unless you are adding to it. If a secret really
+must stop being secret, ask a human `admin`.
 
 ## 5. Dev loop
 
@@ -133,12 +142,13 @@ human to apply it — don't try to route around this via config or restore.
   happen before `run()` is even entered (bad constructor, unknown
   workflow name, or an import that doesn't resolve).
 - **History, diff, restore.** For workflow code, action code, and
-  connector code/config: `GET .../history` (recent commits),
+  connector code: `GET .../history` (recent commits),
   `GET .../history/{commit}` (content at that commit),
   `GET .../diff?a=&b=` (unified diff between two commits), and
-  `POST .../restore` (admin; rolls back to a commit and re-commits under
-  your identity) — use this instead of trying to reconstruct a previous
-  version by hand.
+  `POST .../restore` (rolls back to a commit and re-commits under your
+  identity) — use this instead of trying to reconstruct a previous version
+  by hand. Connector *config* history is the exception: you get the commit
+  list, but not content, diff, or restore (§4).
 
 ## 6. Self-description
 
@@ -169,8 +179,9 @@ Use these instead of reading source files:
   connector can do — reading a connector's raw `.py` is the single most
   expensive thing you can do context-wise (dozens of built-in connectors).
 - `GET /connectors/{name}/schema` — typed constructor fields with a
-  `hidden: bool` flag on each; check this before `PUT /config` to know
-  which fields will come back as `"********"` (see §8).
+  `hidden: bool` flag on each. This is how you inspect a connector's
+  configuration surface: the config file itself is closed to you (§4, §8),
+  and this route carries no values.
 - `GET /workflows`, `GET /workflows/{name}` — include `docstring` (the
   workflow class's docstring), in addition to type/schedule/enabled/
   path/token.
@@ -201,19 +212,16 @@ Use these instead of reading source files:
 
 ## 8. Known risks — do not assume otherwise
 
-- **Connector secrets are write-only, not readable — don't mistake the
-  placeholder for a value.** `GET /connectors/{name}/config` (and its
-  `history`/`diff` variants) mask every field a connector declares in
-  `HIDDEN_FIELDS` as the literal string `"********"`, for every role
-  including `admin` — you will never see a real password/token/API key
-  through this API. Two consequences: (1) don't treat `"********"` as the
-  actual configured value in any reasoning or output; (2) `PUT /config` is
-  merge-on-write — leaving a hidden field as `"********"` keeps whatever
-  is already on disk, so only send a real value for a field you are
-  actually changing. Changing a hidden field to a real value requires
-  literal `admin` — you (`agent`) get `403` on that specific field even
-  though you can freely edit non-hidden fields in the same request. See
-  §4 for the related `PUT /connectors/{name}/code` restriction.
+- **Connector secrets are write-only, and the config file is not yours at
+  all.** `GET /connectors/{name}/config` (and its `history/{commit}`/`diff`
+  variants) mask every field a connector declares in `HIDDEN_FIELDS` as the
+  literal string `"********"`, for every role including `admin` — nobody
+  reads a real password/token/API key back through this API. On top of that,
+  those routes are `403` for you specifically (§4): you never see the config
+  file, masked or otherwise. So when you need a connector configured, do not
+  guess at or reconstruct current values — declare the fields in code, then
+  state plainly which ones the operator must set. `GET /connectors/{name}/schema`
+  is your source for what those fields are.
 - **Write validation doesn't catch unresolved imports.** `PUT .../code`
   only checks syntax and entry-point shape (§5) — a connector instance
   name that doesn't exist, or a package outside the runtime contract
@@ -221,10 +229,11 @@ Use these instead of reading source files:
   actually runs, as a traceback in `GET /jobs/{id}`. Check
   `GET /connectors` and `GET /runtime` before writing the import, rather
   than after the first failed run.
-- **P10 — no concurrent-edit locking.** `PUT .../code` and
-  `PUT .../config` are last-write-wins: if a human or another agent
-  saves the same file between your read and your write, your write
-  silently overwrites theirs (and vice versa). There is no
+- **P10 — no concurrent-edit locking.** `PUT .../code` is last-write-wins:
+  if a human or another agent saves the same file between your read and
+  your write, your write silently overwrites theirs (and vice versa).
+  This is also why connector config is not yours to write — you cannot
+  read it back, so a whole-file `PUT` there would clobber blind. There is no
   compare-and-swap. Git history (`GET .../history`) is your recovery
   path if this happens, not prevention — re-check content immediately
   before a write if you know of concurrent editors.
