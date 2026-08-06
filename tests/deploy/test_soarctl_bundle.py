@@ -91,6 +91,46 @@ def test_build_images_builds_and_pulls(tmp_path, monkeypatch):
     assert {c[2] for c in pull_calls} == set(BASE_IMAGES)
 
 
+def test_build_images_passes_pip_index_url_when_env_set(tmp_path, monkeypatch):
+    repo = _make_fake_repo(tmp_path)
+    calls = []
+
+    def fake_run(argv, **kw):
+        calls.append(argv)
+        return type("R", (), {"stdout": ""})()
+
+    monkeypatch.setattr("deploy.soarctl_lib.bundle.run", fake_run)
+    monkeypatch.setenv("PIP_INDEX_URL", "https://mirror.yandex.ru/pypi/simple")
+
+    build_images(repo, "1.2.3")
+
+    build_calls = [c for c in calls if c[:2] == ["docker", "build"]]
+    orchestrator_build = next(c for c in build_calls if "soar-orchestrator:1.2.3" in c)
+    assert "--build-arg" in orchestrator_build
+    idx = orchestrator_build.index("--build-arg")
+    assert orchestrator_build[idx + 1] == "PIP_INDEX_URL=https://mirror.yandex.ru/pypi/simple"
+
+    ui_build = next(c for c in build_calls if "soar-ui:1.2.3" in c)
+    assert "--build-arg" not in ui_build
+
+
+def test_build_images_omits_pip_index_url_build_arg_when_env_unset(tmp_path, monkeypatch):
+    repo = _make_fake_repo(tmp_path)
+    calls = []
+
+    def fake_run(argv, **kw):
+        calls.append(argv)
+        return type("R", (), {"stdout": ""})()
+
+    monkeypatch.setattr("deploy.soarctl_lib.bundle.run", fake_run)
+    monkeypatch.delenv("PIP_INDEX_URL", raising=False)
+
+    build_images(repo, "1.2.3")
+
+    build_calls = [c for c in calls if c[:2] == ["docker", "build"]]
+    assert not any("--build-arg" in c for c in build_calls)
+
+
 def test_build_images_falls_back_to_empty_basepack_when_sibling_missing(tmp_path, monkeypatch):
     repo = _make_fake_repo(tmp_path)
     calls = []

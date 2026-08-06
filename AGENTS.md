@@ -241,7 +241,7 @@ soar/
 ui/src/                         # Vue 3 SPA, полный список views — см. File map
 alembic/                        # Alembic-миграции (auth + workflow_jobs + audit_log таблицы), см. docs/agents/config-reference.md
 deploy/stage/                   # QA docker-compose (build: from source) + Makefile
-deploy/prod/                    # Distributable profile — image: не build:, config.yaml не в git, см. deploy/prod/README.md
+deploy/prod/                    # Distributable profile — image: не build:, config.yaml не в git, см. README.md ("Деплой")
 soarctl                         # Root-level bash wrapper (`./soarctl ...`) — see deploy/soarctl below
 deploy/soarctl, soarctl_lib/    # Host-layer CLI: package/install/init/up/update/migrate/users/backup/doctor/content
                                  # git_source.py — on-site install, in-place in <checkout>/deploy/prod (no bundle/air-gap);

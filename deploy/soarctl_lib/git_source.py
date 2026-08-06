@@ -36,7 +36,7 @@ def _read_source(instance: Path) -> dict:
         raise FileNotFoundError(
             f"{source_path} not found — this instance wasn't installed via "
             "`soarctl install`; bundle-based instances upgrade via "
-            "`soarctl install <new-bundle>` instead, see deploy/prod/README.md"
+            "`soarctl install <new-bundle>` instead, see README.md"
         )
     return json.loads(source_path.read_text())
 

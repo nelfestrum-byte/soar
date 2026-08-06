@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+# Override for networks that filter pypi.org specifically (e.g. SNI-based
+# DPI reachable to other CDN-hosted domains but not this one) — see
+# docs/compose/specs/2026-08-06-pip-index-mirror-design.md. Unset/default
+# build (no --build-arg) behaves exactly as before this ARG existed.
+ARG PIP_INDEX_URL=https://pypi.org/simple
+
 # libcap2-bin: setcap, to grant setpriv cap_setuid/cap_setgid below (Фаза 4
 # privilege narrowing) — setpriv itself already ships in util-linux, a base
 # Debian dependency. git: workflows_repo version control.
@@ -51,14 +57,14 @@ COPY --from=basepack . /app/base-pack/
 # поэтому голые `python`/`pip`/`alembic` (soarctl, docker exec) резолвятся
 # сюда — поведение снаружи не меняется.
 RUN python -m venv /app/platform-venv && \
-    /app/platform-venv/bin/pip install --no-cache-dir -r /app/orchestrator/requirements.txt
+    /app/platform-venv/bin/pip install --no-cache-dir --index-url "$PIP_INDEX_URL" -r /app/orchestrator/requirements.txt
 ENV PATH="/app/platform-venv/bin:${PATH}"
 
 # Content venv — soar/ + контракт зависимостей (soar/runtime_contract.py).
 # НЕ на PATH: граница зависимостей физическая, а не "не забыть отдельно
 # активировать" — см. docs/concepts/ENTITY-MODEL.md, решение 3.
 RUN python -m venv /app/content-venv && \
-    /app/content-venv/bin/pip install --no-cache-dir -r /app/soar/requirements.txt
+    /app/content-venv/bin/pip install --no-cache-dir --index-url "$PIP_INDEX_URL" -r /app/soar/requirements.txt
 
 RUN mkdir -p /app/data /app/data/workflows /app/data/actions /app/data/connectors /app/data/state /var/log/soar/jobs && \
     chown -R soar:soar /app /var/log/soar

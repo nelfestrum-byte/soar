@@ -5,6 +5,7 @@ itself, and all four runtime images via `docker save`); install() only
 ever runs `docker load` + file extraction, no network calls.
 """
 
+import os
 import shutil
 import tarfile
 import tempfile
@@ -44,12 +45,21 @@ def build_images(repo_root: Path, version: str) -> tuple[str, str]:
     if not base_pack_dir.is_dir():
         base_pack_dir = Path(tempfile.mkdtemp(prefix="soar-empty-basepack-"))
 
-    run([
+    orchestrator_build = [
         "docker", "build",
         "-f", str(prod_dir / "Dockerfile.orchestrator"),
         "--build-context", f"basepack={base_pack_dir}",
-        "-t", orchestrator_tag, str(repo_root),
-    ])
+    ]
+    # Some networks filter pypi.org specifically (e.g. SNI-based DPI) while
+    # leaving other CDN-hosted domains reachable — see
+    # docs/compose/specs/2026-08-06-pip-index-mirror-design.md. Unset means
+    # no --build-arg at all, so the Dockerfile's own pypi.org default
+    # applies — unchanged behavior for anyone who doesn't opt in.
+    pip_index_url = os.environ.get("PIP_INDEX_URL")
+    if pip_index_url:
+        orchestrator_build += ["--build-arg", f"PIP_INDEX_URL={pip_index_url}"]
+    orchestrator_build += ["-t", orchestrator_tag, str(repo_root)]
+    run(orchestrator_build)
     run(["docker", "build", "-f", str(prod_dir / "Dockerfile.ui"), "-t", ui_tag, str(repo_root)])
     for image in BASE_IMAGES:
         run(["docker", "pull", image])
