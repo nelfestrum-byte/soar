@@ -4,6 +4,7 @@ import { createRouter, createMemoryHistory } from 'vue-router'
 import Workflows from '../src/views/Workflows.vue'
 import Actions from '../src/views/Actions.vue'
 import Connectors from '../src/views/Connectors.vue'
+import CodeEditor from '../src/components/CodeEditor.vue'
 import { auth } from '../src/store/auth.js'
 import { api } from '../src/api.js'
 
@@ -51,6 +52,7 @@ describe('editor toolbar', () => {
     expect(toolbar.text()).toContain('Code')
     expect(toolbar.text()).toContain('History')
     expect(toolbar.text()).toContain('Save')
+    expect(wrapper.find('[data-test="code-editor"]').exists()).toBe(true)
   })
 
   it('renders a sticky toolbar once an action is opened', async () => {
@@ -70,6 +72,7 @@ describe('editor toolbar', () => {
     const toolbar = wrapper.find('.editor-toolbar')
     expect(toolbar.exists()).toBe(true)
     expect(toolbar.text()).toContain('Signature')
+    expect(wrapper.find('[data-test="code-editor"]').exists()).toBe(true)
   })
 
   it('renders a sticky toolbar for both code and config panels of a connector', async () => {
@@ -87,9 +90,12 @@ describe('editor toolbar', () => {
     await wrapper.find('table .btn-primary').trigger('click')
     await flushPromises()
     expect(wrapper.find('.editor-toolbar').exists()).toBe(true)
+    expect(wrapper.find('[data-test="code-editor"]').exists()).toBe(true)
 
     await wrapper.find('.btn-success').trigger('click')
     await flushPromises()
     expect(wrapper.find('.editor-toolbar').exists()).toBe(true)
+    expect(wrapper.find('[data-test="code-editor"]').exists()).toBe(true)
+    expect(wrapper.findComponent(CodeEditor).props('language')).toBe('yaml')
   })
 })

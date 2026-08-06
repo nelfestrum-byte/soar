@@ -275,4 +275,6 @@ tabs, dropdown menus) rather than tied to a particular design framework.
       где `.card`/`.btn`/`.badge`/таблицы/`pre` уже были переведены на
       `var(--...)` — Часть 5.1 просто поменяла значения переменных)
 - [ ] Часть 5.3 — nav/row actions в новом стиле
-- [ ] Часть 5.4 — Monaco вместо `<textarea>`, diff-editor в `HistoryPanel`
+- [x] Часть 5.4 (Monaco вместо `<textarea>`) — реализовано 2026-08-06,
+      `docs/compose/reports/monaco-editor.md`; diff-editor в `HistoryPanel`
+      сознательно не входил (см. [S2] спека) и остаётся открытым

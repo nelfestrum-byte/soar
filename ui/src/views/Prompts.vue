@@ -20,9 +20,8 @@
         </button>
       </div>
       <Loading v-if="userLoading" />
-      <textarea v-else v-model="userContent" :readonly="!canWrite" data-test="user-prompt-editor"
-                style="width:100%; min-height:300px; font-family:var(--font-mono); font-size:12px; padding:8px; border:1px solid var(--color-border); border-radius:4px; resize:vertical;"
-                placeholder="Промпт не задан"></textarea>
+      <CodeEditor v-else v-model="userContent" language="plaintext" height="300px" :readOnly="!canWrite"
+                  data-test="user-prompt-editor" />
       <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
         <span v-if="saveResult.success" style="color:var(--color-result-ok);">Saved (commit: {{ saveResult.commit }})</span>
         <span v-else style="color:var(--color-result-fail);">Error: {{ saveResult.error }}</span>
@@ -37,6 +36,7 @@ import { api } from '../api.js'
 import { auth } from '../store/auth.js'
 import { can } from '../permissions.js'
 import Loading from '../components/Loading.vue'
+import CodeEditor from '../components/CodeEditor.vue'
 
 const canWrite = computed(() => can(auth.role, 'prompt.write'))
 

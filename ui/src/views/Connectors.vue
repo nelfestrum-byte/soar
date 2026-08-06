@@ -54,7 +54,7 @@
           <button class="btn" @click="editMode = false">Close</button>
         </div>
         <template v-if="codeTab==='code'">
-          <textarea v-model="codeContent" :readonly="!canWriteCode" style="width:100%; min-height:400px; font-family:var(--font-mono); font-size:12px; padding:8px; border:1px solid var(--color-border); border-radius:4px; resize:vertical; tab-size:4;"></textarea>
+          <CodeEditor v-model="codeContent" language="python" height="400px" :readOnly="!canWriteCode" />
           <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
             <span v-if="saveResult.success" style="color:var(--color-result-ok);">Saved (commit: {{ saveResult.commit }})</span>
             <span v-else style="color:var(--color-result-fail);">Error: {{ saveResult.error }}</span>
@@ -110,7 +110,7 @@
                      v-model="instanceValues[f.name]" :disabled="!canWriteConfig" style="width:100%;" />
             </div>
           </template>
-          <textarea v-else v-model="configContent" :readonly="!canWriteConfig" style="width:100%; min-height:200px; font-family:var(--font-mono); font-size:12px; padding:8px; border:1px solid var(--color-border); border-radius:4px; resize:vertical; tab-size:4;"></textarea>
+          <CodeEditor v-else v-model="configContent" language="yaml" height="200px" :readOnly="!canWriteConfig" />
 
           <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
             <span v-if="saveResult.success" style="color:var(--color-result-ok);">Saved (commit: {{ saveResult.commit }})</span>
@@ -131,6 +131,7 @@ import { can } from '../permissions.js'
 import HistoryPanel from '../components/HistoryPanel.vue'
 import RowMenu from '../components/RowMenu.vue'
 import Loading from '../components/Loading.vue'
+import CodeEditor from '../components/CodeEditor.vue'
 
 const canManage = computed(() => can(auth.role, 'connector.manage'))
 const canWriteCode = computed(() => can(auth.role, 'connector.code.write'))

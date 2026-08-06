@@ -49,7 +49,7 @@
           </button>
         </div>
         <template v-if="editTab==='code'">
-          <textarea v-model="content" :readonly="!canWrite" style="width:100%; min-height:400px; font-family:var(--font-mono); font-size:12px; padding:8px; border:1px solid var(--color-border); border-radius:4px; resize:vertical; tab-size:4;"></textarea>
+          <CodeEditor v-model="content" language="python" height="400px" :readOnly="!canWrite" />
           <div v-if="saveResult" style="margin-top:8px; font-size:13px;">
             <span v-if="saveResult.success" style="color:var(--color-result-ok);">Saved (commit: {{ saveResult.commit }})</span>
             <span v-else style="color:var(--color-result-fail);">Error: {{ saveResult.error }}</span>
@@ -77,6 +77,7 @@ import { can } from '../permissions.js'
 import HistoryPanel from '../components/HistoryPanel.vue'
 import RowMenu from '../components/RowMenu.vue'
 import Loading from '../components/Loading.vue'
+import CodeEditor from '../components/CodeEditor.vue'
 
 const canWrite = computed(() => can(auth.role, 'code.write'))
 

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import Prompts from '../src/views/Prompts.vue'
+import CodeEditor from '../src/components/CodeEditor.vue'
 import { auth } from '../src/store/auth.js'
 import { api } from '../src/api.js'
 
@@ -52,8 +53,7 @@ describe('user prompt', () => {
     const wrapper = mount(Prompts)
     await flushPromises()
 
-    const textarea = wrapper.find('[data-test="user-prompt-editor"]')
-    expect(textarea.element.value).toBe('')
+    expect(wrapper.findComponent(CodeEditor).props('modelValue')).toBe('')
   })
 
   it('shows Save only for a role with prompt.write', async () => {
@@ -64,12 +64,13 @@ describe('user prompt', () => {
     let wrapper = mount(Prompts)
     await flushPromises()
     expect(wrapper.find('[data-test="save-user-prompt"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="user-prompt-editor"]').attributes('readonly')).toBeDefined()
+    expect(wrapper.findComponent(CodeEditor).props('readOnly')).toBe(true)
 
     setup('admin')
     wrapper = mount(Prompts)
     await flushPromises()
     expect(wrapper.find('[data-test="save-user-prompt"]').exists()).toBe(true)
+    expect(wrapper.findComponent(CodeEditor).props('readOnly')).toBe(false)
   })
 
   it('saves and shows the commit hash', async () => {
