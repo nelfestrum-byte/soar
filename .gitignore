@@ -11,3 +11,4 @@ var/
 soar.db
 soar.db-shm
 soar.db-wal
+.playwright-mcp/
