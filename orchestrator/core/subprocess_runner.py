@@ -155,6 +155,10 @@ def build_scoped_config(workflow_file: str | None, full_config: dict) -> tuple[s
             if redis_url:
                 scoped["queue"] = {"redis_url": redis_url}
 
+    egress_cfg = (full_config or {}).get("egress")
+    if egress_cfg:
+        scoped["egress"] = egress_cfg
+
     scoped_config_path = os.path.join(scoped_dir, "config.yaml")
     with open(scoped_config_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(scoped, f)

@@ -7,13 +7,20 @@ import ipaddress
 import socket
 from urllib.parse import urlparse
 
+from soar.egress_policy import EgressPolicy
+from soar.egress_policy import parse as _parse_egress_policy
 
-def _is_private_ip(ip_str: str) -> bool:
-    try:
-        ip = ipaddress.ip_address(ip_str)
-        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved
-    except ValueError:
-        return False
+# Module-level, set by soar/runner.py::_build_http_client before any content
+# loads — its own copy of the shared EgressPolicy (soar/audit_hook.py keeps
+# a separate one via closure), per docs/compose/specs/
+# 2026-08-06-egress-policy-design.md [S2]: two enforcement points, one
+# parsed policy object each, same config section.
+_policy: EgressPolicy = _parse_egress_policy({})
+
+
+def set_policy(policy: EgressPolicy) -> None:
+    global _policy
+    _policy = policy
 
 
 def _validate_external_url(url: str) -> None:
@@ -40,7 +47,7 @@ def _validate_external_url(url: str) -> None:
 
     if ip is not None:
         # Direct IP literal: check immediately
-        if _is_private_ip(str(ip)):
+        if not _policy.is_allowed(str(ip)):
             raise ValueError("Requests to internal IPs are not allowed")
         return
 
@@ -51,7 +58,7 @@ def _validate_external_url(url: str) -> None:
         raise ValueError("Could not resolve hostname") from e
     for result in results:
         addr_ip = result[4][0]
-        if _is_private_ip(addr_ip):
+        if not _policy.is_allowed(addr_ip):
             raise ValueError("Requests to internal IPs are not allowed")
 
 

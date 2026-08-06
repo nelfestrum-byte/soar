@@ -234,8 +234,9 @@ soar/
 ├── workflows/                  # __init__.py (WorkflowRegistry), base.py (BaseWorkflow/ScheduledWorkflow/WebhookWorkflow/ManualWorkflow)
 ├── tools/                      # __init__.py::TOOL_REGISTRY — единственный источник того, что видно GET /tools (class/instance/factory); watermark.py (WatermarkStore/SeenStore + watermark_store()/seen_store() фабрики, путь из soar.state_dir), http_client.py (LoggingHttpClient/CachingHttpClient — httpx.Client-подклассы, единый send() покрывает любой HTTP-метод и .json()/.content; new_client(verify=...) — для connect_impl с нестандартным TLS-доверием или persistent-состоянием); _cache.py/_net.py — внутренняя механика (CacheBackend/InMemoryCache/RedisCache, SSRF-guard), не в TOOL_REGISTRY. См. File map. OpenAPIGenerator — не здесь, см. orchestrator/core/openapi_generator.py
 ├── runtime_contract.py         # CONTRACT (dist name → import_names/kind) + RUNTIME_VERSION — версионированный контракт content-venv, источник для GET /runtime; версии пакетов по-прежнему только в soar/requirements.txt
-├── audit_hook.py                # sys.addaudithook — платформенная наблюдаемость egress/файлов/подпроцессов + deny-policy на приватные адреса, ставится в runner.py до любого init()
-├── runner.py                   # Точка входа для subprocess workflows — см. Runner contract; ставит audit-хук, собирает единственный tools.http_client из SOAR_CONFIG (заполняет http_client.py::_shared_cache/_shared_default_ttl/_shared_domain_ttl для new_client()), выставляет runtime_state.set_dry_run(context["dry_run"]) до workflows.execute() — до workflows.init()/connectors.init()/actions.init() — верхнеуровневый `from soar.tools import http_client` в пользовательском коде видит сконфигурированный инстанс
+├── egress_policy.py             # EgressPolicy/parse()/is_allowed() — общая политика для audit_hook.py и tools/_net.py, из config.yaml::egress (mode: allowlist|observe, allow: [CIDR,...]); allowlist — исключения из deny-private, не замена всей политики
+├── audit_hook.py                # sys.addaudithook — платформенная наблюдаемость egress/файлов/подпроцессов + deny-policy на приватные адреса (настраивается через egress_policy, install(policy) — политика замыканием), ставится в runner.py до любого init()
+├── runner.py                   # Точка входа для subprocess workflows — см. Runner contract; конфиг грузится до audit-хука (хуку нужна распарсенная egress-политика), ставит хук, собирает единственный tools.http_client из SOAR_CONFIG (заполняет http_client.py::_shared_cache/_shared_default_ttl/_shared_domain_ttl для new_client(), плюс tools/_net.py::set_policy() той же egress-политикой), выставляет runtime_state.set_dry_run(context["dry_run"]) до workflows.execute() — до workflows.init()/connectors.init()/actions.init() — верхнеуровневый `from soar.tools import http_client` в пользовательском коде видит сконфигурированный инстанс
 └── examples/nadproject_integration.py
 
 ui/src/                         # Vue 3 SPA, полный список views — см. File map
@@ -614,7 +615,46 @@ API (UI или LLM-агентом) **без передеплоя**. Три шт�
 
 Полная история версий — **[CHANGELOG.md](CHANGELOG.md)**.
 
-Текущая версия: **v0.23** (2026-08-06) — Разделение владения коннектором:
+Текущая версия: **v0.24** (2026-08-06) — Egress-политика через конфиг вместо
+безусловного deny-private. Найдено на живом прогоне: подключение к SIEM на
+`192.168.1.51` официальным `elasticsearch`-клиентом (мимо `http_client`,
+через `urllib3`) падало с `PermissionError` от аудит-хука, и разрешить это
+было нельзя нигде — ни в конфиге, ни в env, ни в API. Это ошибка модели
+угроз (`ENTITY-MODEL.md`, решение 2), а не забытая настройка: deny-private
+без исключений верен для SaaS, но для он-прем SOC приватный диапазон — это
+вся рабочая поверхность (SIEM, AD, FreeIPA). Новый `soar/egress_policy.py`
+(`EgressPolicy`, `parse()`, `is_allowed()`, общий `_is_private_ip` — был
+продублирован в `audit_hook.py`/`_net.py`) читает секцию `egress` в
+`config.yaml` (`mode: allowlist|observe`, `allow: [CIDR, ...]`) — `allowlist`
+(default) держит сегодняшнее поведение с явными исключениями, пустой
+`allow` ничего не меняет; `observe` — задокументированный escape hatch
+(логирует, не блокирует), нужен потому что on-site инсталляции сами
+собирают образы и иначе тихо патчили бы `audit_hook.py` руками. Одна
+политика, две точки enforcement: `soar/audit_hook.py::install(policy)`
+берёт её замыканием (контенту негде её перезаписать — глобала для этого
+больше нет), `soar/tools/_net.py` держит свою копию через `set_policy()`,
+обе выставляются из `soar/runner.py` до любого `*.init()`; конфиг там же
+теперь грузится раньше `install_audit_hook()` (было наоборот). Малформед
+`egress` падает `ValueError`-ом на уровне модуля, громко и до исполнения
+джобы, а не тихий откат к deny. `orchestrator/core/subprocess_runner.py
+::build_scoped_config` копирует `egress` в scoped-конфиг тем же путём, что
+и `http_client`. `GET /runtime` отдаёт `egress: {mode, allow}` (новый
+`EgressConfig` в `orchestrator/config.py`), доступно роли `agent`;
+`system_prompt.md` объясняет, что egress — платформенное ограничение на
+любую библиотеку, не только `http_client`. `docs/concepts/ENTITY-MODEL.md`
+решение 2 дополнено правкой на месте, не переписано — изоляционная модель
+(хук нельзя снять, запрещает по умолчанию) не изменилась, изменилась только
+настраиваемость. Проверено вручную через реальный `python -m soar.runner`
+subprocess: воркфлоу коннектится на allowlisted loopback (успех) и на
+приватный адрес вне allowlist (`PermissionError`, залогирован). 40
+новых/расширенных тестов, полный набор 851 passed / 3 pre-existing
+Redis-фейла (нет живого Redis, тот же baseline что в v0.23) / 9 skipped,
+`ruff check` чист. Спек/план/отчёт:
+`docs/compose/specs/2026-08-06-egress-policy-design.md`,
+`docs/compose/plans/2026-08-06-egress-policy.md`,
+`docs/compose/reports/egress-policy.md`.
+
+Предыдущая версия: **v0.23** (2026-08-06) — Разделение владения коннектором:
 код агенту, значения кредов человеку. Отменяет B3 (`PUT /connectors/{name}/code`
 на литеральном `admin`) по фидбэку из боя — агент написал реальный коннектор и
 не смог его сохранить. Барьер к тому же не держал: `POST /connectors/{name}`

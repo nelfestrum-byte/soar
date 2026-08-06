@@ -1,5 +1,7 @@
 import inspect
 import json
+import subprocess
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -51,6 +53,45 @@ def test_main_workflow_run_failure_includes_full_traceback(monkeypatch, capsys):
         assert "test_runner.py" in output["error"]
     finally:
         wf_registry._workflows.pop("failing_test_workflow", None)
+
+
+def test_missing_config_file_still_warns_and_keeps_deny_private_default(tmp_path, monkeypatch):
+    """Regression for the config-load reordering: SOAR_CONFIG pointing at a
+    nonexistent file must still print the pre-existing warning and leave the
+    egress policy at its deny-private default (no egress section reachable
+    to parse) — moving the config load earlier must not change this."""
+    import os
+
+    missing_path = tmp_path / "does_not_exist.yaml"
+    env = {**os.environ, "SOAR_CONFIG": str(missing_path)}
+    result = subprocess.run(
+        [sys.executable, "-c", "import soar.runner"],
+        capture_output=True, text=True, timeout=30, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert f"Config file not found at {missing_path}" in result.stderr
+
+
+def test_build_http_client_malformed_egress_raises_before_workflow_execution():
+    """Malformed `egress` (bad mode, bad CIDR) must raise loudly out of
+    _build_http_client, not silently fall back to a working deny-private
+    policy — same class of bug as the config-load try/except swallowing
+    errors, which egress deliberately does not share."""
+    with pytest.raises(ValueError):
+        runner._build_http_client({"egress": {"mode": "чушь"}})
+    with pytest.raises(ValueError):
+        runner._build_http_client({"egress": {"allow": ["не-cidr"]}})
+
+
+def test_build_http_client_sets_net_policy_from_egress_config():
+    import soar.tools._net as net
+
+    runner._build_http_client({"egress": {"allow": ["192.168.1.0/24"]}})
+    assert net._policy.is_allowed("192.168.1.51") is True
+    assert net._policy.is_allowed("10.0.0.1") is False
+
+    runner._build_http_client({})  # reset to default for other tests
+    assert net._policy.is_allowed("192.168.1.51") is False
 
 
 def test_build_http_client_defaults_to_memory_cache():

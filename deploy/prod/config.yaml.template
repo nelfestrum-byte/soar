@@ -53,3 +53,16 @@ server:
   # a global login rate-limit and a useless AuditLog.client_ip, see B4 in
   # docs/concepts/BAGFIX_PLAN.md.
   trusted_proxies: ["172.28.0.10"]
+
+egress:
+  # allowlist (default) blocks private/internal addresses except what's
+  # listed below; observe logs but blocks nothing (escape hatch — see
+  # docs/compose/specs/2026-08-06-egress-policy-design.md). List the CIDR
+  # ranges of the internal systems this instance's connectors need to
+  # reach (SIEM, AD, FreeIPA, ...); an empty list keeps today's
+  # deny-all-private behavior.
+  mode: allowlist
+  allow: []
+    # - 192.168.1.0/24
+    # WARNING: do not add 169.254.0.0/16 unless you mean it — that range
+    # includes cloud metadata endpoints (AWS/GCP/Azure credentials).

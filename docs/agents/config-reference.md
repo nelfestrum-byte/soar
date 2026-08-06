@@ -136,6 +136,34 @@ http_client:
 для нестандартного TLS-доверия/persistent-состояния) — см.
 `docs/compose/specs/2026-08-03-tools-redesign-design.md`.
 
+## Egress policy (soar/egress_policy.py)
+
+Секция `egress` в `config.yaml`, читается общей для `soar/audit_hook.py`
+(deny на `socket.connect`, любая библиотека) и `soar/tools/_net.py`
+(pre-flight для `http_client`):
+
+```yaml
+egress:
+  mode: allowlist   # allowlist (default) | observe
+  allow:
+    - 192.168.1.0/24   # внутренний сегмент SOC
+    - 127.0.0.1/32      # если воркфлоу ходит в сайдкар
+```
+
+`allowlist` — это исключения из сегодняшнего deny-private, не
+замена всей политики: публичный интернет разрешён всегда, приватный адрес —
+только если попадает в `allow` (CIDR или одиночный IP,
+`ipaddress.ip_network(strict=False)`). Пустой/отсутствующий `allow` = ровно
+сегодняшнее поведение, апгрейд ничего не открывает молча. `mode: observe` —
+хук пишет события, но не блокирует; задокументированный escape hatch, не
+для регулярного использования. Не добавлять `169.254.0.0/16` не подумав —
+это диапазон cloud-metadata-эндпоинтов (AWS/GCP/Azure креды инстанса).
+
+Малформед `egress` (неизвестный `mode`, непарсящийся CIDR) роняет
+`soar.runner` с понятной ошибкой при старте subprocess'а — не тихий откат к
+deny. Читается `GET /runtime` (`egress.mode`/`egress.allow`), доступно роли
+`agent`. Подробности — `docs/compose/specs/2026-08-06-egress-policy-design.md`.
+
 ## Database backend (SQLite/PostgreSQL) и table prefix
 
 Один общий `database:` конфиг используется и auth-таблицами (`users`,

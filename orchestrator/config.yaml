@@ -27,3 +27,16 @@ jobs:
 
 server:
   trusted_proxies: []  # set to ["127.0.0.1"] when running behind nginx in same container
+
+egress:
+  mode: allowlist   # allowlist (default) | observe — see soar/egress_policy.py
+  allow: []
+    # Exceptions carved out of deny-private, not a replacement for the whole
+    # policy — public internet stays reachable regardless of this list.
+    # CIDR or single IP, e.g.:
+    #   - 192.168.1.0/24   # internal SOC segment
+    #   - 10.20.0.0/16
+    #   - 127.0.0.1/32     # only if a workflow needs to reach a sidecar
+    # WARNING: do not add 169.254.0.0/16 (or 169.254.169.254/32 specifically)
+    # unless you mean it — that range includes cloud metadata endpoints
+    # (AWS/GCP/Azure instance credentials).

@@ -311,6 +311,33 @@ class TestBuildScopedConfig:
         finally:
             shutil.rmtree(scoped_dir, ignore_errors=True)
 
+    def test_egress_copied_into_scoped_config_when_present(self, tmp_path):
+        full_config = self._make_full_config(tmp_path)
+        full_config["egress"] = {"mode": "allowlist", "allow": ["192.168.1.0/24"]}
+        workflow_file = self._make_workflow_file(
+            tmp_path, "from soar.connectors.virus_total import vt_main\n",
+        )
+
+        scoped_path, scoped_dir = build_scoped_config(workflow_file, full_config)
+        try:
+            scoped = yaml.safe_load(Path(scoped_path).read_text())
+            assert scoped["egress"] == {"mode": "allowlist", "allow": ["192.168.1.0/24"]}
+        finally:
+            shutil.rmtree(scoped_dir, ignore_errors=True)
+
+    def test_egress_absent_from_scoped_config_when_absent_from_full_config(self, tmp_path):
+        full_config = self._make_full_config(tmp_path)
+        workflow_file = self._make_workflow_file(
+            tmp_path, "from soar.connectors.virus_total import vt_main\n",
+        )
+
+        scoped_path, scoped_dir = build_scoped_config(workflow_file, full_config)
+        try:
+            scoped = yaml.safe_load(Path(scoped_path).read_text())
+            assert "egress" not in scoped
+        finally:
+            shutil.rmtree(scoped_dir, ignore_errors=True)
+
     def test_unparseable_workflow_file_falls_back_to_empty_usage(self, tmp_path):
         full_config = self._make_full_config(tmp_path)
         workflow_file = self._make_workflow_file(tmp_path, "def broken(:\n")

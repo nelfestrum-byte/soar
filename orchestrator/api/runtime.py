@@ -79,9 +79,11 @@ async def get_runtime(request: Request):
         for d in dists if d.metadata["Name"].lower() not in declared
     ]
 
+    egress = request.app.state.config.egress
     return {
         "runtime_version": RUNTIME_VERSION,
         "python_version": _python_version(venv_root),
         "guaranteed": sorted(guaranteed, key=lambda x: x["distribution"]),
         "present_not_guaranteed": sorted(present_not_guaranteed, key=lambda x: x["distribution"]),
+        "egress": {"mode": egress.mode, "allow": egress.allow},
     }

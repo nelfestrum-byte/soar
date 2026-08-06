@@ -32,6 +32,15 @@ def as_viewer():
     app.dependency_overrides.pop(get_current_user, None)
 
 
+@pytest.fixture
+def as_agent():
+    def _agent():
+        return CurrentUser(id=3, role="agent", type="user", username="test_agent")
+    app.dependency_overrides[get_current_user] = _agent
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
+
+
 @pytest.mark.asyncio
 async def test_get_runtime_returns_200_with_expected_shape(as_viewer):
     with patch("orchestrator.api.runtime._site_packages", return_value=["/fake/site-packages"]), \
@@ -42,7 +51,7 @@ async def test_get_runtime_returns_200_with_expected_shape(as_viewer):
             assert r.status_code == 200
             data = r.json()
             assert set(data.keys()) == {
-                "runtime_version", "python_version", "guaranteed", "present_not_guaranteed",
+                "runtime_version", "python_version", "guaranteed", "present_not_guaranteed", "egress",
             }
             assert isinstance(data["guaranteed"], list)
             assert isinstance(data["present_not_guaranteed"], list)
@@ -85,6 +94,32 @@ async def test_get_runtime_present_not_guaranteed_uses_top_level_txt(as_viewer):
             assert entry["distribution"] == "some-unrelated-pkg"
             assert entry["version"] == "1.0.0"
             assert entry["import_names"] == ["some_unrelated_pkg"]
+
+
+@pytest.mark.asyncio
+async def test_get_runtime_includes_egress_mode_and_allow(as_viewer):
+    from orchestrator.main import app as _app
+
+    _app.state.config.egress.mode = "allowlist"
+    _app.state.config.egress.allow = ["192.168.1.0/24"]
+    with patch("orchestrator.api.runtime._site_packages", return_value=["/fake/site-packages"]), \
+         patch("importlib.metadata.distributions", return_value=[]):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            r = await c.get("/runtime")
+            data = r.json()
+            assert data["egress"] == {"mode": "allowlist", "allow": ["192.168.1.0/24"]}
+
+
+@pytest.mark.asyncio
+async def test_get_runtime_accessible_to_agent_role(as_agent):
+    with patch("orchestrator.api.runtime._site_packages", return_value=[]), \
+         patch("importlib.metadata.distributions", return_value=[]):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            r = await c.get("/runtime")
+            assert r.status_code == 200
+            assert "egress" in r.json()
 
 
 @pytest.mark.asyncio

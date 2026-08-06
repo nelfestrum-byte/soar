@@ -9,14 +9,22 @@ _validate_external_url там остаётся как pre-flight (быстрый
 открытия сокета, с понятным ValueError) — хук не заменяет его, а
 гарантирует то же самое там, где pre-flight-проверки нет и быть не может
 (paramiko, ldap3, pymssql — не HTTP). См. docs/concepts/ENTITY-MODEL.md,
-решение 2."""
+решение 2.
 
-import ipaddress
+Политика (soar/egress_policy.py) передаётся в install() замыканием, а не
+читается из глобала модуля — хук снять нельзя, но глобал контент мог бы
+перезаписать и расширить себе allowlist; захваченного в замыкание имени в
+модуле не существует (docs/compose/specs/2026-08-06-egress-policy-design.md
+[S2])."""
+
 import socket
 import sys
 from typing import Any
 
 from loguru import logger as _log
+
+from soar.egress_policy import EgressPolicy
+from soar.egress_policy import parse as parse_egress_policy
 
 _WATCHED = {
     "socket.connect", "socket.getaddrinfo", "open",
@@ -26,21 +34,14 @@ _WATCHED = {
 _events: list[dict[str, Any]] = []
 
 
-def _is_private_ip(ip_str: str) -> bool:
-    try:
-        ip = ipaddress.ip_address(ip_str)
-        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved
-    except ValueError:
-        return False
-
-
-def _handle(event: str, args: tuple) -> None:
+def _handle(event: str, args: tuple, policy: EgressPolicy | None = None) -> None:
+    policy = policy or parse_egress_policy({})
     if event == "socket.connect":
         sock, address = args[0], args[1]
         family = getattr(sock, "family", None)
         if family in (socket.AF_INET, socket.AF_INET6) and isinstance(address, tuple) and address:
             host = address[0]
-            if _is_private_ip(str(host)):
+            if not policy.is_allowed(str(host)):
                 _events.append({"event": "socket.connect.blocked", "address": str(host)})
                 raise PermissionError(f"egress to private address {host} blocked by audit hook")
         _events.append({"event": event, "address": str(address)})
@@ -67,8 +68,10 @@ def flush() -> None:
     _events.clear()
 
 
-def install() -> None:
+def install(policy: EgressPolicy | None = None) -> None:
+    policy = policy or parse_egress_policy({})
+
     def hook(event: str, args: tuple) -> None:
         if event in _WATCHED:
-            _handle(event, args)
+            _handle(event, args, policy)
     sys.addaudithook(hook)

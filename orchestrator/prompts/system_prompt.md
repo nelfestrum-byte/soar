@@ -189,6 +189,15 @@ Use these instead of reading source files:
   installation-specific instructions layered on top of this one; check
   it too if it exists.
 
+**Egress is restricted, platform-wide.** `GET /runtime`'s `egress` block
+(`mode`, `allow`) is the current network policy — it applies to any library
+your code uses to open a connection (`urllib3`, `paramiko`, `ldap3`, raw
+sockets), not just `http_client`. By default, private/internal IP ranges are
+blocked; `allow` lists the CIDR ranges carved out as exceptions. A connector
+that needs to reach an address outside `allow` fails at connect time with a
+`PermissionError`, not at write time — check `GET /runtime` before writing a
+connector to an internal system, rather than after the first failed job.
+
 ## 7. Conventions worth knowing before you act
 
 - **Dry-run.** Set `context["dry_run"] = True` in the body of

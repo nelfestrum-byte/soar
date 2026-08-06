@@ -10,8 +10,10 @@ from soar.actions import actions
 from soar.audit_hook import flush as flush_audit_hook
 from soar.audit_hook import install as install_audit_hook
 from soar.connectors import connectors
+from soar.egress_policy import parse as parse_egress_policy
 from soar.logger import setup_logging
 from soar.tools._cache import CacheBackend, InMemoryCache, RedisCache
+from soar.tools._net import set_policy as set_egress_policy
 from soar.tools.http_client import CachingHttpClient, LoggingHttpClient
 from soar.workflows import workflows
 
@@ -24,20 +26,15 @@ from soar.workflows import workflows
 http_client_module = importlib.import_module("soar.tools.http_client")
 
 setup_logging(level="INFO")
-if __name__ == "__main__":
-    # sys.addaudithook — необратим на весь процесс (нет sys.removeaudithook).
-    # Гейт на __main__, а не голый вызов на уровне модуля: real subprocess
-    # entrypoint (`python -m soar.runner`) всегда исполняется как __main__,
-    # так что хук по-прежнему ставится до любого init() ниже для настоящего
-    # запуска воркфлоу. Прямой `from soar import runner` (юнит-тесты
-    # soar/runner.py в одном процессе с остальным pytest-сьютом, см.
-    # tests/soar/test_runner.py) не ставит __name__ в "__main__" — без этого
-    # гейта хук бы включался один раз на весь pytest-процесс и после этого
-    # блокировал бы socket.connect на 127.0.0.1/loopback во всех остальных
-    # тестах (Redis/scheduler/worker/http_client), которые уже полагаются на
-    # реальные localhost-сокеты в своих фикстурах.
-    install_audit_hook()  # до любого init() ниже — видит всё, что делает контент
 
+# Config load moved above install_audit_hook() (was below it) — the egress
+# policy the hook enforces comes from config.get("egress"), and the hook
+# must be installed with the real policy already parsed, not a hardcoded
+# deny-private default it can never be told to relax later (hook can't be
+# removed/reconfigured after sys.addaudithook — see soar/audit_hook.py).
+# Safe to load config first: yaml.safe_load over a platform-owned file
+# executes no content, so this doesn't weaken "hook before any init()"
+# below (docs/compose/specs/2026-08-06-egress-policy-design.md [S2]).
 config_path = os.environ.get("SOAR_CONFIG", "config.yaml")
 external_dirs = {}
 config: dict = {}
@@ -57,6 +54,24 @@ except Exception as e:
     import sys
     print(f"Warning: Failed to load config from {config_path}: {e}", file=sys.stderr)
 
+if __name__ == "__main__":
+    # sys.addaudithook — необратим на весь процесс (нет sys.removeaudithook).
+    # Гейт на __main__, а не голый вызов на уровне модуля: real subprocess
+    # entrypoint (`python -m soar.runner`) всегда исполняется как __main__,
+    # так что хук по-прежнему ставится до любого init() ниже для настоящего
+    # запуска воркфлоу. Прямой `from soar import runner` (юнит-тесты
+    # soar/runner.py в одном процессе с остальным pytest-сьютом, см.
+    # tests/soar/test_runner.py) не ставит __name__ в "__main__" — без этого
+    # гейта хук бы включался один раз на весь pytest-процесс и после этого
+    # блокировал бы socket.connect на 127.0.0.1/loopback во всех остальных
+    # тестах (Redis/scheduler/worker/http_client), которые уже полагаются на
+    # реальные localhost-сокеты в своих фикстурах.
+    #
+    # Малформед egress (нераспознанный mode, мусор вместо CIDR) — parse()
+    # бросает ValueError здесь же, до install(), поэтому громко и до
+    # исполнения воркфлоу, а не тихий откат к deny (design [S2]).
+    install_audit_hook(parse_egress_policy(config.get("egress", {})))  # до любого init() ниже — видит всё, что делает контент
+
 
 def _build_cache(http_cfg: dict, queue_cfg: dict) -> CacheBackend | None:
     cache_backend = http_cfg.get("cache_backend", "memory")
@@ -75,6 +90,11 @@ def _build_cache(http_cfg: dict, queue_cfg: dict) -> CacheBackend | None:
 
 
 def _build_http_client(config: dict) -> LoggingHttpClient:
+    # soar/tools/_net.py keeps its own copy of the egress policy (separate
+    # from soar/audit_hook.py's closure-captured one) — set here, before any
+    # content module loads, so _validate_external_url's pre-flight and the
+    # audit hook's deny stay in sync (design [S2]/[S3]).
+    set_egress_policy(parse_egress_policy(config.get("egress", {})))
     http_cfg = config.get("http_client", {})
     cache = _build_cache(http_cfg, config.get("queue", {}))
     default_ttl = http_cfg.get("default_ttl", 3600)

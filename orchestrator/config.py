@@ -99,6 +99,11 @@ class HttpClientConfig(BaseModel):
     domain_ttl: dict[str, int] = {}
 
 
+class EgressConfig(BaseModel):
+    mode: str = "allowlist"   # allowlist | observe — see soar/egress_policy.py
+    allow: list[str] = []
+
+
 class OrchestratorConfig(BaseModel):
     workers: WorkersConfig = WorkersConfig()
     queue: QueueConfig = QueueConfig()
@@ -110,6 +115,7 @@ class OrchestratorConfig(BaseModel):
     auth: AuthConfig = AuthConfig()
     database: DatabaseConfig = DatabaseConfig()
     http_client: HttpClientConfig = HttpClientConfig()
+    egress: EgressConfig = EgressConfig()
 
 
 def load_config(path: str = "config.yaml") -> OrchestratorConfig:

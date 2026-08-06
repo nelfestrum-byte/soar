@@ -45,3 +45,10 @@ server:
   # a global login rate-limit and a useless AuditLog.client_ip, see B4 in
   # docs/concepts/BAGFIX_PLAN.md.
   trusted_proxies: ["172.28.0.10"]
+
+egress:
+  # See deploy/prod/config.yaml.template for the full explanation. Stage has
+  # no internal systems of its own to reach — deny-all-private stays correct
+  # here.
+  mode: allowlist
+  allow: []

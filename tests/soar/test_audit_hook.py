@@ -118,3 +118,72 @@ def test_install_in_subprocess_blocks_private_connect():
     )
     assert "BLOCKED" in result.stdout, f"stdout={result.stdout!r} stderr={result.stderr!r}"
     assert result.returncode == 0
+
+
+def test_handle_with_policy_allowing_subnet_permits_matching_address():
+    from soar.audit_hook import _events, _handle
+    from soar.egress_policy import parse
+
+    policy = parse({"allow": ["192.168.1.0/24"]})
+    _events.clear()
+    sock = _fake_socket(socket.AF_INET)
+    _handle("socket.connect", (sock, ("192.168.1.51", 443)), policy)
+    assert any(e["event"] == "socket.connect" and "192.168.1.51" in e["address"] for e in _events)
+    _events.clear()
+
+
+def test_handle_with_policy_allowing_subnet_still_blocks_other_private():
+    from soar.audit_hook import _events, _handle
+    from soar.egress_policy import parse
+
+    policy = parse({"allow": ["192.168.1.0/24"]})
+    _events.clear()
+    sock = _fake_socket(socket.AF_INET)
+    with pytest.raises(PermissionError):
+        _handle("socket.connect", (sock, ("10.0.0.1", 80)), policy)
+    assert any(e["event"] == "socket.connect.blocked" for e in _events)
+    _events.clear()
+
+
+def test_install_in_subprocess_with_policy_allows_configured_loopback():
+    code = (
+        "import soar.audit_hook as h, socket\n"
+        "from soar.egress_policy import parse\n"
+        "h.install(parse({'allow': ['127.0.0.1/32']}))\n"
+        "s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+        "s.settimeout(1)\n"
+        "try:\n"
+        "    s.connect(('127.0.0.1', 1))\n"
+        "    print('NOT_BLOCKED')\n"
+        "except PermissionError:\n"
+        "    print('BLOCKED')\n"
+        "except OSError as e:\n"
+        "    print('OTHER_OSERROR', e)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True, text=True, timeout=30,
+    )
+    # Connection refused (loopback port 1 unlikely to be listening) is fine —
+    # the point is it's not blocked by the audit hook's PermissionError.
+    assert "BLOCKED" not in result.stdout, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    assert result.returncode == 0
+
+
+def test_install_without_policy_still_denies_private_by_default():
+    result = subprocess.run(
+        [sys.executable, "-c", (
+            "import soar.audit_hook as h, socket\n"
+            "h.install()\n"
+            "s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+            "s.settimeout(1)\n"
+            "try:\n"
+            "    s.connect(('10.0.0.1', 1))\n"
+            "    print('NOT_BLOCKED')\n"
+            "except PermissionError:\n"
+            "    print('BLOCKED')\n"
+        )],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert "BLOCKED" in result.stdout, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    assert result.returncode == 0
