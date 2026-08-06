@@ -28,13 +28,21 @@ def build_images(repo_root: Path, version: str) -> tuple[str, str]:
     plan — see docs/compose/specs/2026-07-30-content-as-contentpack-design.md).
     That pack lives in its own repo, a sibling of `repo_root`
     (`<repo_root>/../soar-content-pack` locally) — not fetched, just
-    expected to already be checked out there. UNVERIFIED against a real
-    `docker build`: see docs/compose/reports/content-as-contentpack.md.
+    expected to already be checked out there if you want built-in
+    connectors baked into the image. When it isn't there (e.g. a host that
+    only ever cloned this repo), falls back to an empty directory: `COPY
+    --from=basepack` only needs the context to exist, and
+    orchestrator/main.py::seed_connector_pack already treats a missing
+    manifest.yaml as "skip seeding, connectors_dir stays empty" — so this
+    yields a working instance with zero built-in connectors, installable
+    later via `soarctl content install`.
     """
     prod_dir = repo_root / "deploy" / "prod"
     orchestrator_tag = f"soar-orchestrator:{version}"
     ui_tag = f"soar-ui:{version}"
     base_pack_dir = repo_root.parent / "soar-content-pack"
+    if not base_pack_dir.is_dir():
+        base_pack_dir = Path(tempfile.mkdtemp(prefix="soar-empty-basepack-"))
 
     run([
         "docker", "build",

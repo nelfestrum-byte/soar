@@ -91,6 +91,47 @@ def test_build_images_builds_and_pulls(tmp_path, monkeypatch):
     assert {c[2] for c in pull_calls} == set(BASE_IMAGES)
 
 
+def test_build_images_falls_back_to_empty_basepack_when_sibling_missing(tmp_path, monkeypatch):
+    repo = _make_fake_repo(tmp_path)
+    calls = []
+
+    def fake_run(argv, **kw):
+        calls.append(argv)
+        return type("R", (), {"stdout": ""})()
+
+    monkeypatch.setattr("deploy.soarctl_lib.bundle.run", fake_run)
+
+    build_images(repo, "1.2.3")
+
+    build_calls = [c for c in calls if c[:2] == ["docker", "build"]]
+    orchestrator_build = next(c for c in build_calls if "soar-orchestrator:1.2.3" in c)
+    basepack_arg = next(a for a in orchestrator_build if a.startswith("basepack="))
+    basepack_dir = Path(basepack_arg.split("=", 1)[1])
+    assert basepack_dir != repo.parent / "soar-content-pack"
+    assert basepack_dir.is_dir()
+    assert list(basepack_dir.iterdir()) == []
+
+
+def test_build_images_uses_sibling_content_pack_when_present(tmp_path, monkeypatch):
+    repo = _make_fake_repo(tmp_path)
+    content_pack = repo.parent / "soar-content-pack"
+    content_pack.mkdir()
+    (content_pack / "manifest.yaml").write_text("name: test\n")
+    calls = []
+
+    def fake_run(argv, **kw):
+        calls.append(argv)
+        return type("R", (), {"stdout": ""})()
+
+    monkeypatch.setattr("deploy.soarctl_lib.bundle.run", fake_run)
+
+    build_images(repo, "1.2.3")
+
+    build_calls = [c for c in calls if c[:2] == ["docker", "build"]]
+    orchestrator_build = next(c for c in build_calls if "soar-orchestrator:1.2.3" in c)
+    assert f"basepack={content_pack}" in orchestrator_build
+
+
 def test_install_extracts_and_loads_and_cleans_up(tmp_path, monkeypatch):
     bundle = tmp_path / "soar-bundle-1.2.3.tar.gz"
     staging = tmp_path / "staging"

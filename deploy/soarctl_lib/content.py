@@ -24,19 +24,22 @@ docs/compose/reports/content-as-contentpack.md, Judgment calls).
 
 import hashlib
 import io
+import json
 import re
 import tarfile
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-import yaml
-
+from .compose import compose_argv
 from .runner import run
 
 _VOLUME_NAME = "soar-data"
 _MARKER_NAME = ".soar-content.yaml"
 _SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+_YAML_LOAD_SCRIPT = "import sys, json, yaml; json.dump(yaml.safe_load(sys.stdin.read()) or {}, sys.stdout)"
+_YAML_DUMP_SCRIPT = "import sys, json, yaml; yaml.safe_dump(json.loads(sys.stdin.read()), sys.stdout, sort_keys=False)"
 
 
 class ContentError(RuntimeError):
@@ -50,6 +53,22 @@ def _validate_name(name: str) -> None:
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _yaml_load(instance: Path, yaml_text: str) -> dict:
+    """soarctl itself is stdlib-only (docs/compose/specs/2026-07-22-deploy-cli-design.md);
+    YAML parsing happens inside the orchestrator container, which already
+    carries pyyaml as a build-time dependency — same proxy pattern as
+    users.py delegating to `orchestrator.auth.cli`."""
+    argv = compose_argv(instance, "exec", "-T", "orchestrator", "python3", "-c", _YAML_LOAD_SCRIPT)
+    result = run(argv, input_text=yaml_text)
+    return json.loads(result.stdout)
+
+
+def _yaml_dump(instance: Path, data: dict) -> bytes:
+    argv = compose_argv(instance, "exec", "-T", "orchestrator", "python3", "-c", _YAML_DUMP_SCRIPT)
+    result = run(argv, input_text=json.dumps(data))
+    return result.stdout.encode()
 
 
 def _dump_connectors_tar() -> bytes:
@@ -83,7 +102,7 @@ def _remove_connector_dir(name: str) -> None:
     run(argv)
 
 
-def _read_current_state() -> tuple[dict, dict[str, bytes]]:
+def _read_current_state(instance: Path) -> tuple[dict, dict[str, bytes]]:
     """Returns (marker, files) — files maps tar member paths
     ('connectors/<name>/<name>.py') to bytes for everything currently in
     the volume's connectors/ directory."""
@@ -97,7 +116,7 @@ def _read_current_state() -> tuple[dict, dict[str, bytes]]:
             extracted = tar.extractfile(member)
             data = extracted.read() if extracted else b""
             if member.name == f"connectors/{_MARKER_NAME}":
-                loaded = yaml.safe_load(data) or {}
+                loaded = _yaml_load(instance, data.decode("utf-8")) if data else {}
                 if isinstance(loaded, dict):
                     loaded.setdefault("entries", {})
                     marker = loaded
@@ -111,11 +130,11 @@ def _current_sha256(files: dict[str, bytes], name: str) -> str | None:
     return _sha256(data) if data is not None else None
 
 
-def _read_manifest(pack_dir: Path) -> dict:
+def _read_manifest(instance: Path, pack_dir: Path) -> dict:
     manifest_path = pack_dir / "manifest.yaml"
     if not manifest_path.is_file():
         raise ContentError(f"{pack_dir}: no manifest.yaml found — not a content pack")
-    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest = _yaml_load(instance, manifest_path.read_text(encoding="utf-8"))
     if not isinstance(manifest, dict):
         raise ContentError(f"{manifest_path}: manifest.yaml is not a mapping")
     return manifest
@@ -159,10 +178,10 @@ def plan_install(manifest: dict, marker: dict, files: dict[str, bytes]) -> dict:
     return plan
 
 
-def install(pack_path: str, ref: str | None = None) -> dict:
+def install(instance: Path, pack_path: str, ref: str | None = None) -> dict:
     pack_dir = _resolve_pack_dir(pack_path, ref)
-    manifest = _read_manifest(pack_dir)
-    marker, files = _read_current_state()
+    manifest = _read_manifest(instance, pack_dir)
+    marker, files = _read_current_state(instance)
     plan = plan_install(manifest, marker, files)
 
     if plan["new"] or plan["update"]:
@@ -184,7 +203,7 @@ def install(pack_path: str, ref: str | None = None) -> dict:
             marker["pack"] = manifest.get("name")
             marker["pack_version"] = manifest.get("version")
             marker["installed_at"] = datetime.now(UTC).isoformat()
-            marker_bytes = yaml.safe_dump(marker, sort_keys=False).encode()
+            marker_bytes = _yaml_dump(instance, marker)
             info = tarfile.TarInfo(f"connectors/{_MARKER_NAME}")
             info.size = len(marker_bytes)
             tar.addfile(info, io.BytesIO(marker_bytes))
@@ -199,8 +218,8 @@ def install(pack_path: str, ref: str | None = None) -> dict:
     }
 
 
-def list_installed() -> list[dict]:
-    marker, files = _read_current_state()
+def list_installed(instance: Path) -> list[dict]:
+    marker, files = _read_current_state(instance)
     entries = marker.get("entries", {})
     rows = []
     for name, entry in sorted(entries.items()):
@@ -210,9 +229,9 @@ def list_installed() -> list[dict]:
     return rows
 
 
-def remove(name: str, force: bool = False) -> None:
+def remove(instance: Path, name: str, force: bool = False) -> None:
     _validate_name(name)
-    marker, files = _read_current_state()
+    marker, files = _read_current_state(instance)
     entries = marker.get("entries", {})
     if name not in entries:
         raise ContentError(f"{name}: not installed ({_MARKER_NAME} has no entry for it)")
@@ -229,7 +248,7 @@ def remove(name: str, force: bool = False) -> None:
 
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
-        marker_bytes = yaml.safe_dump(marker, sort_keys=False).encode()
+        marker_bytes = _yaml_dump(instance, marker)
         info = tarfile.TarInfo(f"connectors/{_MARKER_NAME}")
         info.size = len(marker_bytes)
         tar.addfile(info, io.BytesIO(marker_bytes))

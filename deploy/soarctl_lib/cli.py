@@ -92,12 +92,15 @@ def build_parser() -> argparse.ArgumentParser:
     ct_install = ct_sub.add_parser("install", help="Install a pack (local path or git URL) into the running instance")
     ct_install.add_argument("pack", help="Pack directory path or git URL (see manifest.yaml at its root)")
     ct_install.add_argument("--ref", default=None, help="git ref to check out, if `pack` is a git URL")
+    _add_dir_arg(ct_install)
 
-    ct_sub.add_parser("list", help="List installed connectors + whether they've been modified since install")
+    ct_list = ct_sub.add_parser("list", help="List installed connectors + whether they've been modified since install")
+    _add_dir_arg(ct_list)
 
     ct_remove = ct_sub.add_parser("remove", help="Remove one installed connector")
     ct_remove.add_argument("name")
     ct_remove.add_argument("--force", action="store_true", help="Remove even if modified since install")
+    _add_dir_arg(ct_remove)
 
     doc = sub.add_parser("doctor", help="Preflight checks")
     _add_dir_arg(doc)
@@ -200,8 +203,9 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.cmd == "content":
+        instance = paths.instance_dir(args)
         if args.content_cmd == "install":
-            result = content.install(args.pack, ref=args.ref)
+            result = content.install(instance, args.pack, ref=args.ref)
             for category in ("new", "update", "unchanged", "skip_modified"):
                 names = result.get(category, [])
                 if names:
@@ -209,7 +213,7 @@ def main(argv: list[str] | None = None) -> None:
             if not any(result.values()):
                 print("Nothing to install.")
         elif args.content_cmd == "list":
-            rows = content.list_installed()
+            rows = content.list_installed(instance)
             if not rows:
                 print("No connectors installed.")
             else:
@@ -218,7 +222,7 @@ def main(argv: list[str] | None = None) -> None:
                     print(f"{row['name']:<30}{str(row['pack_version']):<15}{row['modified']}")
         elif args.content_cmd == "remove":
             try:
-                content.remove(args.name, force=args.force)
+                content.remove(instance, args.name, force=args.force)
             except content.ContentError as e:
                 print(f"error: {e}")
                 sys.exit(1)
