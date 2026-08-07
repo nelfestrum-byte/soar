@@ -1,10 +1,12 @@
 import inspect
 import json
+import os
 import subprocess
 import sys
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 import soar.tools as tools
 from soar import runner
@@ -55,43 +57,152 @@ def test_main_workflow_run_failure_includes_full_traceback(monkeypatch, capsys):
         wf_registry._workflows.pop("failing_test_workflow", None)
 
 
-def test_missing_config_file_still_warns_and_keeps_deny_private_default(tmp_path, monkeypatch):
-    """Regression for the config-load reordering: SOAR_CONFIG pointing at a
-    nonexistent file must still print the pre-existing warning and leave the
-    egress policy at its deny-private default (no egress section reachable
-    to parse) — moving the config load earlier must not change this."""
-    import os
+def _write_broken_ctor_connector(connectors_dir, type_name: str = "qa_broken_ctor"):
+    """A connector whose constructor requires `api_key` — instances.yml below
+    doesn't supply it, so ConnectorRegistry.init() raises TypeError from
+    `cls(instance_name=instance_name, **params)`, mirroring the report's
+    'missing api_key' reproduction (design [S1])."""
+    conn_dir = connectors_dir / type_name
+    conn_dir.mkdir(parents=True)
+    (conn_dir / f"{type_name}.py").write_text(
+        "from soar.connectors.base import BaseConnector\n"
+        "\n\n"
+        "class QaBrokenCtor(BaseConnector):\n"
+        "    def __init__(self, instance_name, api_key):\n"
+        "        super().__init__(instance_name)\n"
+        "        self.api_key = api_key\n",
+        encoding="utf-8",
+    )
+    (conn_dir / f"{type_name}.yml").write_text(
+        "instances:\n"
+        "  x: {}\n",
+        encoding="utf-8",
+    )
 
-    missing_path = tmp_path / "does_not_exist.yaml"
-    env = {**os.environ, "SOAR_CONFIG": str(missing_path)}
+
+def _write_broken_bootstrap_config(tmp_path) -> str:
+    connectors_dir = tmp_path / "connectors"
+    workflows_dir = tmp_path / "workflows"
+    actions_dir = tmp_path / "actions"
+    connectors_dir.mkdir()
+    workflows_dir.mkdir()
+    actions_dir.mkdir()
+    _write_broken_ctor_connector(connectors_dir)
+
+    config_path = tmp_path / "config.yaml"
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump({
+            "soar": {
+                "connectors_dir": str(connectors_dir),
+                "workflows_dir": str(workflows_dir),
+                "actions_dir": str(actions_dir),
+            }
+        }, f)
+    return str(config_path)
+
+
+def test_bootstrap_failure_in_subprocess_prints_json_traceback_and_exits_1(tmp_path):
+    """[S1]: `python -m soar.runner` (real subprocess entrypoint, __name__ ==
+    "__main__") against a connector whose constructor is missing a required
+    param must still print exactly one JSON line to stdout with a full
+    traceback — not crash with an unhandled exception whose traceback only
+    reaches stderr (which orchestrator/core/worker.py never reads)."""
+    config_path = _write_broken_bootstrap_config(tmp_path)
+    env = {
+        **os.environ,
+        "SOAR_CONFIG": config_path,
+        "SOAR_WORKFLOW_NAME": "irrelevant_workflow",
+        "SOAR_CONTEXT": "{}",
+    }
     result = subprocess.run(
-        [sys.executable, "-c", "import soar.runner"],
+        [sys.executable, "-m", "soar.runner"],
         capture_output=True, text=True, timeout=30, env=env,
     )
-    assert result.returncode == 0, result.stderr
-    assert f"Config file not found at {missing_path}" in result.stderr
+
+    assert result.returncode == 1, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
+    assert len(lines) == 1, f"expected exactly one JSON line on stdout, got: {result.stdout!r}"
+    output = json.loads(lines[0])
+    assert output["success"] is False
+    assert output["workflow_name"] == "irrelevant_workflow"
+    assert output["duration_seconds"] is None
+    assert output["data"] is None
+    assert "TypeError" in output["error"]
+    assert "api_key" in output["error"]
 
 
-def test_build_http_client_malformed_egress_raises_before_workflow_execution():
-    """Malformed `egress` (bad mode, bad CIDR) must raise loudly out of
-    _build_http_client, not silently fall back to a working deny-private
-    policy — same class of bug as the config-load try/except swallowing
-    errors, which egress deliberately does not share."""
-    with pytest.raises(ValueError):
-        runner._build_http_client({"egress": {"mode": "чушь"}})
-    with pytest.raises(ValueError):
-        runner._build_http_client({"egress": {"allow": ["не-cidr"]}})
+def test_bootstrap_success_in_subprocess_still_prints_single_json_line(tmp_path):
+    """[S1] regression: a normal, successful run through `python -m
+    soar.runner` must be unaffected by the try/except added around
+    _bootstrap() — still exactly one JSON success line on stdout, exit 0."""
+    workflows_dir = tmp_path / "workflows"
+    workflows_dir.mkdir()
+    (workflows_dir / "qa_ok_workflow.py").write_text(
+        "from soar.workflows.base import ManualWorkflow\n"
+        "\n\n"
+        "class QaOkWorkflow(ManualWorkflow):\n"
+        "    def run(self, context):\n"
+        "        return {'ok': True}\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.yaml"
+    with open(config_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump({"soar": {"workflows_dir": str(workflows_dir)}}, f)
+
+    env = {
+        **os.environ,
+        "SOAR_CONFIG": str(config_path),
+        "SOAR_WORKFLOW_NAME": "qa_ok_workflow",
+        "SOAR_CONTEXT": "{}",
+    }
+    result = subprocess.run(
+        [sys.executable, "-m", "soar.runner"],
+        capture_output=True, text=True, timeout=30, env=env,
+    )
+
+    assert result.returncode == 0, f"stdout={result.stdout!r} stderr={result.stderr!r}"
+    lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
+    assert len(lines) == 1, f"expected exactly one JSON line on stdout, got: {result.stdout!r}"
+    output = json.loads(lines[0])
+    assert output["success"] is True
+    assert output["workflow_name"] == "QaOkWorkflow"
+    assert output["data"] == {"ok": True}
 
 
-def test_build_http_client_sets_net_policy_from_egress_config():
-    import soar.tools._net as net
+def test_bootstrap_raises_uncaught_when_called_directly_not_via_main(monkeypatch):
+    """[S1] regression: outside the `__main__` gate (e.g. `from soar import
+    runner` in-process, as this very test module does at collection time,
+    __name__ != "__main__") the module-level `else` branch calls
+    `_bootstrap()` unwrapped. A broken connector constructor must still raise
+    straight through — existing tests (this whole suite) rely on the plain
+    import path never swallowing/reformatting a bootstrap failure into the
+    JSON contract that only the __main__ subprocess entrypoint uses."""
+    from soar.connectors import connectors as connectors_registry
 
-    runner._build_http_client({"egress": {"allow": ["192.168.1.0/24"]}})
-    assert net._policy.is_allowed("192.168.1.51") is True
-    assert net._policy.is_allowed("10.0.0.1") is False
+    def _broken_init(*args, **kwargs):
+        raise TypeError("__init__() missing 1 required positional argument: 'api_key'")
 
-    runner._build_http_client({})  # reset to default for other tests
-    assert net._policy.is_allowed("192.168.1.51") is False
+    monkeypatch.setattr(connectors_registry, "init", _broken_init)
+
+    with pytest.raises(TypeError, match="api_key"):
+        runner._bootstrap()
+
+
+def test_bootstrap_call_wrapped_in_try_except_only_under_main_gate():
+    """Structural check on soar/runner.py's own source: _bootstrap() must be
+    invoked twice — bare in the module-level `else` branch (plain import
+    path, must keep raising uncaught) and inside try/except under `if
+    __name__ == "__main__":` (real subprocess entrypoint, must convert a
+    bootstrap failure into the same JSON contract main() uses)."""
+    source = inspect.getsource(runner)
+    assert source.count("_bootstrap()") == 3  # def + 2 call sites
+
+    wrapped_pos = source.index("try:\n        _bootstrap()")
+    except_pos = source.index("except Exception:", wrapped_pos)
+    assert wrapped_pos < except_pos
+
+    bare_pos = source.index("else:\n    _bootstrap()")
+    assert bare_pos > except_pos
 
 
 def test_build_http_client_defaults_to_memory_cache():

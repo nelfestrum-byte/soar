@@ -12,3 +12,5 @@ soar.db
 soar.db-shm
 soar.db-wal
 .playwright-mcp/
+stend_cred.md
+misc/web-agent/settings.py

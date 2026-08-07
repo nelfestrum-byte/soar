@@ -4,6 +4,7 @@ import pytest
 from fastapi import HTTPException
 
 from orchestrator.api.validation import (
+    reject_json_envelope,
     validate_action_code,
     validate_commit,
     validate_connector_code,
@@ -130,3 +131,41 @@ def test_validate_connector_code_missing_base():
     with pytest.raises(HTTPException) as exc_info:
         validate_connector_code("class NotAConnector:\n    pass\n")
     assert exc_info.value.status_code == 422
+
+
+def test_reject_json_envelope_content_only():
+    with pytest.raises(HTTPException) as exc_info:
+        reject_json_envelope('{"content": "some code"}')
+    assert exc_info.value.status_code == 422
+    assert "envelope" in exc_info.value.detail.lower()
+
+
+def test_reject_json_envelope_name_and_content():
+    with pytest.raises(HTTPException) as exc_info:
+        reject_json_envelope('{"name": "x", "content": "some code"}')
+    assert exc_info.value.status_code == 422
+
+
+def test_reject_json_envelope_leading_whitespace():
+    with pytest.raises(HTTPException):
+        reject_json_envelope('  \n {"content": "some code"}')
+
+
+def test_reject_json_envelope_ignores_non_json():
+    reject_json_envelope("from soar.connectors.base import BaseConnector\n")
+
+
+def test_reject_json_envelope_ignores_unrelated_dict():
+    reject_json_envelope('{"foo": "bar"}')
+
+
+def test_reject_json_envelope_ignores_dict_without_content_key():
+    reject_json_envelope('{"name": "x"}')
+
+
+def test_reject_json_envelope_ignores_json_list():
+    reject_json_envelope('["content", "not an envelope"]')
+
+
+def test_reject_json_envelope_ignores_dict_with_extra_keys():
+    reject_json_envelope('{"content": "some code", "extra": "field"}')

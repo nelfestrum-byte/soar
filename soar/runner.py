@@ -2,6 +2,7 @@ import importlib
 import json
 import os
 import sys
+import traceback
 
 import yaml
 
@@ -54,24 +55,6 @@ except Exception as e:
     import sys
     print(f"Warning: Failed to load config from {config_path}: {e}", file=sys.stderr)
 
-if __name__ == "__main__":
-    # sys.addaudithook — необратим на весь процесс (нет sys.removeaudithook).
-    # Гейт на __main__, а не голый вызов на уровне модуля: real subprocess
-    # entrypoint (`python -m soar.runner`) всегда исполняется как __main__,
-    # так что хук по-прежнему ставится до любого init() ниже для настоящего
-    # запуска воркфлоу. Прямой `from soar import runner` (юнит-тесты
-    # soar/runner.py в одном процессе с остальным pytest-сьютом, см.
-    # tests/soar/test_runner.py) не ставит __name__ в "__main__" — без этого
-    # гейта хук бы включался один раз на весь pytest-процесс и после этого
-    # блокировал бы socket.connect на 127.0.0.1/loopback во всех остальных
-    # тестах (Redis/scheduler/worker/http_client), которые уже полагаются на
-    # реальные localhost-сокеты в своих фикстурах.
-    #
-    # Малформед egress (нераспознанный mode, мусор вместо CIDR) — parse()
-    # бросает ValueError здесь же, до install(), поэтому громко и до
-    # исполнения воркфлоу, а не тихий откат к deny (design [S2]).
-    install_audit_hook(parse_egress_policy(config.get("egress", {})))  # до любого init() ниже — видит всё, что делает контент
-
 
 def _build_cache(http_cfg: dict, queue_cfg: dict) -> CacheBackend | None:
     cache_backend = http_cfg.get("cache_backend", "memory")
@@ -112,21 +95,68 @@ def _build_http_client(config: dict) -> LoggingHttpClient:
     return CachingHttpClient(cache=cache, default_ttl=default_ttl, domain_ttl=domain_ttl)
 
 
-# Must run before workflows.init()/connectors.init()/actions.init() below:
-# those import all user workflow/action/connector modules, and any such
-# module doing a top-level `from soar.tools import http_client` binds to
-# whatever soar.tools.http_client already is at that moment (see
-# docs/compose/specs/2026-07-28-http-client-init-order-design.md [S1]).
-tools.http_client = _build_http_client(config)
+def _bootstrap() -> None:
+    # Must run before workflows.init()/connectors.init()/actions.init() below:
+    # those import all user workflow/action/connector modules, and any such
+    # module doing a top-level `from soar.tools import http_client` binds to
+    # whatever soar.tools.http_client already is at that moment (see
+    # docs/compose/specs/2026-07-28-http-client-init-order-design.md [S1]).
+    tools.http_client = _build_http_client(config)
 
-connectors.init(external_dir=external_dirs.get("connectors"))
-actions.init(external_dir=external_dirs.get("actions"))
-workflows.init(external_dir=external_dirs.get("workflows"))
+    connectors.init(external_dir=external_dirs.get("connectors"))
+    actions.init(external_dir=external_dirs.get("actions"))
+    workflows.init(external_dir=external_dirs.get("workflows"))
+
+
+if __name__ == "__main__":
+    # sys.addaudithook — необратим на весь процесс (нет sys.removeaudithook).
+    # Гейт на __main__, а не голый вызов на уровне модуля: real subprocess
+    # entrypoint (`python -m soar.runner`) всегда исполняется как __main__,
+    # так что хук по-прежнему ставится до любого init() ниже для настоящего
+    # запуска воркфлоу. Прямой `from soar import runner` (юнит-тесты
+    # soar/runner.py в одном процессе с остальным pytest-сьютом, см.
+    # tests/soar/test_runner.py) не ставит __name__ в "__main__" — без этого
+    # гейта хук бы включался один раз на весь pytest-процесс и после этого
+    # блокировал бы socket.connect на 127.0.0.1/loopback во всех остальных
+    # тестах (Redis/scheduler/worker/http_client), которые уже полагаются на
+    # реальные localhost-сокеты в своих фикстурах.
+    #
+    # Малформед egress (нераспознанный mode, мусор вместо CIDR) — parse()
+    # бросает ValueError здесь же, до install(), поэтому громко и до
+    # исполнения воркфлоу, а не тихий откат к deny (design [S2]).
+    install_audit_hook(parse_egress_policy(config.get("egress", {})))  # до любого init() ниже — видит всё, что делает контент
+
+    # connectors.init()/actions.init()/workflows.init() (внутри bootstrap-функции
+    # ниже) конструируют каждый инстанс коннектора напрямую (soar/connectors/__init__.py:
+    # `cls(instance_name=instance_name, **params)`), необёрнуто — конструктор,
+    # которому не хватает обязательного параметра конфига, падает здесь, до
+    # входа в main(). Без перехвата это дефолтная обработка необработанного
+    # исключения в Python: traceback в stderr, exit 1, и JSON-контракт,
+    # который main() обычно печатает в stdout, ни разу не случается —
+    # orchestrator/core/worker.py тогда нечего прочесть из stdout
+    # (docs/compose/specs/2026-08-07-poc-feedback-fixes-design.md [S1]).
+    # Гейт на __main__ по той же причине, что и install_audit_hook() выше:
+    # голый `from soar import runner` (тесты этого файла, где
+    # __name__ != "__main__") должен по-прежнему поднимать исходное
+    # исключение при импорте, а не эту переформатированную и проглоченную
+    # версию.
+    try:
+        _bootstrap()
+    except Exception:
+        print(json.dumps({
+            "success": False,
+            "workflow_name": os.environ.get("SOAR_WORKFLOW_NAME", ""),
+            "duration_seconds": None,
+            "data": None,
+            "error": traceback.format_exc(),
+        }))
+        flush_audit_hook()
+        sys.exit(1)
+else:
+    _bootstrap()
 
 
 def main():
-    import traceback as tb
-
     workflow_name = os.environ.get("SOAR_WORKFLOW_NAME", "")
     context_str = os.environ.get("SOAR_CONTEXT", "{}")
 
@@ -155,7 +185,7 @@ def main():
             "workflow_name": workflow_name,
             "duration_seconds": None,
             "data": None,
-            "error": tb.format_exc(),
+            "error": traceback.format_exc(),
         }
     finally:
         flush_audit_hook()

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import sys
 import tempfile
 from unittest.mock import AsyncMock, MagicMock
 
@@ -92,6 +93,107 @@ async def test_execute_exception(worker_deps):
 
     assert job.status == JobStatus.FAILED
     assert "subprocess failed" in job.result_error
+
+
+@pytest.mark.asyncio
+async def test_execute_bootstrap_failure_gives_real_traceback_not_process_failed(
+    worker_deps, tmp_path, monkeypatch
+):
+    """[S1] end-to-end: a job whose subprocess dies during soar.runner's
+    bootstrap phase (connector constructor missing a required config param —
+    the report's 'missing api_key' scenario) must surface the actual
+    traceback in job.result_error through the real Worker._execute() +
+    SubprocessRunner path, not the "Process failed" literal that
+    orchestrator/core/worker.py falls back to when stdout is empty. Before
+    the soar/runner.py [S1] fix, the bootstrap crash was an unhandled
+    exception whose traceback only reached stderr, leaving both stdout and
+    the log file's last line without valid JSON — exactly this fallback."""
+    from orchestrator.core import subprocess_runner as sr_module
+    from orchestrator.core.subprocess_runner import SubprocessRunner
+
+    connectors_dir = tmp_path / "connectors"
+    conn_type_dir = connectors_dir / "qa_broken_ctor"
+    conn_type_dir.mkdir(parents=True)
+    (conn_type_dir / "qa_broken_ctor.py").write_text(
+        "from soar.connectors.base import BaseConnector\n"
+        "\n\n"
+        "class QaBrokenCtor(BaseConnector):\n"
+        "    def __init__(self, instance_name, api_key):\n"
+        "        super().__init__(instance_name)\n"
+        "        self.api_key = api_key\n",
+        encoding="utf-8",
+    )
+    (conn_type_dir / "qa_broken_ctor.yml").write_text(
+        "instances:\n"
+        "  x: {}\n",
+        encoding="utf-8",
+    )
+
+    workflow_file = tmp_path / "wf_uses_broken.py"
+    workflow_file.write_text(
+        "from soar.connectors.qa_broken_ctor import x\n"
+        "from soar.workflows.base import ManualWorkflow\n"
+        "\n\n"
+        "class WfUsesBroken(ManualWorkflow):\n"
+        "    def run(self, context):\n"
+        "        return {}\n",
+        encoding="utf-8",
+    )
+
+    full_config = {
+        "soar": {
+            "connectors_dir": str(connectors_dir),
+            "workflows_dir": str(tmp_path / "workflows"),
+            "actions_dir": str(tmp_path / "actions"),
+            "tools_dir": "",
+            "state_dir": str(tmp_path / "state"),
+        },
+    }
+    monkeypatch.setattr(sr_module, "_load_full_config", lambda: full_config)
+    monkeypatch.setattr(sr_module, "_CONTENT_PYTHON", sys.executable)
+
+    # SubprocessRunner.start()'s safe_env_keys allowlist doesn't include
+    # SystemRoot — on Windows, spawning python without it makes Winsock
+    # init fail (WinError 10106) the moment anything imports asyncio (loguru
+    # does, transitively, via soar/logger.py), unrelated to the [S1] fix
+    # under test. Not a subprocess_runner.py bug worth fixing here (Linux/
+    # Docker deploys never hit this) — worked around only for this real,
+    # unmocked subprocess spawn by injecting it at the asyncio boundary.
+    _real_create_subprocess_exec = asyncio.create_subprocess_exec
+
+    async def _create_subprocess_exec_with_system_root(*args, **kwargs):
+        env = kwargs.get("env")
+        if env is not None:
+            for key in ("SystemRoot", "SYSTEMROOT", "windir"):
+                if key in os.environ and key not in env:
+                    env[key] = os.environ[key]
+        return await _real_create_subprocess_exec(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _create_subprocess_exec_with_system_root)
+
+    queue, job_store, _unused_runner = worker_deps
+    real_runner = SubprocessRunner()
+    worker = Worker(0, queue, real_runner, job_store, default_timeout=30)
+
+    log_file = tmp_path / "job.log"
+    job = WorkflowJob(
+        id="j_bootstrap_fail",
+        workflow_name="wf_uses_broken",
+        context={},
+        workflow_file=str(workflow_file),
+        log_path=str(log_file),
+    )
+
+    await worker._execute(job)
+
+    assert job.status == JobStatus.FAILED
+    assert job.result_success is False
+    assert job.result_error is not None
+    assert job.result_error != "Process failed", (
+        f"log contents: {log_file.read_text() if log_file.exists() else '<missing>'!r}"
+    )
+    assert "TypeError" in job.result_error
+    assert "api_key" in job.result_error
 
 
 @pytest.mark.asyncio

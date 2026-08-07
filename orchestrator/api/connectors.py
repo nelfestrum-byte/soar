@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from orchestrator.api.validation import (
+    reject_json_envelope,
     validate_commit,
     validate_connector_code,
     validate_name,
@@ -35,6 +36,20 @@ _CONFIG_RO = ("viewer", "analyst", "service", "admin")
 
 _MASK = "********"
 _DIFF_KV_RE = re.compile(r"^([+\- ])(\s*)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
+
+# Keyed on the raw ast.unparse() annotation string from introspect.py::_fields
+# — not a type parser, a lookup table for the shapes that actually show up in
+# connector constructors (checked against local test fixtures; the built-in
+# set now lives in soar-content-pack, see docs/agents/known-limitations.md).
+_FORMAT_HINTS: dict[str, str] = {
+    "list[str]": 'YAML list of strings, e.g.: ["host1", "host2"]',
+    "dict[str, str]": "YAML mapping, e.g.: {key: value}",
+    "bool": "true or false",
+}
+
+
+def _format_hint(type_str: str) -> str | None:
+    return _FORMAT_HINTS.get(type_str.strip())
 
 
 class GenerateRequest(BaseModel):
@@ -462,7 +477,12 @@ async def get_connector_schema(name: str, request: Request):
         return {"fields": []}
     cls = next((c for c in classes if not c["name"].startswith("Base")), classes[0])
     hidden = cls["hidden_fields"]
-    return {"fields": [{**f, "hidden": f["name"] in hidden} for f in cls["fields"]]}
+    return {
+        "fields": [
+            {**f, "hidden": f["name"] in hidden, "format_hint": _format_hint(f["type"])}
+            for f in cls["fields"]
+        ]
+    }
 
 
 @router.get("/{name}", dependencies=[Depends(require_role(*_RO))])
@@ -579,6 +599,7 @@ async def save_connector_code(
         raise HTTPException(status_code=400, detail="Content must be valid UTF-8")
     if "\x00" in content:
         raise HTTPException(status_code=400, detail="Content must not contain null bytes")
+    reject_json_envelope(content)
     validate_connector_code(content)
     _assert_hidden_fields_not_narrowed(config, name, content, user)
     with open(filepath, "w", encoding="utf-8") as f:
@@ -693,6 +714,7 @@ async def save_connector_config(
         raise HTTPException(status_code=400, detail="Content must be valid UTF-8")
     if "\x00" in content:
         raise HTTPException(status_code=400, detail="Content must not contain null bytes")
+    reject_json_envelope(content)
     hidden = _hidden_fields_for(config, name)
     if hidden is None or hidden:
         content = _merge_hidden_fields(filepath, content, hidden, user)

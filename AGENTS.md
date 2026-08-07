@@ -397,9 +397,21 @@ Entry point for subprocess workflow execution. Called by `SubprocessRunner`.
 
 На неудаче `"error"` — полный traceback (`WorkflowResult.traceback`), не
 `str(exception)`. `main()` оборачивает весь вызов `workflows.execute()` в
-try/except — ошибка **до** входа в `run()` (workflow не найден, упал
-конструктор) тоже даёт эту же структурированную JSON-строку, а не
-неперехваченное исключение без финальной строки в логе.
+try/except — ошибка **до** входа в `run()`, но **внутри** `execute()`
+(workflow не найден), даёт эту же структурированную JSON-строку.
+
+Сбои bootstrap-фазы — до `main()` вообще, при конструировании коннекторов/
+экшенов/воркфлоу (`connectors.init()`/`actions.init()`/`workflows.init()`,
+например упавший конструктор коннектора с нехватающим обязательным полем
+конфига) — раньше были необработанным исключением: traceback в stderr,
+`result_error` на стороне `worker.py` падал на литерал `"Process failed"`
+(значение читалось только из `stdout`). С 2026-08-07
+(`docs/compose/specs/2026-08-07-poc-feedback-fixes-design.md` [S1]) эти
+вызовы обёрнуты в `_bootstrap()` и под `if __name__ == "__main__":`
+перехватываются в тот же JSON-контракт — теперь тоже структурированная
+строка, не неперехваченное исключение без финальной строки в логе. Гейт на
+`__main__` сохраняет исходное поведение (raise) для `from soar import
+runner` вне субпроцесса — тестовый набор `soar/runner.py` на этом полагается.
 
 **Exit codes:** `0` = success, `1` = failure (stdout JSON still required)
 

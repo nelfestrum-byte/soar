@@ -212,6 +212,41 @@ async def test_save_connector_code_invalid():
 
 
 @pytest.mark.asyncio
+async def test_save_connector_code_rejects_get_envelope():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/envelope_code_conn")
+        r = await c.put(
+            "/connectors/envelope_code_conn/code",
+            content=json.dumps({"content": "whatever"}).encode(),
+        )
+        assert r.status_code == 422
+        assert "envelope" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_save_connector_code_rejects_full_get_envelope():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/envelope_code_conn2")
+        r = await c.put(
+            "/connectors/envelope_code_conn2/code",
+            content=json.dumps({"name": "envelope_code_conn2", "content": "whatever"}).encode(),
+        )
+        assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_save_connector_code_leading_dict_literal_not_rejected():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/dict_literal_conn")
+        code = b'{"foo": "bar"}\n' + VALID_CONNECTOR_CODE
+        r = await c.put("/connectors/dict_literal_conn/code", content=code)
+        assert r.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_agent_can_write_connector_code_keeping_hidden_fields():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
@@ -270,6 +305,19 @@ async def test_save_connector_config():
         r = await c.put("/connectors/yml_conn/config", content=b"instances: {}")
         assert r.status_code == 200
         assert r.json()["status"] == "saved"
+
+
+@pytest.mark.asyncio
+async def test_save_connector_config_rejects_get_envelope():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/envelope_config_conn")
+        r = await c.put(
+            "/connectors/envelope_config_conn/config",
+            content=json.dumps({"content": "instances: {}"}).encode(),
+        )
+        assert r.status_code == 422
+        assert "envelope" in r.json()["detail"].lower()
 
 
 @pytest.mark.asyncio
@@ -607,6 +655,46 @@ async def test_connector_schema_not_found():
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         r = await c.get("/connectors/does_not_exist/schema")
         assert r.status_code == 404
+
+
+LIST_FIELD_CONNECTOR_CODE = (
+    "from soar.connectors.base import BaseConnector\n\n\n"
+    "class ListFieldConnector(BaseConnector):\n"
+    "    def __init__(\n"
+    "        self, instance_name: str, hosts: list[str] = None, verify_certs: bool = True,\n"
+    "    ):\n"
+    "        super().__init__(instance_name)\n"
+    "        self.hosts = hosts\n"
+    "        self.verify_certs = verify_certs\n\n"
+    "    def _connect_impl(self):\n        self._connected = True\n\n"
+    "    def disconnect(self):\n        self._connected = False\n"
+).encode()
+
+
+@pytest.mark.asyncio
+async def test_connector_schema_format_hint_for_list_and_bool_fields():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/hint_conn")
+        await c.put("/connectors/hint_conn/code", content=LIST_FIELD_CONNECTOR_CODE)
+        r = await c.get("/connectors/hint_conn/schema")
+        assert r.status_code == 200
+        fields = {f["name"]: f for f in r.json()["fields"]}
+        assert "YAML" in fields["hosts"]["format_hint"]
+        assert fields["verify_certs"]["format_hint"] == "true or false"
+
+
+@pytest.mark.asyncio
+async def test_connector_schema_no_format_hint_for_str_fields():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        await c.post("/connectors/no_hint_conn")
+        await c.put("/connectors/no_hint_conn/code", content=HIDDEN_FIELD_CONNECTOR_CODE)
+        r = await c.get("/connectors/no_hint_conn/schema")
+        assert r.status_code == 200
+        fields = {f["name"]: f for f in r.json()["fields"]}
+        assert fields["host"].get("format_hint") is None
+        assert fields["password"].get("format_hint") is None
 
 
 @pytest.mark.asyncio

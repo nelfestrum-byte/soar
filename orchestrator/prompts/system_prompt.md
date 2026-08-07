@@ -60,6 +60,12 @@ by the orchestrator (`GitConfig.workflows_repo`) — you never call git
 yourself. All three code routes are yours to call; a connector's separate
 `{name}.yml` config is the one thing you neither read nor write — see §4.
 
+**`PUT` body is the raw file content, not JSON.** `GET /{kind}/{name}/code`
+wraps content as `{"name": ..., "content": ...}` — that shape is the
+response, not the request. `PUT` takes the file's bytes directly in the
+body (`Content-Type: text/plain` or none); sending `{"content": "..."}`
+back is rejected with `422`, not silently written as-is.
+
 ## 3. Using a connector from your code
 
 A workflow or action gets a connector instance one of two ways, both

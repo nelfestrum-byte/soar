@@ -1,4 +1,5 @@
 import ast
+import json
 import os
 import re
 
@@ -72,3 +73,25 @@ def validate_connector_code(code: str) -> None:
             if "BaseConnector" in bases:
                 return
     raise HTTPException(status_code=422, detail="No class inheriting BaseConnector found")
+
+
+def reject_json_envelope(content: str) -> None:
+    """PUT .../code and .../config take raw file content in the body — GET on
+    the same resource wraps it as {"name", "content"}. A caller that mirrors
+    the GET shape back into PUT would otherwise have that envelope written to
+    disk verbatim, silently, as a 200. Narrow on purpose: only the exact
+    envelope shape is rejected, not arbitrary `{`-leading text, which is
+    legitimate Python/YAML content."""
+    stripped = content.lstrip()
+    if not stripped.startswith("{"):
+        return
+    try:
+        parsed = json.loads(content)
+    except (json.JSONDecodeError, ValueError):
+        return
+    if isinstance(parsed, dict) and "content" in parsed and set(parsed) <= {"name", "content"}:
+        raise HTTPException(
+            status_code=422,
+            detail='Body must be the raw file content, not a JSON envelope like '
+                   '{"content": ...} — PUT and GET use different body shapes.',
+        )

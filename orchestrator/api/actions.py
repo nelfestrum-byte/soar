@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from orchestrator.api.validation import (
+    reject_json_envelope,
     validate_action_code,
     validate_commit,
     validate_name,
@@ -179,12 +180,17 @@ async def save_action(
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
 
     raw = await request.body()
+    raw_text = raw.decode("utf-8")
+    # {"code": ...} is the editor's own envelope for this route (see ui/src/api.js
+    # saveAction) — distinct from GET's {"name", "content"} shape, which this
+    # guard exists to reject.
+    reject_json_envelope(raw_text)
     try:
         import json
         body = json.loads(raw)
         code = body.get("code", "")
     except (json.JSONDecodeError, ValueError):
-        code = raw.decode("utf-8")
+        code = raw_text
 
     if not code.strip():
         raise HTTPException(status_code=422, detail="Code must not be empty")

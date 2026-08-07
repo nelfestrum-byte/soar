@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 import pytest
@@ -183,6 +184,52 @@ async def test_save_action_invalid_code():
         assert r.status_code == 422
         r = await c.get("/actions/bad_action")
         assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_save_action_rejects_get_envelope():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.put(
+            "/actions/envelope_action",
+            content=json.dumps({"content": "def envelope_action():\n    pass\n"}).encode(),
+        )
+        assert r.status_code == 422
+        assert "envelope" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_save_action_rejects_full_get_envelope():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.put(
+            "/actions/envelope_action2",
+            content=json.dumps({
+                "name": "envelope_action2",
+                "content": "def envelope_action2():\n    pass\n",
+            }).encode(),
+        )
+        assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_save_action_accepts_code_envelope():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.put(
+            "/actions/code_envelope_action",
+            content=json.dumps({"code": "def code_envelope_action():\n    pass\n"}).encode(),
+        )
+        assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_save_action_leading_dict_literal_not_rejected():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        code = b'{"foo": "bar"}\ndef dict_literal_action():\n    pass\n'
+        r = await c.put("/actions/dict_literal_action", content=code)
+        assert r.status_code == 200
 
 
 @pytest.mark.asyncio

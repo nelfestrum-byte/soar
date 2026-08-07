@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -226,6 +228,51 @@ async def test_save_workflow_code_missing_base_class():
         assert r.status_code == 422
         r = await c.get("/workflows/not_a_wf/code")
         assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_save_workflow_code_rejects_get_envelope():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.put(
+            "/workflows/envelope_wf/code",
+            content=json.dumps({"content": VALID_WF_CODE.decode()}).encode(),
+        )
+        assert r.status_code == 422
+        assert "envelope" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_save_workflow_code_rejects_full_get_envelope():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.put(
+            "/workflows/envelope_wf2/code",
+            content=json.dumps({
+                "name": "envelope_wf2", "content": VALID_WF_CODE.decode(),
+            }).encode(),
+        )
+        assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_save_workflow_code_accepts_code_envelope():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        r = await c.put(
+            "/workflows/code_envelope_wf/code",
+            content=json.dumps({"code": VALID_WF_CODE.decode()}).encode(),
+        )
+        assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_save_workflow_code_leading_dict_literal_not_rejected():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        code = b'{"foo": "bar"}\n' + VALID_WF_CODE
+        r = await c.put("/workflows/dict_literal_wf/code", content=code)
+        assert r.status_code == 200
 
 
 @pytest.mark.asyncio
