@@ -16,19 +16,31 @@ This module never hardcodes anything about a specific CLI — it only knows
 
 The bridge holds exactly one conversation per running process: one
 in-memory session id, created on first ``POST /message``, no persistence
-across restarts, no multi-session support (see spec Non-goals). The HTTP
-server is deliberately single-threaded (``http.server.HTTPServer``, not
-``ThreadingHTTPServer``) so CLI turns are strictly serialized — two
-concurrent invocations against the same resumed session would race.
+across restarts, no multi-session support (see spec Non-goals).
 
-Stdlib only: ``http.server``, ``json``, ``subprocess``, ``uuid``, ``time``,
-``pathlib``, ``argparse``, ``importlib.util``.
+Turns run asynchronously in a background thread, not inside the request
+handler: a wrapped CLI turn can legitimately take the better part of an hour
+(real sysadmin/incident-response work, not a chat reply), and blocking the
+HTTP handler for that long means no visibility and no way to intervene until
+it's over — which is exactly the failure mode this module exists to avoid.
+``POST /message`` starts a turn and returns immediately; ``GET /status``
+polls the transcript accumulated so far (written incrementally as the CLI
+streams output, not just once at the end); ``POST /stop`` interrupts the
+running turn (SIGINT, escalating to SIGKILL). Exactly one turn may be in
+flight at a time — a second ``POST /message`` while one is running is
+rejected, since two concurrent invocations against the same ``--resume``
+session would race.
+
+Stdlib only: ``http.server``, ``json``, ``subprocess``, ``threading``,
+``uuid``, ``time``, ``pathlib``, ``argparse``, ``importlib.util``.
 """
 
 import argparse
 import importlib.util
 import json
+import signal
 import subprocess
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -45,32 +57,6 @@ def load_settings(path):
     return module
 
 
-class BridgeState:
-    """Holds the one conversation this bridge process is responsible for."""
-
-    def __init__(self, settings):
-        self.settings = settings
-        self.session_id = None
-
-
-def _append_transcript(log_file, session_id, request_text, result, duration_s):
-    path = Path(log_file)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).isoformat()
-    block = (
-        f"=== {timestamp} ===\n"
-        f"session_id: {session_id}\n"
-        f"duration_s: {duration_s:.3f}\n"
-        f"returncode: {result.returncode}\n"
-        f"--- request ---\n{request_text}\n"
-        f"--- stdout ---\n{result.stdout}\n"
-        f"--- stderr ---\n{result.stderr}\n"
-        "\n"
-    )
-    with path.open("a", encoding="utf-8") as f:
-        f.write(block)
-
-
 def _build_argv(settings, session_id, is_new_session, text):
     template = settings.NEW_SESSION_ARGS if is_new_session else settings.RESUME_SESSION_ARGS
     session_args = [arg.format(session_id=session_id) for arg in template]
@@ -78,6 +64,124 @@ def _build_argv(settings, session_id, is_new_session, text):
     if settings.PROMPT_MODE == "arg":
         argv = argv + [text]
     return argv
+
+
+class Turn:
+    """One in-flight or just-completed CLI turn: streamed output, live status."""
+
+    def __init__(self, session_id, request_text):
+        self.session_id = session_id
+        self.request_text = request_text
+        self.started_at = time.time()
+        self.finished_at = None
+        self.process = None
+        self.returncode = None
+        self.stopped_by_user = False
+        self.timed_out = False
+        self.error = None
+        self._lock = threading.Lock()
+        self._stdout_lines = []
+        self._stderr_lines = []
+
+    def append_stdout(self, line):
+        with self._lock:
+            self._stdout_lines.append(line)
+
+    def append_stderr(self, line):
+        with self._lock:
+            self._stderr_lines.append(line)
+
+    def snapshot(self):
+        with self._lock:
+            stdout_lines = list(self._stdout_lines)
+            stderr_lines = list(self._stderr_lines)
+        return {
+            "session_id": self.session_id,
+            "running": self.finished_at is None,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "elapsed_s": (self.finished_at or time.time()) - self.started_at,
+            "returncode": self.returncode,
+            "stopped_by_user": self.stopped_by_user,
+            "timed_out": self.timed_out,
+            "error": self.error,
+            "stdout_lines": stdout_lines,
+            "stderr_lines": stderr_lines,
+        }
+
+
+class BridgeState:
+    """Holds the one conversation this bridge process is responsible for."""
+
+    def __init__(self, settings):
+        self.settings = settings
+        self.session_id = None
+        self.turn = None  # current or most recently finished Turn
+        self.lock = threading.Lock()
+
+
+def _pump_stream(stream, sink_append, log_file, prefix):
+    for line in stream:
+        line = line.rstrip("\n")
+        sink_append(line)
+        with log_file.open("a", encoding="utf-8") as f:
+            f.write(f"{prefix} {line}\n")
+    stream.close()
+
+
+def _run_turn(settings, turn, argv):
+    log_path = Path(settings.LOG_FILE)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(f"=== {timestamp} REQUEST session={turn.session_id} ===\n{turn.request_text}\n--- stream ---\n")
+
+    run_kwargs = dict(cwd=settings.CWD, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+    run_kwargs["stdin"] = subprocess.PIPE if settings.PROMPT_MODE == "stdin" else subprocess.DEVNULL
+
+    try:
+        proc = subprocess.Popen(argv, **run_kwargs)
+    except FileNotFoundError as exc:
+        turn.error = f"CLI binary not found: {exc}"
+        turn.finished_at = time.time()
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(f"--- error: {turn.error} ---\n\n")
+        return
+
+    turn.process = proc
+
+    if settings.PROMPT_MODE == "stdin":
+        proc.stdin.write(turn.request_text)
+        proc.stdin.close()
+
+    watchdog_fired = threading.Event()
+
+    def _timeout_killer():
+        if not watchdog_fired.wait(timeout=settings.TIMEOUT_S):
+            if proc.poll() is None:
+                turn.timed_out = True
+                proc.kill()
+
+    threading.Thread(target=_timeout_killer, daemon=True).start()
+
+    t_out = threading.Thread(target=_pump_stream, args=(proc.stdout, turn.append_stdout, log_path, "OUT"), daemon=True)
+    t_err = threading.Thread(target=_pump_stream, args=(proc.stderr, turn.append_stderr, log_path, "ERR"), daemon=True)
+    t_out.start()
+    t_err.start()
+
+    proc.wait()
+    watchdog_fired.set()
+    t_out.join()
+    t_err.join()
+
+    turn.returncode = proc.returncode
+    turn.finished_at = time.time()
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(
+            f"--- end session={turn.session_id} returncode={turn.returncode} "
+            f"duration_s={turn.finished_at - turn.started_at:.3f} "
+            f"stopped_by_user={turn.stopped_by_user} timed_out={turn.timed_out} ---\n\n"
+        )
 
 
 def make_handler_class(state):
@@ -99,14 +203,25 @@ def make_handler_class(state):
         def do_GET(self):
             if self.path == "/health":
                 self._send_json(200, {"status": "ok", "session_id": state.session_id})
+            elif self.path == "/status":
+                with state.lock:
+                    turn = state.turn
+                if turn is None:
+                    self._send_json(200, {"running": False, "session_id": state.session_id})
+                else:
+                    self._send_json(200, turn.snapshot())
             else:
                 self._send_json(404, {"error": "not found"})
 
         def do_POST(self):
-            if self.path != "/message":
+            if self.path == "/message":
+                self._handle_message()
+            elif self.path == "/stop":
+                self._handle_stop()
+            else:
                 self._send_json(404, {"error": "not found"})
-                return
 
+        def _handle_message(self):
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length else b""
             try:
@@ -119,57 +234,52 @@ def make_handler_class(state):
                 return
 
             settings = state.settings
-            is_new_session = state.session_id is None
-            session_id = state.session_id if not is_new_session else str(uuid.uuid4())
+            with state.lock:
+                if state.turn is not None and state.turn.finished_at is None:
+                    self._send_json(409, {"error": "a turn is already in progress", "status": state.turn.snapshot()})
+                    return
+                is_new_session = state.session_id is None
+                session_id = state.session_id if not is_new_session else str(uuid.uuid4())
+                state.session_id = session_id
+                turn = Turn(session_id, text)
+                state.turn = turn
 
             argv = _build_argv(settings, session_id, is_new_session, text)
+            threading.Thread(target=_run_turn, args=(settings, turn, argv), daemon=True).start()
+            self._send_json(202, {"status": "started", "session_id": session_id})
 
-            run_kwargs = dict(
-                cwd=settings.CWD,
-                capture_output=True,
-                text=True,
-                timeout=settings.TIMEOUT_S,
-            )
-            if settings.PROMPT_MODE == "stdin":
-                run_kwargs["input"] = text
-            else:
-                run_kwargs["stdin"] = subprocess.DEVNULL
-
-            start = time.time()
-            try:
-                result = subprocess.run(argv, **run_kwargs)
-            except subprocess.TimeoutExpired:
-                self._send_json(504, {"error": "subprocess timed out"})
+        def _handle_stop(self):
+            with state.lock:
+                turn = state.turn
+            if turn is None or turn.finished_at is not None:
+                self._send_json(400, {"error": "no turn in progress"})
                 return
-            except FileNotFoundError as exc:
-                self._send_json(502, {"error": f"CLI binary not found: {exc}"})
-                return
-            duration_s = time.time() - start
+            turn.stopped_by_user = True
+            proc = turn.process
+            if proc is not None and proc.poll() is None:
+                proc.send_signal(signal.SIGINT)
 
-            state.session_id = session_id
+                def _escalate():
+                    time.sleep(10)
+                    if proc.poll() is None:
+                        proc.kill()
 
-            _append_transcript(settings.LOG_FILE, session_id, text, result, duration_s)
-
-            self._send_json(
-                200,
-                {
-                    "session_id": session_id,
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                    "returncode": result.returncode,
-                    "duration_s": duration_s,
-                },
-            )
+                threading.Thread(target=_escalate, daemon=True).start()
+            self._send_json(200, {"status": "stopping"})
 
     return BridgeRequestHandler
 
 
 def build_server(settings):
-    """Build (but do not start) the single-threaded HTTP server.
+    """Build (but do not start) the HTTP server.
 
-    Deliberately ``http.server.HTTPServer`` and not ``ThreadingHTTPServer``:
-    CLI turns must be strictly sequential, since two concurrent invocations
-    against the same resumed session would race.
+    Handlers never block for the duration of a CLI turn (turns run in a
+    background thread — see ``_run_turn``), so a single-threaded
+    ``http.server.HTTPServer`` is enough: ``POST /message`` returns as soon
+    as the turn is *started*, leaving the server free to answer
+    ``GET /status``/``POST /stop`` while that turn runs. Exactly one turn in
+    flight at a time is still enforced explicitly (see ``_handle_message``),
+    independent of the server's threading model.
     """
     state = BridgeState(settings)
     handler_cls = make_handler_class(state)
